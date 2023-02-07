@@ -1,0 +1,2 @@
+option('enable-sdl2', type: 'boolean', value: true, description: 'Enable SDL2 WSI and audio backends')
+option('enable-vulkan', type: 'boolean', value: true, description: 'Enable Vulkan graphics backend')

@@ -1,0 +1,6 @@
+[submodule "src/third_party/SPIRV-Reflect"]
+	path = src/third_party/SPIRV-Reflect
+	url = https://github.com/KhronosGroup/SPIRV-Reflect
+[submodule "subprojects/SPIRV-Cross"]
+	path = subprojects/SPIRV-Cross
+	url = https://github.com/KhronosGroup/SPIRV-Cross
