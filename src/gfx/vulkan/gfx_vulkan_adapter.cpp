@@ -77,7 +77,7 @@ GfxVulkanDeviceProperties::GfxVulkanDeviceProperties(
   const GfxVulkanProcs&               vk,
         VkPhysicalDevice              adapter,
   const GfxVulkanDeviceExtensions&    ext) {
-  const std::array<GfxVulkanPropertyChain, 8> fields = {{
+  const std::array<GfxVulkanPropertyChain, 9> fields = {{
     { &vk11 },
     { &vk12 },
     { &vk13 },
@@ -85,6 +85,7 @@ GfxVulkanDeviceProperties::GfxVulkanDeviceProperties(
     { &extConservativeRasterization,    &ext.extConservativeRasterization },
     { &extExtendedDynamicState3,        &ext.extExtendedDynamicState3 },
     { &extGraphicsPipelineLibrary,      &ext.extGraphicsPipelineLibrary },
+    { &extMeshShader,                   &ext.extMeshShader },
     { &extRobustness2,                  &ext.extRobustness2 },
   }};
 
@@ -105,7 +106,7 @@ GfxVulkanDeviceProperties::GfxVulkanDeviceProperties(
 
 GfxVulkanDeviceFeatures::GfxVulkanDeviceFeatures(
   const GfxVulkanDeviceExtensions&    ext) {
-  const std::array<GfxVulkanPropertyChain, 10> fields = {{
+  const std::array<GfxVulkanPropertyChain, 11> fields = {{
     { &vk11 },
     { &vk12 },
     { &vk13 },
@@ -115,6 +116,7 @@ GfxVulkanDeviceFeatures::GfxVulkanDeviceFeatures(
     { &extExtendedDynamicState2,        &ext.extExtendedDynamicState2 },
     { &extExtendedDynamicState3,        &ext.extExtendedDynamicState3 },
     { &extGraphicsPipelineLibrary,      &ext.extGraphicsPipelineLibrary },
+    { &extMeshShader,                   &ext.extMeshShader },
     { &extRobustness2,                  &ext.extRobustness2 },
   }};
 

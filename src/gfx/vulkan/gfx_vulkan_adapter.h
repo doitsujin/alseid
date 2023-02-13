@@ -42,6 +42,7 @@ public:
   uint32_t extExtendedDynamicState2       = 0;
   uint32_t extExtendedDynamicState3       = 0;
   uint32_t extGraphicsPipelineLibrary     = 0;
+  uint32_t extMeshShader                  = 0;
   uint32_t extRobustness2                 = 0;
 
   /**
@@ -71,7 +72,7 @@ private:
 
   std::vector<const char*> m_extensionList;
 
-  const std::array<Extension, 11> s_extensions = {{
+  const std::array<Extension, 12> s_extensions = {{
     { &khrAccelerationStructure,        VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,     1, false },
     { &khrDeferredHostOperations,       VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,   1, false },
     { &khrPipelineLibrary,              VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,           1, false },
@@ -82,6 +83,7 @@ private:
     { &extExtendedDynamicState2,        VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME,   1, false },
     { &extExtendedDynamicState3,        VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME,   1, false },
     { &extGraphicsPipelineLibrary,      VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME,  1, false },
+    { &extMeshShader,                   VK_EXT_MESH_SHADER_EXTENSION_NAME,                1, false },
     { &extRobustness2,                  VK_EXT_ROBUSTNESS_2_EXTENSION_NAME,               1, true  },
   }};
 
@@ -114,6 +116,7 @@ public:
   VkPhysicalDeviceConservativeRasterizationPropertiesEXT    extConservativeRasterization    = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CONSERVATIVE_RASTERIZATION_PROPERTIES_EXT };
   VkPhysicalDeviceExtendedDynamicState3PropertiesEXT        extExtendedDynamicState3        = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_PROPERTIES_EXT };
   VkPhysicalDeviceGraphicsPipelineLibraryPropertiesEXT      extGraphicsPipelineLibrary      = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_PROPERTIES_EXT };
+  VkPhysicalDeviceMeshShaderPropertiesEXT                   extMeshShader                   = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT };
   VkPhysicalDeviceRobustness2PropertiesEXT                  extRobustness2                  = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_PROPERTIES_EXT };
 
   VkPhysicalDeviceMemoryProperties2 memory    = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2 };
@@ -166,6 +169,7 @@ public:
   VkPhysicalDeviceExtendedDynamicState2FeaturesEXT        extExtendedDynamicState2        = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT };
   VkPhysicalDeviceExtendedDynamicState3FeaturesEXT        extExtendedDynamicState3        = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
   VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT      extGraphicsPipelineLibrary      = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT };
+  VkPhysicalDeviceMeshShaderFeaturesEXT                   extMeshShader                   = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT };
   VkPhysicalDeviceRobustness2FeaturesEXT                  extRobustness2                  = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT };
 
   /**
@@ -184,7 +188,7 @@ private:
     bool required;
   };
 
-  std::array<Feature, 31> m_features = {{
+  std::array<Feature, 34> m_features = {{
     { &core.features.drawIndirectFirstInstance,                             true  },
     { &core.features.geometryShader,                                        false },
     { &core.features.imageCubeArray,                                        true  },
@@ -194,6 +198,7 @@ private:
     { &core.features.tessellationShader,                                    false },
     { &core.features.textureCompressionBC,                                  true  },
     { &vk11.shaderDrawParameters,                                           true  },
+    { &vk12.samplerMirrorClampToEdge,                                       false },
     { &vk12.bufferDeviceAddress,                                            true  },
     { &vk12.descriptorBindingPartiallyBound,                                true  },
     { &vk12.descriptorBindingSampledImageUpdateAfterBind,                   true  },
@@ -215,6 +220,8 @@ private:
     { &extExtendedDynamicState3.extendedDynamicState3SampleMask,            false },
     { &extExtendedDynamicState3.extendedDynamicState3AlphaToCoverageEnable, false },
     { &extGraphicsPipelineLibrary.graphicsPipelineLibrary,                  false },
+    { &extMeshShader.taskShader,                                            false },
+    { &extMeshShader.meshShader,                                            false },
     { &extRobustness2.nullDescriptor,                                       true  },
   }};
 
