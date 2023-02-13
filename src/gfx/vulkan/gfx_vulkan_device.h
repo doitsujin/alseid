@@ -171,6 +171,15 @@ public:
   GfxDeviceFeatures getFeatures() const override;
 
   /**
+   * \brief Queries format features
+   *
+   * \param [in] format Format to query
+   * \returns Format features
+   */
+  GfxFormatFeatures getFormatFeatures(
+          GfxFormat                     format) const override;
+
+  /**
    * \brief Creates buffer
    *
    * \param [in] desc Buffer properties

@@ -49,6 +49,49 @@ struct GfxDeviceFeatures {
 
 
 /**
+ * \brief Format features
+ */
+enum class GfxFormatFeature : uint32_t {
+  /** Format can be used for index buffers */
+  eIndexBuffer          = (1u << 0),
+  /** Format can be used for vertex buffers */
+  eVertexBuffer         = (1u << 1),
+  /** Format can be used to create buffer views
+   *  with \c GfxUsage::eShaderResource usage. */
+  eResourceBuffer       = (1u << 2),
+  /** Format can be used to create buffer views
+   *  with \c GfxUsage::eShaderStorage usage. */
+  eStorageBuffer        = (1u << 3),
+  /** Format can be used for ray tracing geometry */
+  eBvhGeometry          = (1u << 4),
+  /** Format can be used to create images or image
+   *  views with \c GfxUsage::eShaderResource usage. */
+  eResourceImage        = (1u << 5),
+  /** Format can be used to create images or image
+   *  views with \c GfxUsage::eShaderStorage usage. */
+  eStorageImage         = (1u << 6),
+  /** Format can be used to create images or image
+   *  views with \c GfxUsage::eRenderTarget usage. */
+  eRenderTarget         = (1u << 7),
+  /** Format can be used to create images or image
+   *  views with \c GfxUsage::eShadingRate usage. */
+  eShadingRate          = (1u << 8),
+  /** Format supports storage image reads without the
+   *  format being specified in the shader. This will
+   *  be set for some common formats. */
+  eShaderStorageRead    = (1u << 9),
+  /** Format supports atomic shader operations */
+  eShaderStorageAtomic  = (1u << 10),
+  /** Format can be sampled with a linear filter */
+  eSampleLinear         = (1u << 11),
+
+  eFlagEnum             = 0
+};
+
+using GfxFormatFeatures = Flags<GfxFormatFeature>;
+
+
+/**
  * \brief Graphics device interface
  *
  * The device primarily facilitates object creation
@@ -65,6 +108,18 @@ public:
    * \returns Supported device capabilities
    */
   virtual GfxDeviceFeatures getFeatures() const = 0;
+
+  /**
+   * \brief Queries format features
+   *
+   * If this returns 0, the format is unsupported. If only
+   * buffer bits are supported, images must not be created
+   * with this format.
+   * \param [in] format Format to query
+   * \returns Format features
+   */
+  virtual GfxFormatFeatures getFormatFeatures(
+          GfxFormat                     format) const = 0;
 
   /**
    * \brief Creates buffer

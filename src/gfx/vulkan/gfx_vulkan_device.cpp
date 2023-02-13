@@ -121,6 +121,70 @@ GfxDeviceFeatures GfxVulkanDevice::getFeatures() const {
 }
 
 
+GfxFormatFeatures GfxVulkanDevice::getFormatFeatures(
+        GfxFormat                     format) const {
+  VkFormatProperties3 features3 = { VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3 };
+  VkFormatProperties2 features2 = { VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2, &features3 };
+
+  m_vk.vkGetPhysicalDeviceFormatProperties2(m_vk.adapter, getVkFormat(format), &features2);
+
+  bool storageRead = true;
+  bool storageAtomic = true;
+
+  GfxFormatFeatures result = 0;
+
+  if (format == GfxFormat::eR16ui || format == GfxFormat::eR32ui)
+    result |= GfxFormatFeature::eIndexBuffer;
+
+  if (features3.bufferFeatures & VK_FORMAT_FEATURE_2_VERTEX_BUFFER_BIT)
+    result |= GfxFormatFeature::eVertexBuffer;
+
+  if (features3.bufferFeatures & VK_FORMAT_FEATURE_2_UNIFORM_TEXEL_BUFFER_BIT)
+    result |= GfxFormatFeature::eResourceBuffer;
+
+  if ((features3.bufferFeatures & VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT)
+   && (features3.bufferFeatures & VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT)) {
+    result |= GfxFormatFeature::eStorageBuffer;
+
+    storageRead &= (features3.bufferFeatures & VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT);
+    storageAtomic &= (features3.bufferFeatures & VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_ATOMIC_BIT);
+  }
+
+  if (features3.bufferFeatures & VK_FORMAT_FEATURE_2_ACCELERATION_STRUCTURE_VERTEX_BUFFER_BIT_KHR)
+    result |= GfxFormatFeature::eBvhGeometry;
+
+  if (features3.optimalTilingFeatures & VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT)
+    result |= GfxFormatFeature::eResourceImage;
+
+  if ((features3.optimalTilingFeatures & VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT)
+   && (features3.optimalTilingFeatures & VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT)) {
+    result |= GfxFormatFeature::eStorageImage;
+
+    storageRead &= (features3.optimalTilingFeatures & VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT);
+    storageAtomic &= (features3.optimalTilingFeatures & VK_FORMAT_FEATURE_2_STORAGE_IMAGE_ATOMIC_BIT);
+  }
+
+  if (features3.optimalTilingFeatures & (VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT))
+    result |= GfxFormatFeature::eRenderTarget;
+
+  if (features3.optimalTilingFeatures & VK_FORMAT_FEATURE_2_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR)
+    result |= GfxFormatFeature::eShadingRate;
+
+  if (features3.optimalTilingFeatures & VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_FILTER_LINEAR_BIT)
+    result |= GfxFormatFeature::eSampleLinear;
+
+  if (result & (GfxFormatFeature::eStorageBuffer | GfxFormatFeature::eStorageImage)) {
+    if (storageRead)
+      result |= GfxFormatFeature::eShaderStorageRead;
+
+    if (storageAtomic)
+      result |= GfxFormatFeature::eShaderStorageAtomic;
+  }
+
+  return result;
+}
+
+
 GfxBuffer GfxVulkanDevice::createBuffer(
   const GfxBufferDesc&                desc,
         GfxMemoryTypes                memoryTypes) {
