@@ -15,7 +15,14 @@ namespace as {
 struct GfxDescriptorArrayDesc {
   /** Debug name for the descriptor array */
   const char* debugName = nullptr;
-  /** Bining type to create the descriptor array for */
+  /** Binding type to create the descriptor array for.
+   *  \e Must be one of the following:
+   *  - \c GfxShaderBindingType::eSampler
+   *  - \c GfxShaderBindingType::eResourceBuffer
+   *  - \c GfxShaderBindingType::eResourceImageView
+   *  - \c GfxShaderBindingType::eStorageBuffer
+   *  - \c GfxShaderBindingType::eStorageImageView
+   */
   GfxShaderBindingType bindingType = GfxShaderBindingType(0);
   /** Number of descriptors in the descriptor array */
   uint32_t descriptorCount = 0;

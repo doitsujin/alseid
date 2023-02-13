@@ -188,7 +188,7 @@ private:
     bool required;
   };
 
-  std::array<Feature, 34> m_features = {{
+  std::array<Feature, 36> m_features = {{
     { &core.features.drawIndirectFirstInstance,                             true  },
     { &core.features.geometryShader,                                        false },
     { &core.features.imageCubeArray,                                        true  },
@@ -208,6 +208,8 @@ private:
     { &vk12.drawIndirectCount,                                              true  },
     { &vk12.runtimeDescriptorArray,                                         true  },
     { &vk12.shaderSampledImageArrayNonUniformIndexing,                      true  },
+    { &vk12.shaderStorageBufferArrayNonUniformIndexing,                     true  },
+    { &vk12.shaderStorageImageArrayNonUniformIndexing,                      true  },
     { &vk12.timelineSemaphore,                                              true  },
     { &vk13.dynamicRendering,                                               true  },
     { &vk13.maintenance4,                                                   true  },
