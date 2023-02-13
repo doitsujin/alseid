@@ -104,6 +104,23 @@ void GfxVulkanDevice::getQueueSharingInfo(
 }
 
 
+GfxDeviceFeatures GfxVulkanDevice::getFeatures() const {
+  GfxDeviceFeatures result = { };
+  result.fastLinkGraphicsPipelines = m_features.extGraphicsPipelineLibrary.graphicsPipelineLibrary;
+  result.meshShader = m_features.extMeshShader.meshShader;
+  result.taskShader = m_features.extMeshShader.taskShader;
+  result.rayTracing = m_features.khrRayQuery.rayQuery
+                   && m_features.khrAccelerationStructure.accelerationStructure;
+
+  // We could expose more here depending on device properties,
+  // but just be conservative. These are guaranteed to work on
+  // all supported Vulkan devices.
+  result.maxSamplerDescriptors = 1000;
+  result.maxResourceDescriptors = 250000;
+  return result;
+}
+
+
 GfxBuffer GfxVulkanDevice::createBuffer(
   const GfxBufferDesc&                desc,
         GfxMemoryTypes                memoryTypes) {

@@ -19,6 +19,36 @@
 namespace as {
 
 /**
+ * \brief Adapter features and capabilities
+ */
+struct GfxDeviceFeatures {
+  /** Indicates that graphics pipelines can be fast-linked at
+   *  runtime, so that explicit calls to \c compileVariant are
+   *  not necessary in order to avoid stutter. */
+  uint32_t fastLinkGraphicsPipelines : 1;
+  /** Indicates support for mesh shader pipelines */
+  uint32_t meshShader : 1;
+  /** Indicates support for task shaders in mesh shader pipelines. */
+  uint32_t taskShader : 1;
+  /** Indicates support for ray tracing using ray queries. */
+  uint32_t rayTracing : 1;
+  /** Indicates support for conservative rasterization. */
+  uint32_t conservativeRasterization : 1;
+  /** Maximum number of sampler descriptors in descriptor arrays.
+   *  This amount applies to \e all descriptor arrays combined,
+   *  and is also the maximum number of sampler descriptors in
+   *  a single descriptor array.
+   *  This will be at least 1000. */
+  uint32_t maxSamplerDescriptors;
+  /** Maximum number of resource descriptors in descriptor arrays.
+   *  This applies to all non-sampler descriptor types in the same
+   *  fashion as \c maxSamplerDescriptors does to samplers.
+   *  This will be at least 250000. */
+  uint32_t maxResourceDescriptors;
+};
+
+
+/**
  * \brief Graphics device interface
  *
  * The device primarily facilitates object creation
@@ -29,6 +59,12 @@ class GfxDeviceIface {
 public:
 
   virtual ~GfxDeviceIface() { }
+
+  /**
+   * \brief Queries device features
+   * \returns Supported device capabilities
+   */
+  virtual GfxDeviceFeatures getFeatures() const = 0;
 
   /**
    * \brief Creates buffer

@@ -16,6 +16,11 @@ GfxDebugDevice::~GfxDebugDevice() {
 }
 
 
+GfxDeviceFeatures GfxDebugDevice::getFeatures() const {
+  return m_device->getFeatures();
+}
+
+
 GfxBuffer GfxDebugDevice::createBuffer(
   const GfxBufferDesc&                desc,
         GfxMemoryTypes                memoryTypes) {

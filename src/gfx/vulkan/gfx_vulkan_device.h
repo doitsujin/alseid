@@ -165,6 +165,12 @@ public:
     const uint32_t**                    queueFamilies) const;
 
   /**
+   * \brief Queries device features
+   * \returns Supported device capabilities
+   */
+  GfxDeviceFeatures getFeatures() const override;
+
+  /**
    * \brief Creates buffer
    *
    * \param [in] desc Buffer properties
