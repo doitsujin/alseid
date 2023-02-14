@@ -29,10 +29,10 @@ as_defines = []
 
 as_dependencies = [ spirv_cross_core_dep ]
 
-dep_sdl2 = dependency('sdl2',
-  required      : get_option('enable-sdl2'))
-
 if get_option('enable-sdl2')
+  dep_sdl2 = dependency('sdl2',
+    required : true)
+
   as_defines += [ 'ALSEID_WSI_SDL2' ]
   as_dependencies += [ dep_sdl2 ]
 
@@ -46,6 +46,16 @@ if get_option('enable-vulkan')
 endif
 
 subdir('io/stl')
+
+liburing = cpp_compiler.find_library('uring',
+  required : get_option('enable-liburing'))
+
+if liburing.found()
+  as_defines += [ 'ALSEID_IO_URING' ]
+  as_dependencies += [ liburing ]
+
+  subdir('io/uring')
+endif
 
 foreach def : as_defines
   add_project_arguments('-D' + def,
