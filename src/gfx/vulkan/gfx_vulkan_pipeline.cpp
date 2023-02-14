@@ -1711,7 +1711,7 @@ void GfxVulkanPipelineManager::runWorker() {
     if (m_compilerStopped)
       return;
 
-    WorkItem item = std::move(m_compilerQueue.back());
+    WorkItem item = std::move(m_compilerQueue.front());
     m_compilerQueue.pop();
     lock.unlock();
 
