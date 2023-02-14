@@ -26,6 +26,9 @@ struct GfxDeviceFeatures {
    *  runtime, so that explicit calls to \c compileVariant are
    *  not necessary in order to avoid stutter. */
   uint32_t fastLinkGraphicsPipelines : 1;
+  /** Indicates whether shader stages other than the geometry
+   *  shader can export the viewport index or layer index */
+  uint32_t vertexShaderViewportLayerExport : 1;
   /** Indicates support for mesh shader pipelines */
   uint32_t meshShader : 1;
   /** Indicates support for task shaders in mesh shader pipelines. */

@@ -107,6 +107,8 @@ void GfxVulkanDevice::getQueueSharingInfo(
 GfxDeviceFeatures GfxVulkanDevice::getFeatures() const {
   GfxDeviceFeatures result = { };
   result.fastLinkGraphicsPipelines = m_features.extGraphicsPipelineLibrary.graphicsPipelineLibrary;
+  result.vertexShaderViewportLayerExport = m_features.vk12.shaderOutputViewportIndex
+                                        && m_features.vk12.shaderOutputLayer;
   result.meshShader = m_features.extMeshShader.meshShader;
   result.taskShader = m_features.extMeshShader.taskShader;
   result.rayTracing = m_features.khrRayQuery.rayQuery

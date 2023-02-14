@@ -188,7 +188,7 @@ private:
     bool required;
   };
 
-  std::array<Feature, 36> m_features = {{
+  std::array<Feature, 42> m_features = {{
     { &core.features.drawIndirectFirstInstance,                             true  },
     { &core.features.geometryShader,                                        false },
     { &core.features.imageCubeArray,                                        true  },
@@ -202,15 +202,21 @@ private:
     { &vk12.bufferDeviceAddress,                                            true  },
     { &vk12.descriptorBindingPartiallyBound,                                true  },
     { &vk12.descriptorBindingSampledImageUpdateAfterBind,                   true  },
+    { &vk12.descriptorBindingStorageImageUpdateAfterBind,                   true  },
+    { &vk12.descriptorBindingStorageBufferUpdateAfterBind,                  true  },
     { &vk12.descriptorBindingUpdateUnusedWhilePending,                      true  },
     { &vk12.descriptorBindingVariableDescriptorCount,                       true  },
     { &vk12.descriptorIndexing,                                             true  },
     { &vk12.drawIndirectCount,                                              true  },
     { &vk12.runtimeDescriptorArray,                                         true  },
+    { &vk12.separateDepthStencilLayouts,                                    true  },
+    { &vk12.shaderOutputViewportIndex,                                      false },
+    { &vk12.shaderOutputLayer,                                              false },
     { &vk12.shaderSampledImageArrayNonUniformIndexing,                      true  },
     { &vk12.shaderStorageBufferArrayNonUniformIndexing,                     true  },
     { &vk12.shaderStorageImageArrayNonUniformIndexing,                      true  },
     { &vk12.timelineSemaphore,                                              true  },
+    { &vk12.vulkanMemoryModel,                                              true  },
     { &vk13.dynamicRendering,                                               true  },
     { &vk13.maintenance4,                                                   true  },
     { &vk13.synchronization2,                                               true  },
