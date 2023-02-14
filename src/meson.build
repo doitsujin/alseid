@@ -12,6 +12,9 @@ as_files = files([
 
   'gfx/debug/gfx_debug_device.cpp',
 
+  'io/io.cpp',
+  'io/io_request.cpp',
+
   'jobs/job.cpp',
   'jobs/job_manager.cpp',
 
@@ -41,6 +44,8 @@ if get_option('enable-vulkan')
 
   subdir('gfx/vulkan')
 endif
+
+subdir('io/stl')
 
 foreach def : as_defines
   add_project_arguments('-D' + def,
