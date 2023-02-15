@@ -4,7 +4,6 @@
 
 #include <spirv_cross.hpp>
 
-#include "../util/util_bytestream.h"
 #include "../util/util_log.h"
 
 #include "gfx_pipeline.h"
@@ -12,15 +11,12 @@
 
 namespace as {
 
-void encodeSpirvBinary(
-        BytestreamWriter&             bytestream,
-        size_t                        size,
-  const void*                         code) {
+bool encodeSpirvBinary(
+        OutStream&                    writer,
+        InStream&                     reader,
+        size_t                        size) {
   uint32_t dwordCount = size / sizeof(uint32_t);
-  auto src = reinterpret_cast<const uint32_t*>(code);
-
-  bytestream.reserve((size * 3) / 5);
-  bytestream.write(dwordCount);
+  writer.write(dwordCount);
 
   // Block of up to 16 compressed dwords, and one control
   // DWORD which stores the compression mode.
@@ -39,14 +35,24 @@ void encodeSpirvBinary(
   // These layouts are chosen to allow reasonably efficient encoding of
   // opcode tokens, which usually fit into 20 bits, followed by type IDs,
   // which tend to be low as well since most types are defined early.
+  bool needsRead = true;
+
+  uint32_t a = 0;
+  uint32_t b = 0;
+
   for (size_t i = 0; i < dwordCount; ) {
+    bool success = true;
+
     uint32_t schema;
     uint32_t encode;
 
-    uint32_t a = src[i];
+    if (needsRead) {
+      success &= reader.read(a);
+      needsRead = false;
+    }
 
     if (likely(i + 1 < dwordCount)) {
-      uint32_t b = src[i + 1];
+      success &= reader.read(b);
 
       // Pick compression mode based on the data layout
       if (a < (1u << 16) && b <= (1u << 16)) {
@@ -61,7 +67,10 @@ void encodeSpirvBinary(
       } else {
         schema = 0x0;
         encode = a;
+        a = b;
       }
+
+      needsRead = schema != 0;
     } else {
       schema = 0x0;
       encode = a;
@@ -75,22 +84,24 @@ void encodeSpirvBinary(
 
     // If necessary, flush the block
     if (blockSize == block.size() || i == dwordCount) {
-      bytestream.write(blockControl);
-      bytestream.write(block.size() * sizeof(uint32_t), block.data());
+      success &= writer.write(blockControl)
+              && writer.write(block.data(), blockSize * sizeof(uint32_t));
 
       blockControl = 0;
       blockSize = 0;
     }
+
+    if (unlikely(!success))
+      return false;
   }
+
+  return true;
 }
 
 
 bool decodeSpirvBinary(
-        BytestreamWriter&             writer,
-        size_t                        size,
-  const void*                         code) {
-  BytestreamReader reader(size, code);
-
+        OutStream&                    writer,
+        InStream&                     reader) {
   // The first token stores the number of uncompressed dwords
   uint32_t dwordsTotal = 0;
   uint32_t dwordsWritten = 0;
@@ -106,6 +117,8 @@ bool decodeSpirvBinary(
     if (unlikely(!reader.read(blockControl)))
       return false;
 
+    bool success = true;
+
     for (uint32_t i = 0; i < 16 && dwordsWritten < dwordsTotal; i++) {
       uint32_t dword;
 
@@ -119,16 +132,19 @@ bool decodeSpirvBinary(
       uint64_t mask   = ~(~0ull << shift);
       uint64_t encode = dword;
 
-      writer.write(uint32_t(encode & mask));
+      success &= writer.write(uint32_t(encode & mask));
 
       if (schema)
-        writer.write(uint32_t(encode >> shift));
+        success &= writer.write(uint32_t(encode >> shift));
 
       dwordsWritten += schema ? 2 : 1;
     }
+
+    if (unlikely(!success))
+      return false;
   }
 
-  // Apparently we got bogus data somewhere
+  // Check whether we got bogus data somewhere
   return dwordsWritten == dwordsTotal;
 }
 

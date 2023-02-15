@@ -634,7 +634,7 @@ GfxVulkanFragmentOutputState::~GfxVulkanFragmentOutputState() {
 
 GfxVulkanCompressedShaderBinaries::GfxVulkanCompressedShaderBinaries(
   const GfxGraphicsPipelineDesc&      desc) {
-  BytestreamWriter bytestream;
+  OutVectorStream bytestream;
   addBinary(bytestream, desc.vertex);
   addBinary(bytestream, desc.tessControl);
   addBinary(bytestream, desc.tessEval);
@@ -647,7 +647,7 @@ GfxVulkanCompressedShaderBinaries::GfxVulkanCompressedShaderBinaries(
 
 GfxVulkanCompressedShaderBinaries::GfxVulkanCompressedShaderBinaries(
   const GfxMeshPipelineDesc&          desc) {
-  BytestreamWriter bytestream;
+  OutVectorStream bytestream;
   addBinary(bytestream, desc.task);
   addBinary(bytestream, desc.mesh);
   addBinary(bytestream, desc.fragment);
@@ -660,32 +660,28 @@ void GfxVulkanCompressedShaderBinaries::getShaderStageInfo(
         GfxVulkanPipelineManager&       manager,
         GfxVulkanShaderStageInfo&       shaders) const {
   // Decode Huffman-compressed data
-  BytestreamWriter writer;
+  InMemoryStream compressed(m_compressed);
+  OutVectorStream writer;
 
-  if (!decodeHuffmanBinary(writer, m_compressed.size(), m_compressed.data()))
+  if (!decodeHuffmanBinary(writer, compressed))
     throw Error("Vulkan: Failed to decompress SPIR-V binaries");
 
   // In the next step, decode individual binaries
   auto data = std::move(writer).getData();
-  BytestreamReader reader(data.size(), data.data());
-  BytestreamWriter decompressed;
+  InMemoryStream reader(data);
+  OutVectorStream decompressed;
 
   small_vector<GfxVulkanShaderBinary, 5> metadata;
   GfxVulkanShaderBinary binary;
-  uint32_t binarySize;
 
-  while (reader.read(binary.stage) && reader.read(binarySize)) {
+  while (reader.read(binary.stage)) {
     binary.offset = decompressed.getSize();
 
-    auto memoryRange = reader.getMemory(reader.getOffset(), binarySize);
-
-    if (!decodeSpirvBinary(decompressed, memoryRange.first, memoryRange.second))
+    if (!decodeSpirvBinary(decompressed, reader))
       throw Error("Vulkan: Failed to decode SPIR-V binaries");
 
     binary.size = decompressed.getSize() - binary.offset;
     metadata.push_back(binary);
-
-    reader.skip(binarySize);
   }
 
   shaders.data = std::move(decompressed).getData();
@@ -707,27 +703,23 @@ void GfxVulkanCompressedShaderBinaries::getShaderStageInfo(
 
 
 void GfxVulkanCompressedShaderBinaries::addBinary(
-        BytestreamWriter&             bytestream,
+        OutStream&                    bytestream,
   const GfxShader&                    shader) {
   if (!shader)
     return;
 
   auto binary = shader->getShaderBinary();
-
-  BytestreamWriter binaryWriter;
-  encodeSpirvBinary(binaryWriter, binary.size, binary.data);
-  std::vector<char> binaryData = std::move(binaryWriter).getData();
+  InMemoryStream memoryStream(binary.data, binary.size);
 
   bytestream.write(shader->getShaderStage());
-  bytestream.write(uint32_t(binaryData.size()));
-  bytestream.write(binaryData.size(), binaryData.data());
+  encodeSpirvBinary(bytestream, memoryStream, binary.size);
 }
 
 
 std::vector<char> GfxVulkanCompressedShaderBinaries::compress(
   const std::vector<char>&            data) {
-  BytestreamWriter writer;
-  encodeHuffmanBinary(writer, data.size(), data.data());
+  OutVectorStream writer;
+  encodeHuffmanBinary(writer, data.data(), data.size());
 
   return std::move(writer).getData();
 }

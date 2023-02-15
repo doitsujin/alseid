@@ -25,26 +25,26 @@ public:
   HuffmanCounter();
 
   /**
-   * \brief Initializes counters from byte stream
-   *
-   * \param [in] size Data size, in bytes
-   * \param [in] data Byte stream
-   */
-  HuffmanCounter(
-          size_t                        size,
-    const void*                         data);
-
-  /**
    * \brief Adds counters from another stream
    *
    * This is useful when accumulating data
    * from multiple streams.
-   * \param [in] size Data size, in bytes
    * \param [in] data Byte stream
+   * \param [in] size Data size, in bytes
    */
   void add(
-          size_t                        size,
-    const void*                         data);
+    const void*                         data,
+          size_t                        size);
+
+  /**
+   * \brief Adds counters from a stream object
+   *
+   * Convenience method that reads as many
+   * bytes as possible from the given stream.
+   * \param [in] reader Stream to read from
+   */
+  void add(
+          InStream&                     reader);
 
   /**
    * \brief Accumulates counters from another counter
@@ -90,14 +90,26 @@ public:
   /**
    * \brief Encodes data
    *
-   * \param [in] stream Bit stream
+   * \param [in] stream Bit stream to write to
    * \param [in] size Number of bytes to encode
    * \param [in] data Data to encode
+   * \returns \c true on success, \c false on error
    */
-  void encode(
+  bool encode(
           BitstreamWriter&              stream,
-          size_t                        size,
-    const void*                         data) const;
+    const void*                         data,
+          size_t                        size) const;
+
+  /**
+   * \brief Encodes data
+   *
+   * \param [in] stream Bit stream to write to
+   * \param [in] reader Source data stream
+   * \returns \c true on success, \c false on error
+   */
+  bool encode(
+          BitstreamWriter&              stream,
+          InStream&                     reader) const;
 
 private:
 
@@ -140,14 +152,15 @@ public:
   /**
    * \brief Decodes bit stream
    *
+   * \param [in] writer Byte stream to write to
    * \param [in] stream Bit stream
    * \param [in] size Size of the output stream, in bytes
-   * \param [in] data Output data
+   * \returns \c true on success, \c false on error
    */
-  void decode(
+  bool decode(
+          OutStream&                    writer,
           BitstreamReader&              stream,
-          size_t                        size,
-          void*                         data);
+          size_t                        size);
 
   /**
    * \brief Reads decoding table from bit stream
@@ -162,7 +175,7 @@ public:
    * \brief Writes decoding table to bit stream
    * \param [in] stream Bit stream to write to
    */
-  void write(
+  bool write(
           BitstreamWriter&              stream) const;
 
 private:
@@ -280,13 +293,14 @@ private:
  * The resulting binary will store the full decoding
  * table in addition to the compressed binary itself.
  * \param [in] writer Byte stream to write to
- * \param [in] size Number of bytes to encode
  * \param [in] data Data to encode
+ * \param [in] size Number of bytes to encode
+ * \returns \c true on success
  */
-void encodeHuffmanBinary(
-        BytestreamWriter&             writer,
-        size_t                        size,
-  const void*                         data);
+bool encodeHuffmanBinary(
+        OutStream&                    writer,
+  const void*                         data,
+        size_t                        size);
 
 
 /**
@@ -300,8 +314,7 @@ void encodeHuffmanBinary(
  * \returns \c true on success
  */
 bool decodeHuffmanBinary(
-        BytestreamWriter&             writer,
-        size_t                        size,
-  const void*                         data);
+        OutStream&                    writer,
+        InStream&                     reader);
 
 }

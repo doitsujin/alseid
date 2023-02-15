@@ -1,6 +1,5 @@
 #include <cstring>
 
-#include "../util/util_bytestream.h"
 #include "../util/util_string.h"
 
 #include "gfx_shader.h"

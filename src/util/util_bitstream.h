@@ -5,16 +5,16 @@
 #include <cstring>
 #include <vector>
 
-#include "util_bytestream.h"
 #include "util_likely.h"
+#include "util_stream.h"
 
 namespace as {
 
 /**
  * \brief Bitstream reader
  *
- * Helper class that allows reading individual bits
- * from an array in a reasonably performant manner.
+ * Helper class that allows reading individual bits from
+ * a memory stream in a reasonably performant manner.
  */
 class BitstreamReader {
 
@@ -25,26 +25,13 @@ public:
   /**
    * \brief Initializes bitstream reader
    *
-   * \param [in] size Size of the source array, in bytes
-   * \param [in] data Source data
+   * \param [in] stream Stream to read from
    */
-  BitstreamReader(
-          size_t                        size,
-    const void*                         data)
-  : m_data    (reinterpret_cast<const char*>(data))
-  , m_size    (size)
+  explicit BitstreamReader(
+          InStream&                     stream)
+  : m_stream  (&stream)
   , m_curr    (readQword())
   , m_next    (readQword()) { }
-
-  /**
-   * \brief Initializes bitstream reader from memory range
-   *
-   * Used when creating a bitstream from a \ref BytestreamReader.
-   * \param [in] memoryRange Memory range
-   */
-  BitstreamReader(
-          std::pair<size_t, const void*> memoryRange)
-  : BitstreamReader(memoryRange.first, memoryRange.second) { }
 
   /**
    * \brief Reads bits from source without advancing pointer
@@ -89,10 +76,7 @@ public:
 
 private:
 
-  const char* m_data = nullptr;
-
-  size_t    m_size    = 0;
-  size_t    m_offset  = 0;
+  InStream* m_stream  = nullptr;
 
   uint32_t  m_bit     = 0;
   uint64_t  m_curr    = 0;
@@ -100,20 +84,7 @@ private:
 
   uint64_t readQword() {
     uint64_t result = 0;
-
-    if (likely(m_offset + sizeof(result) <= m_size)) {
-      // Fast path, always read 8 bytes at once if we can
-      std::memcpy(&result, &m_data[m_offset], sizeof(result));
-      m_offset += sizeof(result);
-      return result;
-    } else if (m_offset < m_size) {
-      // Read as many bytes as there are left in the stream
-      size_t size = m_size - m_offset;
-      std::memcpy(&result, &m_data[m_offset], size);
-      m_offset += size;
-      return result;
-    }
-
+    m_stream->load(&result, sizeof(result));
     return result;
   }
 
@@ -132,9 +103,14 @@ public:
 
   BitstreamWriter() { }
 
+  /**
+   * \brief Initializes bitstream writer
+   *
+   * \param [in] stream Byte stream to write to
+   */
   BitstreamWriter(
-          BytestreamWriter&             byteStream)
-  : m_byteStream(&byteStream) { }
+          OutStream&                    stream)
+  : m_stream(&stream) { }
 
   ~BitstreamWriter() {
     if (m_bit)
@@ -147,22 +123,24 @@ public:
    * The number of bits to write \e must be between 1 and 64.
    * \param [in] data Data to write
    * \param [in] bits Number of bits to write from data
+   * \returns \c true on success, \c false otherwise
    */
-  void write(uint64_t data, uint32_t bits) {
+  bool write(uint64_t data, uint32_t bits) {
     const uint64_t qword = uint64_t(data) & ~(~1ull << (bits - 1));
 
     m_buffer |= qword << m_bit;
     m_bit += bits;
 
-    if (unlikely(m_bit >= 64)) {
-      m_byteStream->write(m_buffer);
+    if (likely(m_bit < 64))
+      return true;
 
-      m_bit -= 64;
+    bool success = m_stream->write(m_buffer);
+    m_bit -= 64;
 
-      // Handle the special case where the number of remaining
-      // bits is zero since we might otherwise shift by 64
-      m_buffer = m_bit ? qword >> (bits - m_bit) : 0ull;
-    }
+    // Handle the special case where the number of remaining
+    // bits is zero since we might otherwise shift by 64
+    m_buffer = m_bit ? qword >> (bits - m_bit) : 0ull;
+    return success;
   }
 
   /**
@@ -172,17 +150,20 @@ public:
    * stream. This can be called explicitly in order to
    * separate bit streams as it will end the current byte.
    */
-  void flush() {
+  bool flush() {
     uint32_t byteCount = (m_bit  + 7) / 8;
-    m_byteStream->write(byteCount, &m_buffer);
+    bool success = m_stream->write(&m_buffer, byteCount);
 
     m_buffer = 0;
     m_bit = 0;
+
+    success &= m_stream->flush();
+    return success;
   }
 
 private:
 
-  BytestreamWriter* m_byteStream = nullptr;
+  OutStream* m_stream = nullptr;
 
   uint32_t  m_bit     = 0;
   uint64_t  m_buffer  = 0;

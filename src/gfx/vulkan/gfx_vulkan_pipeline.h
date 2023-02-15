@@ -9,10 +9,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "../../util/util_bytestream.h"
 #include "../../util/util_hash.h"
 #include "../../util/util_lock_free.h"
 #include "../../util/util_small_vector.h"
+#include "../../util/util_stream.h"
 
 #include "../gfx_pipeline.h"
 #include "../gfx_shader.h"
@@ -628,7 +628,7 @@ private:
   std::vector<char> m_compressed;
 
   static void addBinary(
-          BytestreamWriter&             bytestream,
+          OutStream&                    bytestream,
     const GfxShader&                    shader);
 
   static std::vector<char> compress(

@@ -21,6 +21,7 @@ as_files = files([
   'util/util_hash.cpp',
   'util/util_huffman.cpp',
   'util/util_log.cpp',
+  'util/util_stream.cpp',
 
   'wsi/wsi.cpp',
 ])

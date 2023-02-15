@@ -14,16 +14,9 @@ HuffmanCounter::HuffmanCounter() {
 }
 
 
-HuffmanCounter::HuffmanCounter(
-        size_t                        size,
-  const void*                         data) {
-  add(size, data);
-}
-
-
 void HuffmanCounter::add(
-        size_t                        size,
-  const void*                         data) {
+  const void*                         data,
+        size_t                        size) {
   // Our Huffman implementation operates on 16-bit codes
   auto words = reinterpret_cast<const uint16_t*>(data);
   auto bytes = reinterpret_cast<const uint8_t*>(data);
@@ -34,6 +27,19 @@ void HuffmanCounter::add(
   // Deal with the last byte if there is one
   if (size & 1)
     m_counts[uint8_t(bytes[size - 1])] += 1;
+}
+
+
+void HuffmanCounter::add(
+        InStream&                     reader) {
+  std::array<char, 4096> buffer;
+
+  size_t read;
+
+  do {
+    read = reader.load(buffer.data(), buffer.size());
+    add(buffer.data(), read);
+  } while (read);
 }
 
 
@@ -56,22 +62,44 @@ HuffmanEncoder::~HuffmanEncoder() {
 }
 
 
-void HuffmanEncoder::encode(
+bool HuffmanEncoder::encode(
         BitstreamWriter&              stream,
-        size_t                        size,
-  const void*                         data) const {
+  const void*                         data,
+        size_t                        size) const {
+  bool success = true;
+
   auto words = reinterpret_cast<const uint16_t*>(data);
   auto bytes = reinterpret_cast<const uint8_t*>(data);
 
   for (size_t i = 0; i < size / 2; i++) {
     auto& e = m_entries[words[i]];
-    stream.write(getCodeBits(e), e.bitCount);
+    success &= stream.write(getCodeBits(e), e.bitCount);
   }
 
   if (size & 1) {
     auto& e = m_entries[uint8_t(bytes[size - 1])];
-    stream.write(getCodeBits(e), e.bitCount);
+    success &= stream.write(getCodeBits(e), e.bitCount);
   }
+
+  return success;
+}
+
+
+bool HuffmanEncoder::encode(
+        BitstreamWriter&              stream,
+        InStream&                     reader) const {
+  std::array<char, 4096> buffer;
+
+  size_t read;
+
+  do {
+    read = reader.load(buffer.data(), buffer.size());
+
+    if (!encode(stream, buffer.data(), read))
+      return false;
+  } while (read);
+
+  return true;
 }
 
 
@@ -102,16 +130,13 @@ HuffmanDecoder::HuffmanDecoder() {
 }
 
 
-void HuffmanDecoder::decode(
+bool HuffmanDecoder::decode(
+        OutStream&                    writer,
         BitstreamReader&              stream,
-        size_t                        size,
-        void*                         data) {
-  auto words = reinterpret_cast<uint16_t*>(data);
-  auto bytes = reinterpret_cast<uint8_t*>(data);
+        size_t                        size) {
+  bool success = true;
 
-  size_t written = 0;
-
-  while (written < size) {
+  for (uint32_t i = 0; i < size; i += 2) {
     // Perform a lookup in the 16-bit lookup table. In
     // many cases this will lead us to a leaf node.
     const Entry* e = &m_lookup[stream.peek(16)];
@@ -135,14 +160,13 @@ void HuffmanDecoder::decode(
 
     uint16_t code = e->data;
 
-    if (likely(written + 2 <= size)) {
-      words[written / 2] = code;
-      written += 2;
-    } else {
-      bytes[written] = uint8_t(code);
-      written += 1;
-    }
+    if (likely(i + 2 <= size))
+      success &= writer.write(code);
+    else
+      success &= writer.write(uint8_t(code));
   }
+
+  return success;
 }
 
 
@@ -172,8 +196,10 @@ bool HuffmanDecoder::read(
 }
 
 
-void HuffmanDecoder::write(
+bool HuffmanDecoder::write(
         BitstreamWriter&              stream) const {
+  bool success = true;
+
   // The entry count is always odd, so we don't need to store
   // the last bit. This way it will always fit into 16 bits.
   stream.write(encodeOffset(m_entryCount), 16);
@@ -184,9 +210,11 @@ void HuffmanDecoder::write(
   for (uint32_t i = 0; i < m_entryCount; i++) {
     auto& e = m_entries[i];
 
-    stream.write(e.bits, 5);
-    stream.write(e.data, 16);
+    success &= stream.write(e.bits, 5);
+    success &= stream.write(e.data, 16);
   }
+
+  return success;
 }
 
 
@@ -447,27 +475,29 @@ uint32_t HuffmanTrie::traverse(
 
 
 
-void encodeHuffmanBinary(
-        BytestreamWriter&             writer,
-        size_t                        size,
-  const void*                         data) {
+bool encodeHuffmanBinary(
+        OutStream&                    writer,
+  const void*                         data,
+        size_t                        size) {
   BitstreamWriter bitstream(writer);
 
-  HuffmanTrie trie(HuffmanCounter(size, data));
+  HuffmanCounter counter;
+  counter.add(data, size);
+
+  HuffmanTrie trie(counter);
   HuffmanEncoder encoder = trie.createEncoder();
   HuffmanDecoder decoder = trie.createDecoder();
 
-  decoder.write(bitstream);
-  bitstream.write(uint32_t(size), 32);
-  encoder.encode(bitstream, size, data);
+  return decoder.write(bitstream)
+      && bitstream.write(uint32_t(size), 32)
+      && encoder.encode(bitstream, data, size);
 }
 
 
 bool decodeHuffmanBinary(
-        BytestreamWriter&             writer,
-        size_t                        size,
-  const void*                         data) {
-  BitstreamReader bitstream(size, data);
+        OutStream&                    writer,
+        InStream&                     reader) {
+  BitstreamReader bitstream(reader);
 
   HuffmanDecoder decoder;
 
@@ -475,7 +505,7 @@ bool decodeHuffmanBinary(
     return false;
 
   uint32_t byteCount = bitstream.read(32);
-  decoder.decode(bitstream, byteCount, writer.alloc(byteCount));
+  decoder.decode(writer, bitstream, byteCount);
   return true;
 }
 
