@@ -37,6 +37,25 @@ bool decodeSpirvBinary(
 
 
 /**
+ * \brief Computes size of decoded SPIR-V binary
+ *
+ * \param [in] reader Stream containing compressed binary.
+ *    Note that this takes a copy of the stream.
+ * \returns Size of the decompressed binary, in bytes,
+ *    or \c 0 if the binary is invalid.
+ */
+template<typename Stream>
+size_t getDecodedSpirvSize(
+        Stream                        reader) {
+  uint32_t dwordsTotal = 0;
+
+  return reader.read(dwordsTotal)
+    ? size_t(dwordsTotal * sizeof(uint32_t))
+    : size_t(0);
+}
+
+
+/**
  * \brief Gets shader description for a SPIR-V binary
  *
  * Note that the module name will be set to \c nullptr.

@@ -580,61 +580,45 @@ private:
 };
 
 
-/**
- * \brief Shader binary metadata
- */
-struct GfxVulkanShaderBinary {
-  GfxShaderStage stage;
-  uint32_t offset;
-  uint32_t size;
-};
-
-
-/**
- * \brief Decompressed shader binaries
- */
-struct GfxVulkanShaderStageInfo {
-  std::vector<char> data;
+struct GfxVulkanGraphicsShaderStages {
+  uint32_t freeMask = 0;
   small_vector<VkShaderModuleCreateInfo, 5> moduleInfo;
   small_vector<VkPipelineShaderStageCreateInfo, 5> stageInfo;
 };
 
 
 /**
- * \brief Compressed shader binaries
+ * \brief Graphics shaders
  */
-class GfxVulkanCompressedShaderBinaries {
+class GfxVulkanGraphicsShaders {
 
 public:
 
-  GfxVulkanCompressedShaderBinaries(
+  explicit GfxVulkanGraphicsShaders(
     const GfxGraphicsPipelineDesc&      desc);
 
-  GfxVulkanCompressedShaderBinaries(
+  explicit GfxVulkanGraphicsShaders(
     const GfxMeshPipelineDesc&          desc);
 
   /**
-   * \brief Decodes compressed binaries initializes shader module info
+   * \brief Sets up shader stage info
    *
    * \param [in] manager Pipeline manager
-   * \param [out] shaders Shader stage info
+   * \returns Shader stage info
    */
-  void getShaderStageInfo(
-        GfxVulkanPipelineManager&       manager,
-        GfxVulkanShaderStageInfo&       shaders) const;
+  GfxVulkanGraphicsShaderStages getShaderStageInfo(
+          GfxVulkanPipelineManager&     mgr) const;
 
 private:
 
-  std::vector<char> m_compressed;
+  small_vector<GfxShader, 5> m_shaders;
 
-  static void addBinary(
-          OutStream&                    bytestream,
+  void addShader(
     const GfxShader&                    shader);
 
-  static std::vector<char> compress(
-    const std::vector<char>&            data);
-
 };
+
+
 
 
 /**
@@ -816,6 +800,7 @@ private:
 
   GfxVulkanPipelineManager&         m_mgr;
   const GfxVulkanPipelineLayout&    m_layout;
+  GfxVulkanGraphicsShaders          m_shaders;
 
   GfxVulkanGraphicsPipelineVariant  m_library;
   VkBool32                          m_sampleRateShading = VK_FALSE;
@@ -827,7 +812,6 @@ private:
   std::mutex                        m_optimizedMutex;
   LockFreeList<OptimizedVariant>    m_optimizedVariants;
 
-  GfxVulkanCompressedShaderBinaries m_binaries;
   std::atomic<bool>                 m_isAvailable = { false };
 
   GfxVulkanGraphicsPipelineVariant lookupLinked(
@@ -912,7 +896,7 @@ private:
   GfxVulkanPipelineManager&       m_mgr;
   const GfxVulkanPipelineLayout&  m_layout;
 
-  std::optional<GfxComputePipelineDesc> m_desc;
+  GfxComputePipelineDesc    m_desc;
 
   std::mutex                m_mutex;
   std::atomic<VkPipeline>   m_pipeline = { VK_NULL_HANDLE };
@@ -955,8 +939,10 @@ public:
    * \param [in] binary Shader binary
    * \param [in] stageInfo Vulkan shader stage info
    * \param [in] moduleInfo Vulkan shader module info
+   * \returns \c true if the code in the returned
+   *    shader module create info must be freed
    */
-  void initShaderStage(
+  bool initShaderStage(
           GfxShaderStage                stage,
           GfxShaderBinary               binary,
           VkPipelineShaderStageCreateInfo& stageInfo,

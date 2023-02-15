@@ -632,96 +632,48 @@ GfxVulkanFragmentOutputState::~GfxVulkanFragmentOutputState() {
 
 
 
-GfxVulkanCompressedShaderBinaries::GfxVulkanCompressedShaderBinaries(
+GfxVulkanGraphicsShaders::GfxVulkanGraphicsShaders(
   const GfxGraphicsPipelineDesc&      desc) {
-  OutVectorStream bytestream;
-  addBinary(bytestream, desc.vertex);
-  addBinary(bytestream, desc.tessControl);
-  addBinary(bytestream, desc.tessEval);
-  addBinary(bytestream, desc.geometry);
-  addBinary(bytestream, desc.fragment);
-
-  m_compressed = compress(std::move(bytestream).getData());
+  addShader(desc.vertex);
+  addShader(desc.tessControl);
+  addShader(desc.tessEval);
+  addShader(desc.geometry);
+  addShader(desc.fragment);
 }
 
 
-GfxVulkanCompressedShaderBinaries::GfxVulkanCompressedShaderBinaries(
+GfxVulkanGraphicsShaders::GfxVulkanGraphicsShaders(
   const GfxMeshPipelineDesc&          desc) {
-  OutVectorStream bytestream;
-  addBinary(bytestream, desc.task);
-  addBinary(bytestream, desc.mesh);
-  addBinary(bytestream, desc.fragment);
-
-  m_compressed = compress(std::move(bytestream).getData());
+  addShader(desc.task);
+  addShader(desc.mesh);
+  addShader(desc.fragment);
 }
 
 
-void GfxVulkanCompressedShaderBinaries::getShaderStageInfo(
-        GfxVulkanPipelineManager&       manager,
-        GfxVulkanShaderStageInfo&       shaders) const {
-  // Decode Huffman-compressed data
-  InMemoryStream compressed(m_compressed);
-  OutVectorStream writer;
+GfxVulkanGraphicsShaderStages GfxVulkanGraphicsShaders::getShaderStageInfo(
+        GfxVulkanPipelineManager&     mgr) const {
+  GfxVulkanGraphicsShaderStages result;
+  result.moduleInfo.resize(m_shaders.size());
+  result.stageInfo.resize(m_shaders.size());
 
-  if (!decodeHuffmanBinary(writer, compressed))
-    throw Error("Vulkan: Failed to decompress SPIR-V binaries");
+  for (uint32_t i = 0; i < m_shaders.size(); i++) {
+    bool freeCode = mgr.initShaderStage(
+      m_shaders[i]->getShaderStage(),
+      m_shaders[i]->getShaderBinary(),
+      result.stageInfo[i], result.moduleInfo[i]);
 
-  // In the next step, decode individual binaries
-  auto data = std::move(writer).getData();
-  InMemoryStream reader(data);
-  OutVectorStream decompressed;
-
-  small_vector<GfxVulkanShaderBinary, 5> metadata;
-  GfxVulkanShaderBinary binary;
-
-  while (reader.read(binary.stage)) {
-    binary.offset = decompressed.getSize();
-
-    if (!decodeSpirvBinary(decompressed, reader))
-      throw Error("Vulkan: Failed to decode SPIR-V binaries");
-
-    binary.size = decompressed.getSize() - binary.offset;
-    metadata.push_back(binary);
+    if (freeCode)
+      result.freeMask |= 1u << i;
   }
 
-  shaders.data = std::move(decompressed).getData();
-
-  // Finally, initialize shader module info
-  shaders.moduleInfo.resize(metadata.size());
-  shaders.stageInfo.resize(metadata.size());
-
-  for (size_t i = 0; i < metadata.size(); i++) {
-    GfxShaderBinary binary = { };
-    binary.format = GfxShaderFormat::eVulkanSpirv;
-    binary.size = metadata[i].size;
-    binary.data = &shaders.data[metadata[i].offset];
-
-    manager.initShaderStage(metadata[i].stage, binary,
-      shaders.stageInfo[i], shaders.moduleInfo[i]);
-  }
+  return result;
 }
 
 
-void GfxVulkanCompressedShaderBinaries::addBinary(
-        OutStream&                    bytestream,
+void GfxVulkanGraphicsShaders::addShader(
   const GfxShader&                    shader) {
-  if (!shader)
-    return;
-
-  auto binary = shader->getShaderBinary();
-  InMemoryStream memoryStream(binary.data, binary.size);
-
-  bytestream.write(shader->getShaderStage());
-  encodeSpirvBinary(bytestream, memoryStream, binary.size);
-}
-
-
-std::vector<char> GfxVulkanCompressedShaderBinaries::compress(
-  const std::vector<char>&            data) {
-  OutVectorStream writer;
-  encodeHuffmanBinary(writer, data.data(), data.size());
-
-  return std::move(writer).getData();
+  if (shader)
+    m_shaders.push_back(shader);
 }
 
 
@@ -769,9 +721,9 @@ GfxVulkanGraphicsPipeline::GfxVulkanGraphicsPipeline(
 : GfxGraphicsPipelineIface(desc)
 , m_mgr               (mgr)
 , m_layout            (layout)
+, m_shaders           (desc)
 , m_sampleRateShading (hasSampleRateShading(desc.fragment))
 , m_canLink           (canFastLink())
-, m_binaries          (desc)
 , m_isAvailable       (!m_canLink) {
 
 }
@@ -784,9 +736,9 @@ GfxVulkanGraphicsPipeline::GfxVulkanGraphicsPipeline(
 : GfxGraphicsPipelineIface(desc)
 , m_mgr               (mgr)
 , m_layout            (layout)
+, m_shaders           (desc)
 , m_sampleRateShading (hasSampleRateShading(desc.fragment))
 , m_canLink           (canFastLink())
-, m_binaries          (desc)
 , m_isAvailable       (!m_canLink) {
 
 }
@@ -914,8 +866,7 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createLibraryLocked(
   // Set up shader stages. Since this path will only ever be hit
   // if graphics pipeline libraries are supported, we don't need
   // to worry about destroying shader modules later.
-  GfxVulkanShaderStageInfo shaderStages;
-  m_binaries.getShaderStageInfo(m_mgr, shaderStages);
+  GfxVulkanGraphicsShaderStages shaderStages = m_shaders.getShaderStageInfo(m_mgr);
 
   // All depth-stencil and rasteriaztion state is dynamic. Additionally,
   // multisample state is dynamic if sample rate shading is used.
@@ -1018,6 +969,11 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createLibraryLocked(
   VkResult vr = vk.vkCreateGraphicsPipelines(vk.device,
     VK_NULL_HANDLE, 1, &info, nullptr, &m_library.pipeline);
 
+  for (uint32_t i = 0; i < shaderStages.moduleInfo.size(); i++) {
+    if (shaderStages.freeMask & (1u << i))
+      std::free(const_cast<uint32_t*>(shaderStages.moduleInfo[i].pCode));
+  }
+
   if (vr)
     throw VulkanError("Vulkan: Failed to create shader library", vr);
 
@@ -1040,8 +996,7 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
   auto& rtInfo = static_cast<GfxVulkanRenderTargetState&>(*state.renderTargetState);
 
   // Set up shader stages.
-  GfxVulkanShaderStageInfo shaderStages;
-  m_binaries.getShaderStageInfo(m_mgr, shaderStages);
+  GfxVulkanGraphicsShaderStages shaderStages = m_shaders.getShaderStageInfo(m_mgr);
 
   // Set up state objects. We typically don't have
   // a large number of dynamic states here.
@@ -1110,6 +1065,9 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
   for (size_t i = 0; i < shaderStages.stageInfo.size(); i++) {
     if (shaderStages.stageInfo[i].module)
       vk.vkDestroyShaderModule(vk.device, shaderStages.stageInfo[i].module, nullptr);
+
+    if (shaderStages.freeMask & (1u << i))
+      std::free(const_cast<uint32_t*>(shaderStages.moduleInfo[i].pCode));
   }
 
   if (vr)
@@ -1307,9 +1265,9 @@ VkPipeline GfxVulkanComputePipeline::createPipelineLocked() {
   pipelineInfo.layout = m_layout.getLayout();
   pipelineInfo.basePipelineIndex = -1;
 
-  m_mgr.initShaderStage(
-    m_desc->compute->getShaderStage(),
-    m_desc->compute->getShaderBinary(),
+  bool freeCode = m_mgr.initShaderStage(
+    m_desc.compute->getShaderStage(),
+    m_desc.compute->getShaderBinary(),
     pipelineInfo.stage, moduleInfo);
 
   VkPipeline pipeline = VK_NULL_HANDLE;
@@ -1320,15 +1278,18 @@ VkPipeline GfxVulkanComputePipeline::createPipelineLocked() {
   if (pipelineInfo.stage.module)
     vk.vkDestroyShaderModule(vk.device, pipelineInfo.stage.module, nullptr);
 
-  if (vr)
-    throw VulkanError(strcat("Vulkan: Failed to create compute pipeline (shader: ", m_desc->compute->getDebugName(), ")").c_str(), vr);
+  if (freeCode)
+    std::free(const_cast<uint32_t*>(moduleInfo.pCode));
 
-  m_mgr.device().setDebugName(pipeline, m_desc->compute->getDebugName());
+  if (vr)
+    throw VulkanError(strcat("Vulkan: Failed to create compute pipeline (shader: ", m_desc.compute->getDebugName(), ")").c_str(), vr);
+
+  m_mgr.device().setDebugName(pipeline, m_desc.compute->getDebugName());
   m_pipeline.store(pipeline);
 
-  // Destroy the contained pipeline description so
-  // that we don't unnecessarily hold shader objects
-  m_desc.reset();
+  // Reset the contained pipeline description so that
+  // we don't unnecessarily hold the shader object
+  m_desc = GfxComputePipelineDesc();
   return pipeline;
 }
 
@@ -1358,7 +1319,7 @@ GfxVulkanPipelineManager::~GfxVulkanPipelineManager() {
 }
 
 
-void GfxVulkanPipelineManager::initShaderStage(
+bool GfxVulkanPipelineManager::initShaderStage(
         GfxShaderStage                stage,
         GfxShaderBinary               binary,
         VkPipelineShaderStageCreateInfo& stageInfo,
@@ -1366,8 +1327,27 @@ void GfxVulkanPipelineManager::initShaderStage(
   auto& vk = m_device.vk();
 
   moduleInfo = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
-  moduleInfo.codeSize = binary.size;
-  moduleInfo.pCode = reinterpret_cast<const uint32_t*>(binary.data);
+
+  switch (binary.format) {
+    case GfxShaderFormat::eVulkanSpirv: {
+      moduleInfo.codeSize = binary.size;
+      moduleInfo.pCode = reinterpret_cast<const uint32_t*>(binary.data);
+    } break;
+
+    case GfxShaderFormat::eVulkanSpirvCompressed: {
+      InMemoryStream compressed(binary.data, binary.size);
+      moduleInfo.codeSize = getDecodedSpirvSize(compressed);
+
+      void* buffer = std::malloc(moduleInfo.codeSize);
+      moduleInfo.pCode = reinterpret_cast<uint32_t*>(buffer);
+
+      OutMemoryStream stream(buffer, moduleInfo.codeSize);
+      decodeSpirvBinary(stream, compressed);
+    } break;
+
+    default:
+      throw VulkanError("Vulkan: Unsupported shader binary format", VK_ERROR_UNKNOWN);
+  }
 
   stageInfo = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO };
   stageInfo.stage = getVkShaderStage(stage);
@@ -1383,6 +1363,8 @@ void GfxVulkanPipelineManager::initShaderStage(
     if (vr)
       throw VulkanError("Vulkan: Failed to create shader module", vr);
   }
+
+  return binary.format != GfxShaderFormat::eVulkanSpirv;
 }
 
 

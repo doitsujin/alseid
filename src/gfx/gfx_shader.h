@@ -20,8 +20,9 @@ namespace as {
  * \brief Shader binary format
  */
 enum class GfxShaderFormat : uint16_t {
-  eUnknown      = 0,
-  eVulkanSpirv  = 1,
+  eUnknown                = 0,
+  eVulkanSpirv            = 1,
+  eVulkanSpirvCompressed  = 2,
   eCount
 };
 
