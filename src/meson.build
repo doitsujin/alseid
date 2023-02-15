@@ -14,6 +14,7 @@ as_files = files([
 
   'io/io.cpp',
   'io/io_request.cpp',
+  'io/io_stream.cpp',
 
   'jobs/job.cpp',
   'jobs/job_manager.cpp',
