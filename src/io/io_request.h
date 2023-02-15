@@ -18,7 +18,17 @@ namespace as {
  * A callback that will be called after completion.
  * Takes the request status as an argument.
  */
-using IoCallback = std::function<void (IoStatus)>;
+using IoRequestCallback = std::function<void (IoStatus)>;
+
+
+/**
+ * \brief I/O operation callback
+ *
+ * This is executed on successful completion of a single
+ * request. If the callback returns an error, the entire
+ * request will be treated as failed.
+ */
+using IoCallback = std::function<IoStatus ()>;
 
 
 /**
@@ -32,6 +42,7 @@ struct IoBufferedRequest {
   uint64_t    size    = 0;
   const void* src     = nullptr;
   void*       dst     = nullptr;
+  IoCallback  cb;
 };
 
 
@@ -86,7 +97,7 @@ public:
    * \param [in] callback Callback
    */
   void executeOnCompletion(
-          IoCallback&&                  callback);
+          IoRequestCallback             callback);
 
   /**
    * \brief Enqueues a read operation
@@ -100,7 +111,40 @@ public:
           IoFile                        file,
           uint64_t                      offset,
           uint64_t                      size,
-          void*                         dst);
+          void*                         dst) {
+    auto& item = allocItem();
+    item.file = std::move(file);
+    item.offset = offset;
+    item.size = size;
+    item.dst = dst;
+  }
+
+  /**
+   * \brief Enqueues a read operation with a callback
+   *
+   * \param [in] file File to read from
+   * \param [in] offset Offset within the file
+   * \param [in] size Number of bytes to read
+   * \param [in] dst Pointer to write read data to
+   * \param [in] callback Callback. Takes a pointer to
+   *    the destination data and the number of bytes read.
+   */
+  template<typename Cb>
+  void read(
+          IoFile                        file,
+          uint64_t                      offset,
+          uint64_t                      size,
+          void*                         dst,
+          Cb&&                          callback) {
+    auto& item = allocItem();
+    item.file = std::move(file);
+    item.offset = offset;
+    item.size = size;
+    item.dst = dst;
+    item.cb = IoCallback([cb = std::move(callback), dst, size] () {
+      return cb(dst, size);
+    });
+  }
 
   /**
    * \brief Enqueues a write operation
@@ -114,7 +158,40 @@ public:
           IoFile                        file,
           uint64_t                      offset,
           uint64_t                      size,
-    const void*                         src);
+    const void*                         src) {
+    auto& item = allocItem();
+    item.file = std::move(file);
+    item.offset = offset;
+    item.size = size;
+    item.src = src;
+  }
+
+  /**
+   * \brief Enqueues a write operation with callback
+   *
+   * \param [in] file File to write to
+   * \param [in] offset Offset within the file
+   * \param [in] size Number of bytes to write
+   * \param [in] src Pointer to read source data from
+   * \param [in] callback Callback. Takes a pointer to
+   *    the source data and the number of bytes written.
+   */
+  template<typename Cb>
+  void write(
+          IoFile                        file,
+          uint64_t                      offset,
+          uint64_t                      size,
+    const void*                         src,
+          Cb&&                          callback) {
+    auto& item = allocItem();
+    item.file = std::move(file);
+    item.offset = offset;
+    item.size = size;
+    item.src = src;
+    item.cb = IoCallback([cb = std::move(callback), src, size] () {
+      return cb(src, size);
+    });
+  }
 
 protected:
 
@@ -122,12 +199,14 @@ protected:
   std::condition_variable     m_cond;
   std::atomic<IoStatus>       m_status = { IoStatus::eReset };
 
-  small_vector<IoCallback, 4> m_callbacks;
+  small_vector<IoRequestCallback, 4> m_callbacks;
 
   small_vector<IoBufferedRequest, 16> m_items;
 
   void setStatus(
           IoStatus                      status);
+
+  IoBufferedRequest& allocItem();
 
 };
 

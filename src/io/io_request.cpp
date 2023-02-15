@@ -24,7 +24,7 @@ IoStatus IoRequestIface::wait() {
 
 
 void IoRequestIface::executeOnCompletion(
-        IoCallback&&                  callback) {
+        IoRequestCallback             callback) {
   // Retrieve status in a locked context to ensure that no
   // notify call happens between us retrieving the status
   // and deciding what to do with the callback 
@@ -42,32 +42,6 @@ void IoRequestIface::executeOnCompletion(
 
   // Execute callback immediately with the completion status.
   callback(status);
-}
-
-
-void IoRequestIface::read(
-        IoFile                        file,
-        uint64_t                      offset,
-        uint64_t                      size,
-        void*                         dst) {
-  auto& item = m_items.emplace_back();
-  item.file = std::move(file);
-  item.offset = offset;
-  item.size = size;
-  item.dst = dst;
-}
-
-
-void IoRequestIface::write(
-        IoFile                        file,
-        uint64_t                      offset,
-        uint64_t                      size,
-  const void*                         src) {
-  auto& item = m_items.emplace_back();
-  item.file = std::move(file);
-  item.offset = offset;
-  item.size = size;
-  item.src = src;
 }
 
 
@@ -95,6 +69,11 @@ void IoRequestIface::setStatus(
 
     m_callbacks.clear();
   }
+}
+
+
+IoBufferedRequest& IoRequestIface::allocItem() {
+  return m_items.emplace_back();
 }
 
 }

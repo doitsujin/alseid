@@ -25,6 +25,9 @@ void IoStlRequest::execute() {
     else if (item.src)
       status = file.write(item.offset, item.size, item.src);
 
+    if (status == IoStatus::eSuccess && item.cb)
+      status = item.cb();
+
     if (status == IoStatus::eError)
       break;
   }

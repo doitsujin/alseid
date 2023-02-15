@@ -15,6 +15,9 @@ IoUringRequest::~IoUringRequest() {
 void IoUringRequest::notify(
         uint32_t                      index,
         IoStatus                      status) {
+  if (status == IoStatus::eSuccess && m_items[index].cb)
+    status = m_items[index].cb();
+
   if (status != IoStatus::eSuccess)
     m_pendingStatus = status;
 
