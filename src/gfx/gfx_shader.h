@@ -10,6 +10,7 @@
 #include "../util/util_hash.h"
 #include "../util/util_iface.h"
 #include "../util/util_likely.h"
+#include "../util/util_stream.h"
 #include "../util/util_types.h"
 
 #include "gfx_types.h"
@@ -101,6 +102,27 @@ struct GfxShaderDesc {
    *  by set index, and then by descriptor index, in
    *  ascending order. */
   std::vector<GfxShaderBinding> bindings;
+
+  /**
+   * \brief Writes shader description to stream
+   *
+   * Note that the debug name will \e not be included,
+   * since this can be set to the file name itself.
+   * \param [in] stream Stream to write to
+   * \returns \c true on success
+   */
+  bool serialize(
+          OutStream&                    stream) const;
+
+  /**
+   * \brief Reads shader description from stream
+   *
+   * \param [in] stream Stream to read from
+   * \returns \c true on success
+   */
+  bool deserialize(
+          InStream&                     stream);
+
 };
 
 

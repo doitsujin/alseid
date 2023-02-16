@@ -55,4 +55,18 @@ inline Extent3D gfxComputeWorkgroupCount(
   return (threadCount + workgroupSize - 1) / workgroupSize;
 }
 
+
+/**
+ * \brief Checks whether the given shader stage uses workgroups
+ *
+ * \param [in] stage Shader stage to check
+ * \returns \c true if the stage uses workgroups
+ */
+inline bool gfxShaderStageHasWorkgroupSize(
+        GfxShaderStage                  stage) {
+  return stage == GfxShaderStage::eCompute
+      || stage == GfxShaderStage::eTask
+      || stage == GfxShaderStage::eMesh;
+}
+
 }

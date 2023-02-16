@@ -178,23 +178,6 @@ public:
     // Retrieve basic info about the entry point
     GfxShaderDesc result = { };
 
-    Extent3D workgroupSize;
-    
-    if (entryPoint->workgroup_size.constant) {
-      Log::err("SPIR-V: Workgroup size defined as constant, this is currently not supported");
-      return std::nullopt;
-    } else if (entryPoint->workgroup_size.id_x) {
-      workgroupSize = Extent3D(
-        get<spirv_cross::SPIRConstant>(entryPoint->workgroup_size.id_x).m.c[0].r[0].u32,
-        get<spirv_cross::SPIRConstant>(entryPoint->workgroup_size.id_y).m.c[0].r[0].u32,
-        get<spirv_cross::SPIRConstant>(entryPoint->workgroup_size.id_z).m.c[0].r[0].u32);
-    } else {
-      workgroupSize = Extent3D(
-        entryPoint->workgroup_size.x,
-        entryPoint->workgroup_size.y,
-        entryPoint->workgroup_size.z);
-    }
-
     switch (entryPoint->model) {
       case spv::ExecutionModelVertex:
         result.stage = GfxShaderStage::eVertex;
@@ -218,22 +201,36 @@ public:
 
       case spv::ExecutionModelGLCompute:
         result.stage = GfxShaderStage::eCompute;
-        result.workgroupSize = workgroupSize;
         break;
 
       case spv::ExecutionModelMeshEXT:
         result.stage = GfxShaderStage::eMesh;
-        result.workgroupSize = workgroupSize;
         break;
 
       case spv::ExecutionModelTaskEXT:
         result.stage = GfxShaderStage::eTask;
-        result.workgroupSize = workgroupSize;
         break;
 
       default:
         Log::warn("SPIR-V: Unhandled execution model ", uint32_t(entryPoint->model));
         return std::nullopt;
+    }
+
+    if (gfxShaderStageHasWorkgroupSize(result.stage)) {
+      if (entryPoint->workgroup_size.constant) {
+        Log::err("SPIR-V: Workgroup size defined as constant, this is currently not supported");
+        return std::nullopt;
+      } else if (entryPoint->workgroup_size.id_x) {
+        result.workgroupSize = Extent3D(
+          get<spirv_cross::SPIRConstant>(entryPoint->workgroup_size.id_x).m.c[0].r[0].u32,
+          get<spirv_cross::SPIRConstant>(entryPoint->workgroup_size.id_y).m.c[0].r[0].u32,
+          get<spirv_cross::SPIRConstant>(entryPoint->workgroup_size.id_z).m.c[0].r[0].u32);
+      } else {
+        result.workgroupSize = Extent3D(
+          entryPoint->workgroup_size.x,
+          entryPoint->workgroup_size.y,
+          entryPoint->workgroup_size.z);
+      }
     }
 
     // Retrieve shader resources for the given entry point
