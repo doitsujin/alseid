@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -494,7 +495,8 @@ struct Box3D {
  * Used in various binary formats.
  */
 struct FourCC {
-  FourCC() { }
+  FourCC() = default;
+
   FourCC(char c0, char c1, char c2, char c3) {
     c[0] = c0;
     c[1] = c1;
@@ -502,10 +504,17 @@ struct FourCC {
     c[3] = c3;
   }
 
-  char c[4] = { '\0', '\0', '\0', '\0' };
+  char c[4];
 
   bool operator == (const FourCC&) const = default;
   bool operator != (const FourCC&) const = default;
+
+  std::string toString() const {
+    std::string result(4, '\0');
+    for (size_t i = 0; i < 4; i++)
+      result[i] = c[i];
+    return result;
+  }
 };
 
 }

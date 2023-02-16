@@ -13,6 +13,7 @@ as_files = files([
   'gfx/debug/gfx_debug_device.cpp',
 
   'io/io.cpp',
+  'io/io_archive.cpp',
   'io/io_request.cpp',
   'io/io_stream.cpp',
 
