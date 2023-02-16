@@ -33,6 +33,15 @@ public:
   void setPending();
 
   /**
+   * \brief Checks whether a given request has a callback
+   *
+   * \param [in] index Sub-request index
+   * \returns \c true if a callback is present
+   */
+  bool hasCallback(
+          uint32_t                      index);
+
+  /**
    * \brief Processes requests
    *
    * Iterates over all buffered requests.
@@ -50,8 +59,8 @@ public:
 
 private:
 
-  uint32_t  m_pendingCount = 0u;
-  IoStatus  m_pendingStatus = IoStatus::eSuccess;
+  std::atomic<uint32_t> m_pendingCount  = { 0u };
+  std::atomic<IoStatus> m_pendingStatus = { IoStatus::eSuccess };
 
 };
 

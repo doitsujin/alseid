@@ -78,14 +78,21 @@ public:
 
   /**
    * \brief Initializes I/O system with the given backend
-   * \param [in] backend The preferred I/O backend.
+   *
+   * \param [in] backend The preferred I/O backend
+   * \param [in] workerCount Number of worker threads. The
+   *    backend will always create at least one worker to
+   *    process request callbacks on.
    */
-  Io(IoBackend backend);
+  Io(
+          IoBackend                     backend,
+          uint32_t                      workerCount);
 
 private:
 
   static std::shared_ptr<IoIface> initBackend(
-          IoBackend                     backend);
+          IoBackend                     backend,
+          uint32_t                      workerCount);
 
 };
 

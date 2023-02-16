@@ -76,8 +76,9 @@ public:
   /**
    * \brief Waits for request completion
    *
-   * Blocks the calling thread until the request
-   * completes either successfully or with an error.
+   * Blocks the calling thread until the request completes either
+   * successfully or with an error. This includes the competion
+   * of all per-request callbacks.
    * \returns Request status after waiting
    */
   IoStatus wait();
@@ -122,6 +123,9 @@ public:
   /**
    * \brief Enqueues a read operation with a callback
    *
+   * The callback may perform expensive operations such as
+   * decompression, and will be scheduled to a worker thread
+   * after the I/O operation itself has completed.
    * \param [in] file File to read from
    * \param [in] offset Offset within the file
    * \param [in] size Number of bytes to read

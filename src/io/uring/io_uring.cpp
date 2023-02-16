@@ -7,7 +7,8 @@
 
 namespace as {
 
-IoUring::IoUring() {
+IoUring::IoUring(
+        uint32_t                      workerCount) {
   Log::info("Initializing io_uring I/O");
 
   // Initialize file descriptor table with invalid FDs
@@ -29,6 +30,13 @@ IoUring::IoUring() {
     Log::warn("IoUring: io_uring_register_files_sparse() failed, using plain fds");
 
   m_consumer = std::thread([this] { consume(); });
+
+  // Start worker threads
+  workerCount = std::max(workerCount, 1u);
+  m_callbackWorkers.reserve(workerCount);
+
+  for (uint32_t i = 0; i < workerCount; i++)
+    m_callbackWorkers.emplace_back([this] { notify(); });
 }
 
 
@@ -36,6 +44,7 @@ IoUring::~IoUring() {
   Log::info("Shutting down io_uring I/O");
 
   std::unique_lock lock(m_mutex);
+  std::unique_lock callbackLock(m_callbackMutex);
   submit();
 
   m_stop = true;
@@ -43,7 +52,13 @@ IoUring::~IoUring() {
   m_consumerCond.notify_one();
   lock.unlock();
 
+  m_callbackCond.notify_all();
+  callbackLock.unlock();
+
   m_consumer.join();
+
+  for (auto& worker : m_callbackWorkers)
+    worker.join();
 
   io_uring_unregister_files(&m_ring);
   io_uring_queue_exit(&m_ring);
@@ -323,29 +338,73 @@ void IoUring::consume() {
     } else {
       // Otherwise, the entrie request has completed
       auto& request = static_cast<IoUringRequest&>(*item->request);
-      request.notify(item->requestIndex, IoStatus::eSuccess);
+
+      if (request.hasCallback(item->requestIndex)) {
+        // Forward sub-request to one of the workers to process the
+        // callback there. We don't want callbacks to stall I/O.
+        std::unique_lock callbackLock(m_callbackMutex);
+        m_callbackQueue.push(item);
+        m_callbackCond.notify_one();
+
+        item = nullptr;
+      } else {
+        // If no callback is present, notify sub-request
+        // immediately in order to to avoid overhead
+        request.notify(item->requestIndex, IoStatus::eSuccess);
+      }
     }
 
     lock.lock();
     m_opsInFlight -= 1;
 
-    if (requeue) {
-      // Requeue item. If this goes wrong for whatever
-      // reason, mark the request as failed.
-      if (!enqueue(item)) {
-        auto& request = static_cast<IoUringRequest&>(*item->request);
-        request.notify(item->requestIndex, IoStatus::eError);
+    if (item) {
+      if (requeue) {
+        // Requeue item. If this goes wrong for whatever
+        // reason, mark the request as failed.
+        if (!enqueue(item)) {
+          auto& request = static_cast<IoUringRequest&>(*item->request);
+          request.notify(item->requestIndex, IoStatus::eError);
+          freeWorkItem(item);
+        }
+      } else {
+        // Recycle work item
         freeWorkItem(item);
       }
-    } else {
-      // Recycle work item
-      freeWorkItem(item);
     }
 
     // If all submitted operations have completed, submit
     // again so that any requeued operations get executed
     if (!m_opsInFlight && m_opsInQueue)
       submit();
+  }
+}
+
+
+void IoUring::notify() {
+  while (true) {
+    std::unique_lock callbackLock(m_callbackMutex);
+
+    m_callbackCond.wait(callbackLock, [this] {
+      return !m_callbackQueue.empty() || m_stop;
+    });
+
+    // Ensure that all pending callbacks are processed
+    if (m_stop && m_callbackQueue.empty())
+      return;
+
+    IoUringWorkItem* item = m_callbackQueue.front();
+    m_callbackQueue.pop();
+
+    callbackLock.unlock();
+
+    // We know that the I/O operation itself has completed successfully
+    // at this point, so just notify the request with success status.
+    auto& request = static_cast<IoUringRequest&>(*item->request);
+    request.notify(item->requestIndex, IoStatus::eSuccess);
+
+    // Free work item. This needs the global I/O lock.
+    std::unique_lock lock(m_mutex);
+    freeWorkItem(item);
   }
 }
 

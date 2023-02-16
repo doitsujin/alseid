@@ -11,21 +11,24 @@
 
 namespace as {
 
-Io::Io(IoBackend backend)
-: IfaceRef<IoIface>(initBackend(backend)) {
+Io::Io(
+        IoBackend                     backend,
+        uint32_t                      workerCount)
+: IfaceRef<IoIface>(initBackend(backend, workerCount)) {
 
 }
 
 
 std::shared_ptr<IoIface> Io::initBackend(
-        IoBackend                     backend) {
+        IoBackend                     backend,
+        uint32_t                      workerCount) {
   try {
     switch (backend) {
       case IoBackend::eDefault:
 
   #ifdef ALSEID_IO_URING
       case IoBackend::eIoUring:
-        return std::make_shared<IoUring>();
+        return std::make_shared<IoUring>(workerCount);
   #endif
 
       case IoBackend::eStl:

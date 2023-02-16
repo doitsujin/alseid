@@ -54,7 +54,8 @@ class IoUring : public IoIface
   constexpr static uint32_t MaxFds = 256;
 public:
 
-  IoUring();
+  IoUring(
+          uint32_t                      workerCount);
 
   ~IoUring();
 
@@ -117,6 +118,11 @@ private:
   std::condition_variable       m_consumerCond;
   std::thread                   m_consumer;
 
+  std::mutex                    m_callbackMutex;
+  std::condition_variable       m_callbackCond;
+  std::queue<IoUringWorkItem*>  m_callbackQueue;
+  std::vector<std::thread>      m_callbackWorkers;
+
   int registerFile(
           int                           fd);
 
@@ -131,6 +137,8 @@ private:
           IoUringWorkItem*              item);
 
   void consume();
+
+  void notify();
 
 };
 
