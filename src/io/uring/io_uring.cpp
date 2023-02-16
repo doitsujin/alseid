@@ -128,14 +128,15 @@ bool IoUring::submit(
 
   bool result = uringRequest.processRequests(
     [this, request] (uint32_t index, const IoBufferedRequest& item) {
+      if (item.type == IoRequestType::eNone)
+        return true;
+
       auto& file = static_cast<IoUringFile&>(*item.file);
       auto workItem = allocWorkItem();
 
       workItem->request = request;
       workItem->requestIndex = index;
-      workItem->type = item.dst
-        ? IoUringWorkItemType::eRead
-        : IoUringWorkItemType::eWrite;
+      workItem->type = getRequestType(item.type);
       workItem->fd = file.getFd();
       workItem->index = file.getIndex();
       workItem->offset = item.offset;
@@ -406,6 +407,23 @@ void IoUring::notify() {
     std::unique_lock lock(m_mutex);
     freeWorkItem(item);
   }
+}
+
+
+IoUringWorkItemType IoUring::getRequestType(
+        IoRequestType                   type) {
+  switch (type) {
+    case IoRequestType::eNone:
+      break;
+
+    case IoRequestType::eRead:
+      return IoUringWorkItemType::eRead;
+
+    case IoRequestType::eWrite:
+      return IoUringWorkItemType::eWrite;
+  }
+
+  throw Error("IoUring: Unsupported request type");
 }
 
 }

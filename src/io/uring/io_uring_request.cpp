@@ -17,10 +17,13 @@ void IoUringRequest::notify(
         IoStatus                      status) {
   // Each sub-request can only ever be notified once, so we
   // do not need synchronization to access any of this data
-  if (status == IoStatus::eSuccess && m_items[index].cb)
-    status = m_items[index].cb();
+  IoBufferedRequest& item = m_items[index];
 
-  m_items[index] = IoBufferedRequest();
+  if (status == IoStatus::eSuccess && item.cb)
+    status = item.cb(item);
+
+  // Reset item to free callback etc
+  item = IoBufferedRequest();
 
   // Realistically this should only be success or error
   if (status != IoStatus::eSuccess)

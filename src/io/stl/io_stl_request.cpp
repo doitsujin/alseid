@@ -17,16 +17,27 @@ void IoStlRequest::execute() {
   IoStatus status = IoStatus::eSuccess;
 
   for (size_t i = 0; i < m_items.size(); i++) {
-    const auto& item = m_items[i];
+    auto& item = m_items[i];
     auto& file = static_cast<IoStlFile&>(*item.file);
 
-    if (item.dst)
-      status = file.read(item.offset, item.size, item.dst);
-    else if (item.src)
-      status = file.write(item.offset, item.size, item.src);
+    switch (item.type) {
+      case IoRequestType::eNone:
+        status = IoStatus::eSuccess;
+        break;
+
+      case IoRequestType::eRead:
+        status = file.read(item.offset, item.size, item.dst);
+        break;
+
+      case IoRequestType::eWrite:
+        status = file.write(item.offset, item.size, item.src);
+        break;
+    }
 
     if (status == IoStatus::eSuccess && item.cb)
-      status = item.cb();
+      status = item.cb(item);
+
+    item = IoBufferedRequest();
 
     if (status == IoStatus::eError)
       break;

@@ -140,6 +140,9 @@ private:
 
   void notify();
 
+  static IoUringWorkItemType getRequestType(
+          IoRequestType                   type);
+
 };
 
 }

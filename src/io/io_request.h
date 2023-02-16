@@ -12,6 +12,8 @@
 
 namespace as {
 
+class IoBufferedRequest;
+
 /**
  * \brief I/O request callback
  *
@@ -28,7 +30,17 @@ using IoRequestCallback = std::function<void (IoStatus)>;
  * request. If the callback returns an error, the entire
  * request will be treated as failed.
  */
-using IoCallback = std::function<IoStatus ()>;
+using IoCallback = std::function<IoStatus (const IoBufferedRequest&)>;
+
+
+/**
+ * \brief Buffered request type
+ */
+enum class IoRequestType : uint32_t {
+  eNone         = 0,
+  eRead         = 1,
+  eWrite        = 2,
+};
 
 
 /**
@@ -37,12 +49,13 @@ using IoCallback = std::function<IoStatus ()>;
  * Used internally to store read and write requests.
  */
 struct IoBufferedRequest {
-  IoFile      file;
-  uint64_t    offset  = 0;
-  uint64_t    size    = 0;
-  const void* src     = nullptr;
-  void*       dst     = nullptr;
-  IoCallback  cb;
+  IoRequestType type    = IoRequestType::eNone;
+  IoFile        file;
+  uint64_t      offset  = 0;
+  uint64_t      size    = 0;
+  const void*   src     = nullptr;
+  void*         dst     = nullptr;
+  IoCallback    cb;
 };
 
 
@@ -114,6 +127,7 @@ public:
           uint64_t                      size,
           void*                         dst) {
     auto& item = allocItem();
+    item.type = IoRequestType::eRead;
     item.file = std::move(file);
     item.offset = offset;
     item.size = size;
@@ -141,12 +155,15 @@ public:
           void*                         dst,
           Cb&&                          callback) {
     auto& item = allocItem();
+    item.type = IoRequestType::eRead;
     item.file = std::move(file);
     item.offset = offset;
     item.size = size;
     item.dst = dst;
-    item.cb = IoCallback([cb = std::move(callback), dst, size] () {
-      return cb(dst, size);
+    item.cb = IoCallback([
+      cb = std::move(callback)
+    ] (const IoBufferedRequest& item) {
+      return cb(item.dst, item.size);
     });
   }
 
@@ -164,6 +181,7 @@ public:
           uint64_t                      size,
     const void*                         src) {
     auto& item = allocItem();
+    item.type = IoRequestType::eWrite;
     item.file = std::move(file);
     item.offset = offset;
     item.size = size;
@@ -188,12 +206,15 @@ public:
     const void*                         src,
           Cb&&                          callback) {
     auto& item = allocItem();
+    item.type = IoRequestType::eWrite;
     item.file = std::move(file);
     item.offset = offset;
     item.size = size;
     item.src = src;
-    item.cb = IoCallback([cb = std::move(callback), src, size] () {
-      return cb(src, size);
+    item.cb = IoCallback([
+      cb = std::move(callback)
+    ] (const IoBufferedRequest& item) {
+      return cb(item.src, item.size);
     });
   }
 
