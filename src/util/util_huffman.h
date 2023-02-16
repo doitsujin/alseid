@@ -65,9 +65,24 @@ public:
     return m_counts[code];
   }
 
+  /**
+   * \brief Iterator pair over unique codes
+   * \returns Iterator pair over unique codes
+   */
+  auto getUniqueCodes() const {
+    return std::make_pair(m_codes.begin(), m_codes.begin() + m_codeCount);
+  }
+
 private:
 
   std::array<uint64_t, MaxCodeCount> m_counts = { };
+  std::array<uint16_t, MaxCodeCount> m_codes = { };
+
+  uint32_t m_codeCount = 0;
+
+  void count(
+          uint16_t                      code,
+          uint64_t                      count);
 
 };
 
@@ -110,6 +125,15 @@ public:
   bool encode(
           BitstreamWriter&              stream,
           InStream&                     reader) const;
+
+  /**
+   * \brief Computes encoded data size in bytes
+   *
+   * \param [in] counter Corresponding counter
+   * \returns Byte count of encoded file
+   */
+  uint64_t computeEncodedSize(
+    const HuffmanCounter&               counter) const;
 
 private:
 
@@ -160,7 +184,7 @@ public:
   bool decode(
           OutStream&                    writer,
           BitstreamReader&              stream,
-          size_t                        size);
+          size_t                        size) const;
 
   /**
    * \brief Reads decoding table from bit stream
@@ -177,6 +201,12 @@ public:
    */
   bool write(
           BitstreamWriter&              stream) const;
+
+  /**
+   * \brief Computes decoding table size, in bytes
+   * \returns Decoding table size, in bytes
+   */
+  size_t computeSize() const;
 
 private:
 

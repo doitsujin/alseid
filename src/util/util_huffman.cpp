@@ -22,11 +22,11 @@ void HuffmanCounter::add(
   auto bytes = reinterpret_cast<const uint8_t*>(data);
 
   for (size_t i = 0; i < size / 2; i++)
-    m_counts[words[i]] += 1;
+    count(words[i], 1);
 
   // Deal with the last byte if there is one
   if (size & 1)
-    m_counts[uint8_t(bytes[size - 1])] += 1;
+    count(bytes[size - 1], 1);
 }
 
 
@@ -45,8 +45,20 @@ void HuffmanCounter::add(
 
 void HuffmanCounter::accumulate(
   const HuffmanCounter&               counter) {
-  for (size_t i = 0; i < m_counts.size(); i++)
-    m_counts[i] += counter.m_counts[i];
+  for (uint32_t i = 0; i < counter.m_codeCount; i++) {
+    uint16_t code = counter.m_codes[i];
+    count(code, counter.m_counts[code]);
+  }
+}
+
+
+void HuffmanCounter::count(
+        uint16_t                      code,
+        uint64_t                      count) {
+  if (!m_counts[code])
+    m_codes[m_codeCount++] = code;
+
+  m_counts[code] += count;
 }
 
 
@@ -103,6 +115,19 @@ bool HuffmanEncoder::encode(
 }
 
 
+uint64_t HuffmanEncoder::computeEncodedSize(
+  const HuffmanCounter&               counter) const {
+  uint64_t bitCount = 0;
+
+  auto iter = counter.getUniqueCodes();
+
+  for (auto i = iter.first; i != iter.second; i++)
+    bitCount += m_entries[*i].bitCount * counter[*i];
+
+  return (bitCount + 7) / 8;
+}
+
+
 void HuffmanEncoder::setCode(
         uint16_t                      code,
         uint32_t                      bitCount,
@@ -133,7 +158,7 @@ HuffmanDecoder::HuffmanDecoder() {
 bool HuffmanDecoder::decode(
         OutStream&                    writer,
         BitstreamReader&              stream,
-        size_t                        size) {
+        size_t                        size) const {
   bool success = true;
 
   for (uint32_t i = 0; i < size; i += 2) {
@@ -215,6 +240,13 @@ bool HuffmanDecoder::write(
   }
 
   return success;
+}
+
+
+size_t HuffmanDecoder::computeSize() const {
+  // 16 bit for entry count + 21 bits per entry
+  size_t bitCount = 16 + 21 * m_entryCount;
+  return (bitCount + 7) / 8;
 }
 
 
