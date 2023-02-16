@@ -38,7 +38,6 @@ public:
     return readComplex(dst, size);
   }
   
-
   /**
    * \brief Reads raw data
    *
@@ -80,16 +79,52 @@ public:
    * \returns \c true on success, \c false if
    *    the end of the stream was reached.
    */
-  template<typename T, std::enable_if_t<std::is_arithmetic_v<T> || std::is_enum_v<T>, bool> = true>
+  template<typename T, std::enable_if_t<std::is_standard_layout_v<T> && std::is_trivial_v<T>, bool> = true>
   bool read(T& value) {
     return read(&value, sizeof(value));
+  }
+
+  /**
+   * \brief Reads trivial data type with conversion
+   *
+   * \tparam T Type of the given data within the stream
+   * \tparam T_ Type to convert read data to
+   * \param [out] value Data read from the stream
+   * \returns \c true on success, \c false if
+   *    the end of the stream was reached.
+   */
+  template<typename T, typename T_, std::enable_if_t<std::is_standard_layout_v<T> && std::is_trivial_v<T>, bool> = true>
+  bool readAs(T_& value) {
+    T tmp = { };
+    if (!read(tmp))
+      return false;
+
+    value = T_(tmp);
+    return true;
+  }
+
+  /**
+   * \brief Reads array data
+   *
+   * \param [in] value Array to read from the stream
+   * \returns \c true on success, \c false if not
+   *    all data could be written to the stream.
+   */
+  template<typename T, std::enable_if_t<std::is_standard_layout_v<T> && std::is_trivial_v<T>, bool> = true>
+  bool read(std::vector<T>& value) {
+    return read(value.data(), value.size() * sizeof(T));
+  }
+
+  template<typename T, size_t N, std::enable_if_t<std::is_standard_layout_v<T> && std::is_trivial_v<T>, bool> = true>
+  bool read(std::array<T, N>& value) {
+    return read(value.data(), value.size() * sizeof(T));
   }
 
 private:
 
   size_t                        m_bufferSize    = 0;
   size_t                        m_bufferOffset  = 0;
-  std::array<char, BufferSize>  m_buffer;
+  std::array<char, BufferSize>  m_buffer        = { };
 
   size_t readComplex(void* dst, size_t size);
 
@@ -146,9 +181,26 @@ public:
    * \returns \c true on success, \c false if not
    *    all data could be written to the stream.
    */
-  template<typename T, std::enable_if_t<std::is_arithmetic_v<T> || std::is_enum_v<T>, bool> = true>
+  template<typename T, std::enable_if_t<std::is_standard_layout_v<T> && std::is_trivial_v<T>, bool> = true>
   bool write(const T& value) {
     return write(&value, sizeof(value));
+  }
+
+  /**
+   * \brief Writes array data
+   *
+   * \param [in] value Data to write to the stream
+   * \returns \c true on success, \c false if not
+   *    all data could be written to the stream.
+   */
+  template<typename T, std::enable_if_t<std::is_standard_layout_v<T> && std::is_trivial_v<T>, bool> = true>
+  bool write(const std::vector<T>& value) {
+    return write(value.data(), value.size() * sizeof(T));
+  }
+
+  template<typename T, size_t N, std::enable_if_t<std::is_standard_layout_v<T> && std::is_trivial_v<T>, bool> = true>
+  bool write(const std::array<T, N>& value) {
+    return write(value.data(), value.size() * sizeof(T));
   }
 
   /**
@@ -163,7 +215,7 @@ private:
 
   size_t                        m_bufferSize    = 0;
   size_t                        m_bufferOffset  = 0;
-  std::array<char, BufferSize>  m_buffer;
+  std::array<char, BufferSize>  m_buffer        = { };
 
   bool writeComplex(const void* src, size_t size);
 
@@ -225,6 +277,14 @@ public:
   explicit InMemoryStream(
     const std::array<T, N>&             array)
   : InMemoryStream(array.data(), array.size() * sizeof(T)) { }
+
+  /**
+   * \brief Checks whether the stream is valid
+   * \returns \c true if the stream is valid
+   */
+  operator bool () const {
+    return m_data != nullptr;
+  }
 
 private:
 
@@ -387,6 +447,25 @@ protected:
     const void*                         data,
           size_t                        size) override;
 
+};
+
+
+/**
+ * \brief Wrapper to help with rvalue uses
+ *
+ * Stream objects are often temporary, so we should provide
+ * a wrapper object which provides rvalue access to the stream.
+ */
+template<typename T>
+struct StreamWrapper {
+  StreamWrapper(T&& stream_)
+  : stream(std::move(stream_)) { }
+
+  T stream;
+
+  operator T& () {
+    return stream;
+  }
 };
 
 }
