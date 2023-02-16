@@ -177,7 +177,7 @@ void IoUring::unregisterFile(
   item->fd = 1;
   item->index = index;
 
-  uint32_t set = uint32_t(index) % 64;
+  uint32_t set = uint32_t(index) / 64;
   uint32_t bit = uint32_t(index) % 64;
 
   m_fdTable[index] = -1;
