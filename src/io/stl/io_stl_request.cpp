@@ -14,6 +14,8 @@ IoStlRequest::~IoStlRequest() {
 
 
 void IoStlRequest::execute() {
+  std::vector<char> streamBuffer;
+
   IoStatus status = IoStatus::eSuccess;
 
   for (size_t i = 0; i < m_items.size(); i++) {
@@ -31,6 +33,12 @@ void IoStlRequest::execute() {
 
       case IoRequestType::eWrite:
         status = file.write(item.offset, item.size, item.src);
+        break;
+
+      case IoRequestType::eStream:
+        streamBuffer.resize(item.size);
+        item.dst = streamBuffer.data();
+        status = file.read(item.offset, item.size, item.dst);
         break;
     }
 

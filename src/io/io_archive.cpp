@@ -41,9 +41,9 @@ const IoArchiveFile* IoArchive::findFile(const std::string& name) const {
 
 IoStatus IoArchive::read(
   const IoArchiveSubFile*             subFile,
-        void*                         data) {
-  if (subFile->getCompressionType() == IoArchiveCompression::eDefault && !subFile->isHuffmanCompressed())
-    return readCompressed(subFile, data);
+        void*                         dst) {
+  if (!subFile->isCompressed())
+    return readCompressed(subFile, dst);
 
   std::vector<char> compressed(subFile->getCompressedSize());
   IoStatus status = readCompressed(subFile, compressed.data());
@@ -51,74 +51,22 @@ IoStatus IoArchive::read(
   if (status != IoStatus::eSuccess)
     return status;
 
-  bool success = decompress(subFile, data, subFile->getSize(),
-    compressed.data(), compressed.size());
-  return success ? IoStatus::eSuccess : IoStatus::eError;
-}
-
-
-IoStatus IoArchive::readCompressed(
-  const IoArchiveSubFile*             subFile,
-        void*                         data) {
-  return m_file->read(
-    subFile->getOffsetInArchive(),
-    subFile->getCompressedSize(),
-    data);
-}
-
-
-void IoArchive::requestRead(
-  const IoRequest&                    request,
-  const IoArchiveSubFile*             subFile,
-        void*                         data) {
-  if (subFile->getCompressionType() == IoArchiveCompression::eDefault && !subFile->isHuffmanCompressed()) {
-    requestReadCompressed(request, subFile, data);
-    return;
-  }
-
-  // We need to allocate temporary memory that is shared between threads
-  auto memory = std::make_shared<char[]>(subFile->getCompressedSize());
-
-  auto callback = [this,
-    cSubFile  = subFile,
-    cMemory   = memory,
-    cData     = data
-  ] (const void* compressed, size_t compressedSize) {
-    bool success = decompress(cSubFile, cData, cSubFile->getSize(),
-      cMemory.get(), cSubFile->getCompressedSize());
-    return success ? IoStatus::eSuccess : IoStatus::eError;
-  };
-
-  request->read(m_file,
-    subFile->getOffsetInArchive(),
-    subFile->getCompressedSize(),
-    memory.get(), std::move(callback));
-}
-
-
-void IoArchive::requestReadCompressed(
-  const IoRequest&                    request,
-  const IoArchiveSubFile*             subFile,
-        void*                         data) {
-  request->read(m_file,
-    subFile->getOffsetInArchive(),
-    subFile->getCompressedSize(),
-    data);
+  return decompress(subFile, dst, compressed.data())
+    ? IoStatus::eSuccess
+    : IoStatus::eError;
 }
 
 
 bool IoArchive::decompress(
   const IoArchiveSubFile*             subFile,
         void*                         dstData,
-        size_t                        dstSize,
-  const void*                         srcData,
-        size_t                        srcSize) const {
-  if (!subFile->isHuffmanCompressed()) {
-    if (srcSize != dstSize)
+  const void*                         srcData) const {
+  if (!subFile->isCompressed()) {
+    if (subFile->getSize() != subFile->getCompressedSize())
       return false;
 
     // Callers should avoid this whenever possible
-    std::memcpy(dstData, srcData, dstSize);
+    std::memcpy(dstData, srcData, subFile->getSize());
     return true;
   }
 
@@ -132,11 +80,11 @@ bool IoArchive::decompress(
   if (!decoder)
     return false;
 
-  InMemoryStream reader(srcData, srcSize);
+  InMemoryStream reader(srcData, subFile->getCompressedSize());
   BitstreamReader bitstream(reader);
 
-  OutMemoryStream writer(dstData, dstSize);
-  return decoder->decode(writer, bitstream, dstSize);
+  OutMemoryStream writer(dstData, subFile->getSize());
+  return decoder->decode(writer, bitstream, subFile->getSize());
 }
 
 
@@ -255,7 +203,7 @@ bool IoArchive::parseMetadata() {
   for (size_t i = 0; i < totalSubFileCount; i++) {
     auto& subFile = m_subFiles.emplace_back(subFiles[i]);
 
-    if (subFile.isHuffmanCompressed()
+    if (subFile.hasDecodingTable()
      && subFile.getDecodingTableIndex() >= fileHeader.decodingTableCount) {
       Log::err("Archive: Invalid decoding table index: ", subFile.getDecodingTableIndex());
       return false;

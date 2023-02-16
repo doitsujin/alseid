@@ -48,7 +48,7 @@ public:
    * \param [in] proc Request callback
    */
   template<typename Proc>
-  bool processRequests(const Proc& proc) const {
+  bool processRequests(const Proc& proc) {
     for (uint32_t i = 0; i < m_items.size(); i++) {
       if (!proc(i, m_items[i]))
         return false;

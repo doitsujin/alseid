@@ -40,6 +40,7 @@ enum class IoRequestType : uint32_t {
   eNone         = 0,
   eRead         = 1,
   eWrite        = 2,
+  eStream       = 3,
 };
 
 
@@ -160,6 +161,39 @@ public:
     item.offset = offset;
     item.size = size;
     item.dst = dst;
+    item.cb = IoCallback([
+      cb = std::move(callback)
+    ] (const IoBufferedRequest& item) {
+      return cb(item.dst, item.size);
+    });
+  }
+
+  /**
+   * \brief Enqueues a stream operation
+   *
+   * Stream operations essentially perform reads into a buffer that
+   * is provided by the backend. This is useful in situations where
+   * the raw data is immediately processed and discarded, e.g. when
+   * decompressing data that is stored in an archive.
+   *
+   * The data pointer passed to the callback will be invalidated
+   * immediately after the callback has finished execution.
+   * \param [in] file File to read from
+   * \param [in] offset Offset within the file
+   * \param [in] size Number of bytes to read
+   * \param [in] callback Callback. Takes a pointer to
+   */
+  template<typename Cb>
+  void stream(
+          IoFile                        file,
+          uint64_t                      offset,
+          uint64_t                      size,
+          Cb&&                          callback) {
+    auto& item = allocItem();
+    item.type = IoRequestType::eStream;
+    item.file = std::move(file);
+    item.offset = offset;
+    item.size = size;
     item.cb = IoCallback([
       cb = std::move(callback)
     ] (const IoBufferedRequest& item) {

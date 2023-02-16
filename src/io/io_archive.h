@@ -158,8 +158,17 @@ public:
    * \brief Checks whether Huffman compression is used
    * \returns \c true if the decoding table index is valid
    */
-  bool isHuffmanCompressed() const {
+  bool hasDecodingTable() const {
     return m_metadata.decodingTable != 0xFFFF;
+  }
+
+  /** 
+   * \brief Checks whether any compression is used
+   * \returns \c true if the sub file is compressed
+   */
+  bool isCompressed() const {
+    return m_metadata.decodingTable != 0xFFFF
+        || m_metadata.compression != IoArchiveCompression::eDefault;
   }
 
 private:
@@ -333,59 +342,177 @@ public:
   }
 
   /**
-   * \brief Synchronously reads a sub-file
+   * \brief Synchronously reads sub file
    *
-   * Reads and decodes the given sub-file into the given stream.
+   * Reads and, if necessary, decompresses sub-file
+   * contents into pre-allocated memory as necessary.
    * \param [in] subFile Sub-file to read
-   * \param [in] data Data pointer. \e Must be large enough
-   *    to hold the raw (uncompressed) sub file.
-   * \returns Status of the operation
+   * \param [in] dst Destination buffer
+   * \returns Result of the I/O operation
    */
   IoStatus read(
     const IoArchiveSubFile*             subFile,
-          void*                         data);
+          void*                         dst);
 
   /**
-   * \brief Synchronously reads compressed sub file
+   * \brief Synchronously reads compresseed sub file
    *
-   * Copies the compressed sub-file directly to the given
-   * memory location without decoding its contents.
+   * Reads and, if necessary, decompresses sub-file
+   * contents into pre-allocated memory as necessary.
    * \param [in] subFile Sub-file to read
-   * \param [in] data Data pointer. \e Must be large
-   *    enough to hold the compressed sub file.
-   * \returns Status of the operation
+   * \param [in] dst Destination buffer
+   * \returns Result of the I/O operation
    */
   IoStatus readCompressed(
     const IoArchiveSubFile*             subFile,
-          void*                         data);
+          void*                         dst) {
+    return m_file->read(
+      subFile->getOffsetInArchive(),
+      subFile->getCompressedSize(),
+      dst);
+  }
 
   /**
-   * \brief Adds asynchronous read request
+   * \brief Reads sub file
    *
-   * Asynchronous version of \c read. Note that the file
-   * archive object \e must not be destroyed while any
-   * asynchronous requests are pending.
+   * Reads and, if necessary, decompresses sub-file
+   * contents into pre-allocated memory as necessary.
    * \param [in] request I/O request object
    * \param [in] subFile Sub-file to read
-   * \param [in] data Data pointer
+   * \param [in] dst Destination buffer
    */
-  void requestRead(
+  void read(
     const IoRequest&                    request,
     const IoArchiveSubFile*             subFile,
-          void*                         data);
+          void*                         dst) {
+    if (!subFile->isCompressed())
+      readCompressed(request, subFile, dst);
+
+    streamCompressed(request, subFile,
+      [this, subFile, dst] (const void* src, size_t size) {
+        return decompress(subFile, dst, src)
+          ? IoStatus::eSuccess
+          : IoStatus::eError;
+      });
+  }
 
   /**
-   * \brief Adds raw asynchronous read request
+   * \brief Reads sub file with callback
    *
-   * Asynchronous version of \c readRaw.
+   * Reads and decompresses sub-file contents and executes
+   * a callback on completion.
    * \param [in] request I/O request object
    * \param [in] subFile Sub-file to read
-   * \param [in] data Data pointer
+   * \param [in] dst Destination buffer
+   * \param [in] callback Callback to process data
+   *    Takes a pointer to the decompressed data as
+   *    well as the decompressed size, in bytes.
    */
-  void requestReadCompressed(
+  template<typename Cb>
+  void read(
     const IoRequest&                    request,
     const IoArchiveSubFile*             subFile,
-          void*                         data);
+          void*                         dst,
+          Cb&&                          callback) {
+    if (!subFile->isCompressed())
+      readCompressed(request, subFile, dst, std::move(callback));
+
+    streamCompressed(request, subFile,
+      [this, subFile, dst, cb = std::move(callback)] (const void* src, size_t size) {
+        if (!decompress(subFile, dst, src))
+          return IoStatus::eError;
+
+        return cb(dst, subFile->getSize());
+      });
+  }
+
+  /**
+   * \brief Reads compressed sub file
+   *
+   * Reads the raw sub-file into pre-allocated
+   * memory without performing any decompression.
+   * \param [in] request I/O request object
+   * \param [in] subFile Sub-file to read
+   * \param [in] dst Destination buffer
+   */
+  void readCompressed(
+    const IoRequest&                    request,
+    const IoArchiveSubFile*             subFile,
+          void*                         dst) {
+    request->read(m_file,
+      subFile->getOffsetInArchive(),
+      subFile->getCompressedSize(),
+      dst);
+  }
+
+  /**
+   * \brief Reads compressed sub file with callback
+   *
+   * Reads the raw sub-file into pre-allocated memory
+   * and executes a callback on completion.
+   * \param [in] request I/O request object
+   * \param [in] subFile Sub-file to read
+   * \param [in] dst Destination buffer
+   * \param [in] callback Callback to process data.
+   *    Takes a pointer to the compressed data as
+   *    well as the compressed data size.
+   */
+  template<typename Cb>
+  void readCompressed(
+    const IoRequest&                    request,
+    const IoArchiveSubFile*             subFile,
+          void*                         dst,
+          Cb&&                          callback) {
+    request->read(m_file,
+      subFile->getOffsetInArchive(),
+      subFile->getCompressedSize(),
+      dst, std::move(callback));
+  }
+
+  /**
+   * \brief Streams compressed sub file
+   *
+   * Reads the raw sub-file into a temporary buffer provided
+   * by the back-end and executes a callback, which can then
+   * process the data further.
+   *
+   * No decompressing version of this method is provided since
+   * decompression would require on-the-fly memory allocation.
+   * The main purpose of this method is to allow applications
+   * to process the compressed data directly or decompress it
+   * into a memory region that may not have been pre-allocated.
+   * \param [in] request I/O request object
+   * \param [in] subFile Sub-file to read
+   * \param [in] callback Callback to process data.
+   *    Takes a pointer to and the size of the temporary
+   *    buffer, which contains the compressed sub-file.
+   */
+  template<typename Cb>
+  void streamCompressed(
+    const IoRequest&                    request,
+    const IoArchiveSubFile*             subFile,
+          Cb&&                          callback) {
+    request->stream(m_file,
+      subFile->getOffsetInArchive(),
+      subFile->getCompressedSize(),
+      std::move(callback));
+  }
+
+  /**
+   * \brief Decompresses sub-file in memory
+   *
+   * Most useful in combination with stream requests, 
+   * \param [in] subFile Sub-file metadata
+   * \param [in] dstData Buffer to write decompressed data to.
+   *    \e Must be large enough to hold the decompressed sub file.
+   * \param [in] srcData Buffer containing compressed sub-file
+   *    \e Must be large enough to hold the compressed sub file.
+   * \returns \c true on success
+   */
+  bool decompress(
+    const IoArchiveSubFile*             subFile,
+          void*                         dstData,
+    const void*                         srcData) const;
 
   /**
    * \brief Checks whether the archive file is valid
@@ -409,13 +536,6 @@ private:
   std::unordered_map<std::string, size_t> m_lookupTable;
 
   bool parseMetadata();
-
-  bool decompress(
-    const IoArchiveSubFile*             subFile,
-          void*                         dstData,
-          size_t                        dstSize,
-    const void*                         srcData,
-          size_t                        srcSize) const;
 
 };
 

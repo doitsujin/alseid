@@ -22,6 +22,39 @@ IoUring::IoUring(
   if (io_uring_queue_init(QueueDepth, &m_ring, 0))
     throw Error("IoUring: io_uring_queue_init() failed");
 
+  // Large fixed buffers may not be supported on all systems. Query
+  // the limit and select a viable buffer size based on that.
+  ::rlimit limit = { };
+  getrlimit(RLIMIT_MEMLOCK, &limit);
+
+  size_t streamBufferSize = std::min<rlim_t>(limit.rlim_cur / 4, MaxStreamBufferSize);
+  m_useFixed = streamBufferSize >= MinStreamBufferSize;
+
+  if (!m_useFixed)
+    streamBufferSize = MaxStreamBufferSize;
+
+  // Allocate a fixed buffer to use for stream operations
+  m_streamBuffer = std::calloc(1, streamBufferSize);
+  m_streamAllocator = ChunkAllocator(uint32_t(streamBufferSize));
+
+  // Even if registering the fixed buffer fails, we should keep
+  // the fixed buffer around to avoid frequent allocations when
+  // performing stream operations.
+  if (m_useFixed) {
+    ::iovec streamBufferDesc;
+    streamBufferDesc.iov_base = m_streamBuffer;
+    streamBufferDesc.iov_len = streamBufferSize;
+
+    m_useFixed = !io_uring_register_buffers(&m_ring, &streamBufferDesc, 1);
+
+    if (m_useFixed)
+      Log::info("IoUring: Using fixed ", (streamBufferSize >> 20), " MiB stream buffer");
+    else
+      Log::warn("IoUring: io_uring_register_buffers() failed, using plain memory");
+  } else {
+    Log::info("IoUring: Not using fixed stream buffer");
+  }
+
   // Try to allocate a file descriptor table. If this is
   // not supported, use plain file descriptors instead.
   m_useFdTable = !io_uring_register_files_sparse(&m_ring, MaxFds);
@@ -62,6 +95,8 @@ IoUring::~IoUring() {
 
   io_uring_unregister_files(&m_ring);
   io_uring_queue_exit(&m_ring);
+
+  std::free(m_streamBuffer);
 
   for (auto* workItem : m_workItems)
     delete workItem;
@@ -127,7 +162,7 @@ bool IoUring::submit(
   uringRequest.setPending();
 
   bool result = uringRequest.processRequests(
-    [this, request] (uint32_t index, const IoBufferedRequest& item) {
+    [this, request] (uint32_t index, IoBufferedRequest& item) {
       if (item.type == IoRequestType::eNone)
         return true;
 
@@ -136,13 +171,53 @@ bool IoUring::submit(
 
       workItem->request = request;
       workItem->requestIndex = index;
-      workItem->type = getRequestType(item.type);
-      workItem->fd = file.getFd();
       workItem->index = file.getIndex();
+      workItem->fd = file.getFd();
       workItem->offset = item.offset;
       workItem->size = item.size;
-      workItem->dst = reinterpret_cast<char*>(item.dst);
-      workItem->src = reinterpret_cast<const char*>(item.src);
+
+      switch (item.type) {
+        case IoRequestType::eRead:
+          workItem->type = IoUringWorkItemType::eRead;
+          workItem->dst = static_cast<char*>(item.dst);
+          break;
+
+        case IoRequestType::eWrite:
+          workItem->type = IoUringWorkItemType::eWrite;
+          workItem->src = static_cast<const char*>(item.src);
+          break;
+
+        case IoRequestType::eStream:
+          workItem->type = IoUringWorkItemType::eStream;
+
+          // Try to allocate memory from the fixed buffer,
+          // otherwise allocate a new memory block.
+          if (workItem->size <= m_streamAllocator.capacity()) {
+            uint32_t alignment = 4096;
+            uint32_t size = align(uint32_t(workItem->size), alignment);
+
+            auto offset = m_streamAllocator.alloc(size, alignment);
+
+            if (offset) {
+              workItem->flags |= IoUringWorkItemFlag::eStreamBuffer;
+              workItem->bufferRange.offset = *offset;
+              workItem->bufferRange.size = size;
+              workItem->dst = static_cast<char*>(m_streamBuffer) + workItem->bufferRange.offset;
+            }
+          }
+
+          if (!workItem->dst) {
+            workItem->flags |= IoUringWorkItemFlag::eStreamAlloc;
+            workItem->bufferAlloc = static_cast<char*>(std::calloc(1, workItem->size));
+            workItem->dst = workItem->bufferAlloc;
+          }
+
+          item.dst = workItem->dst;
+          break;
+
+        default:
+          throw Error("IoUring: Unsupported request type");
+      }
 
       return enqueue(workItem);
     });
@@ -176,8 +251,8 @@ int IoUring::registerFile(
 
   auto item = allocWorkItem();
   item->type = IoUringWorkItemType::eRegister;
-  item->fd = 1;
   item->index = index;
+  item->fd = 1;
 
   enqueue(item);
   return index;
@@ -190,8 +265,8 @@ void IoUring::unregisterFile(
 
   auto item = allocWorkItem();
   item->type = IoUringWorkItemType::eRegister;
-  item->fd = 1;
   item->index = index;
+  item->fd = 1;
 
   uint32_t set = uint32_t(index) / 64;
   uint32_t bit = uint32_t(index) % 64;
@@ -228,6 +303,13 @@ bool IoUring::enqueue(
 
     case IoUringWorkItemType::eWrite:
       io_uring_prep_write(sqe, fd, item->src, size, item->offset);
+      break;
+
+    case IoUringWorkItemType::eStream:
+      if ((item->flags & IoUringWorkItemFlag::eStreamBuffer) && m_useFixed)
+        io_uring_prep_read_fixed(sqe, fd, item->dst, size, item->offset, 0);
+      else
+        io_uring_prep_read(sqe, fd, item->dst, size, item->offset);
       break;
 
     case IoUringWorkItemType::eRegister:
@@ -270,20 +352,30 @@ bool IoUring::submit() {
 
 
 IoUringWorkItem* IoUring::allocWorkItem() {
+  IoUringWorkItem* item;
+
   if (!m_workItems.empty()) {
-    auto* item = m_workItems.back();
+    item = m_workItems.back();
     m_workItems.pop_back();
-    return item;
+  } else {
+    item = new IoUringWorkItem();
   }
 
-  return new IoUringWorkItem();
+  // Zero-initialize the object
+  *item = IoUringWorkItem();
+  return item;
 }
 
 
 void IoUring::freeWorkItem(
         IoUringWorkItem*              item) {
-  *item = IoUringWorkItem();
   m_workItems.push_back(item);
+
+  // Free allocated buffer for stream requests
+  if (item->flags & IoUringWorkItemFlag::eStreamAlloc)
+    std::free(item->bufferAlloc);
+  else if (item->flags & IoUringWorkItemFlag::eStreamBuffer)
+    m_streamAllocator.free(item->bufferRange.offset, item->bufferRange.size);
 }
 
 
@@ -407,23 +499,6 @@ void IoUring::notify() {
     std::unique_lock lock(m_mutex);
     freeWorkItem(item);
   }
-}
-
-
-IoUringWorkItemType IoUring::getRequestType(
-        IoRequestType                   type) {
-  switch (type) {
-    case IoRequestType::eNone:
-      break;
-
-    case IoRequestType::eRead:
-      return IoUringWorkItemType::eRead;
-
-    case IoRequestType::eWrite:
-      return IoUringWorkItemType::eWrite;
-  }
-
-  throw Error("IoUring: Unsupported request type");
 }
 
 }

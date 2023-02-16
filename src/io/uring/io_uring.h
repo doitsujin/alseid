@@ -6,6 +6,10 @@
 #include <queue>
 #include <thread>
 
+#include "../../alloc/alloc_chunk.h"
+
+#include "../../util/util_flags.h"
+
 #include "../io.h"
 
 #include "io_uring_file.h"
@@ -16,10 +20,32 @@ namespace as {
 /**
  * \brief Work item type
  */
-enum class IoUringWorkItemType : uint32_t {
+enum class IoUringWorkItemType : uint16_t {
   eRead     = 0,
   eWrite    = 1,
-  eRegister = 2,
+  eStream   = 2,
+  eRegister = 3,
+};
+
+
+/**
+ * \brief Work item flags
+ */
+enum class IoUringWorkItemFlag : uint16_t {
+  eStreamBuffer   = (1u << 0),
+  eStreamAlloc    = (1u << 1),
+  eFlagEnum       = 0
+};
+
+using IoUringWorkItemFlags = Flags<IoUringWorkItemFlag>;
+
+
+/**
+ * \brief Stream buffer info
+ */
+struct IoUringBufferInfo {
+  uint32_t              offset;
+  uint32_t              size;
 };
 
 
@@ -30,15 +56,24 @@ enum class IoUringWorkItemType : uint32_t {
  * userdata to SQEs and processed by CQEs.
  */
 struct IoUringWorkItem {
-  IoRequest           request;
-  uint32_t            requestIndex  = 0;
-  IoUringWorkItemType type          = IoUringWorkItemType::eRead;
-  int                 fd            = -1;
-  int                 index         = -1;
-  uint64_t            offset        = 0;
-  uint64_t            size          = 0;
-  char*               dst           = nullptr;
-  const char*         src           = nullptr;
+  IoRequest             request;
+  uint32_t              requestIndex;
+  IoUringWorkItemType   type;
+  IoUringWorkItemFlags  flags;
+  int                   index;
+  int                   fd;
+  uint64_t              offset;
+  uint64_t              size;
+
+  union {
+    IoUringBufferInfo   bufferRange;
+    char*               bufferAlloc;
+  };
+
+  union {
+    const char*         src;
+    char*               dst;
+  };
 };
 
 
@@ -52,6 +87,9 @@ class IoUring : public IoIface
 , public std::enable_shared_from_this<IoUring> {
   constexpr static uint32_t QueueDepth = 128;
   constexpr static uint32_t MaxFds = 256;
+
+  constexpr static size_t MinStreamBufferSize =  8u << 20;
+  constexpr static size_t MaxStreamBufferSize = 64u << 20;
 public:
 
   IoUring(
@@ -108,7 +146,11 @@ private:
   uint32_t                      m_opsInFlight = 0;
 
   bool                          m_useFdTable  = false;
+  bool                          m_useFixed    = false;
   bool                          m_stop        = false;
+
+  void*                         m_streamBuffer = nullptr;
+  ChunkAllocator<uint32_t>      m_streamAllocator;
 
   std::vector<IoUringWorkItem*> m_workItems;
 
