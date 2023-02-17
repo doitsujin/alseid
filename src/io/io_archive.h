@@ -242,13 +242,29 @@ public:
   }
 
   /**
-   * \brief Retrieves inline data stream
+   * \brief Queries size of inline data
+   * \returns Inline data size
+   */
+  size_t getInlineDataSize() const {
+    return m_inlineSize;
+  }
+
+  /**
+   * \brief Retrieves inline data pointer
    *
-   * This is returned as a stream since the data
-   * may not meet alignment requirements in memory.
+   * Note that this pointer does not necessarily
+   * meet any specific alignment requirements.
+   * \returns Pointer to inline data
+   */
+  const void* getInlineData() const {
+    return m_inlineData;
+  }
+
+  /**
+   * \brief Retrieves inline data stream
    * \returns Memory stream for inline data
    */
-  InMemoryStream getInlineData() const {
+  InMemoryStream getInlineDataStream() const {
     return InMemoryStream(m_inlineData, m_inlineSize);
   }
 

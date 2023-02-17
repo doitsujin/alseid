@@ -15,4 +15,5 @@ spirv_cross_glsl_dep = spirv_cross_proj.dependency('spirv-cross-glsl')
 spirv_cross_hlsl_dep = spirv_cross_proj.dependency('spirv-cross-hlsl')
 
 subdir('src')
+subdir('tools')
 subdir('demos')
