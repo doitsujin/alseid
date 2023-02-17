@@ -279,6 +279,22 @@ public:
   : InMemoryStream(array.data(), array.size() * sizeof(T)) { }
 
   /**
+   * \brief Queries data pointer
+   * \returns Pointer to start of stream
+   */
+  const void* getData() const {
+    return m_data;
+  }
+
+  /**
+   * \brief Queries total stream size
+   * \returns Stream size
+   */
+  size_t getSize() const {
+    return m_capacity;
+  }
+
+  /**
    * \brief Checks whether the stream is valid
    * \returns \c true if the stream is valid
    */
@@ -342,6 +358,22 @@ public:
   explicit OutMemoryStream(
           std::array<T, N>&             array)
   : OutMemoryStream(array.data(), array.size() * sizeof(T)) { }
+
+  /**
+   * \brief Queries data pointer
+   * \returns Pointer to start of stream
+   */
+  const void* getData() const {
+    return m_data;
+  }
+
+  /**
+   * \brief Queries total stream size
+   * \returns Stream size
+   */
+  size_t getSize() const {
+    return m_capacity;
+  }
 
 private:
 

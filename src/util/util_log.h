@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <fstream>
 #include <iostream>
 #include <mutex>
@@ -81,9 +82,19 @@ public:
     s_instance.setLogFile_(path);
   }
 
+  /**
+   * \brief Sets log level
+   * \param [in] severity Minimum message severity
+   */
+  static void setLogLevel(LogSeverity severity) {
+    s_instance.m_minSeverity = severity;
+  }
+
 private:
 
   static Log s_instance;
+
+  std::atomic<LogSeverity> m_minSeverity = { LogSeverity(0) };
 
   std::mutex    m_mutex;
   std::ofstream m_file;
@@ -95,6 +106,9 @@ private:
 
   template<typename... Args>
   void message_(LogSeverity severity, const Args&... args) {
+    if (severity < m_minSeverity)
+      return;
+
     std::lock_guard lock(m_mutex);
     messageStream_(std::cerr, stringFromSeverity(severity), args...);
 
