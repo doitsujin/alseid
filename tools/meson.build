@@ -1,1 +1,2 @@
 subdir('asmerge')
+subdir('asshader')
