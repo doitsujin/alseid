@@ -563,12 +563,6 @@ struct IoArchiveDataSource {
   /** Memory location of source data.
    *  May be \c nullptr to use a file. */
   const void* memory = nullptr;
-  /** Path to the source file, if any.
-   *  Ignored if memory is non-null. */
-  std::filesystem::path file;
-  /** Offset of sub-file data within
-   *  the source file or stream */
-  uint64_t offset = 0;
   /** Size of sub-file data within the
    *  source file or stream */
   uint64_t size = 0;
@@ -669,11 +663,6 @@ private:
   template<typename Proc>
   IoStatus processDataSource(
     const IoArchiveDataSource&          source,
-    const Proc&                         proc);
-
-  template<typename Pred, typename Proc>
-  IoStatus processFilesIf(
-    const Pred&                         pred,
     const Proc&                         proc);
 
   template<typename Proc>

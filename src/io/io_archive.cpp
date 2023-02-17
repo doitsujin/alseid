@@ -417,10 +417,11 @@ IoStatus IoArchiveBuilder::buildHuffmanObjects() {
 
   m_huffmanCounters.resize(subfileCount);
 
-  IoStatus status = processFilesIf(
-    [this] (const IoArchiveSubFileDesc& subFile) {
-      return subFile.decodingTable != 0xFFFF;
-    }, [this] (const IoArchiveSubFileDesc& subFile, const void* data, uint32_t index) {
+  IoStatus status = processFiles(
+    [this] (const IoArchiveSubFileDesc& subFile, const void* data, uint32_t index) {
+      if (subFile.decodingTable == 0xFFFFu)
+        return true;
+
       uint16_t table = subFile.decodingTable;
 
       if (table >= m_huffmanObjects.size())
@@ -476,41 +477,20 @@ template<typename Proc>
 IoStatus IoArchiveBuilder::processDataSource(
   const IoArchiveDataSource&          source,
   const Proc&                         proc) {
-  if (source.memory) {
-    return proc(source, source.memory)
-      ? IoStatus::eSuccess
-      : IoStatus::eError;
-  } else {
-    IoFile file = m_io->open(source.file, IoOpenMode::eRead);
-
-    if (!file)
-      return IoStatus::eError;
-
-    std::vector<char> data(source.size);
-    IoStatus status = file->read(source.offset, source.size, data.data());
-
-    if (status != IoStatus::eSuccess)
-      return status;
-
-    return proc(source, data.data())
-      ? IoStatus::eSuccess
-      : IoStatus::eError;
-  }
+  return proc(source, source.memory)
+    ? IoStatus::eSuccess
+    : IoStatus::eError;
 }
 
 
-template<typename Pred, typename Proc>
-IoStatus IoArchiveBuilder::processFilesIf(
-  const Pred&                         pred,
+template<typename Proc>
+IoStatus IoArchiveBuilder::processFiles(
   const Proc&                         proc) {
   uint32_t subfileIndex = 0;
 
   for (const auto& f : m_desc.files) {
     for (const auto& s : f.subFiles) {
       uint32_t index = subfileIndex++;
-
-      if (!pred(s))
-        continue;
 
       IoStatus status = processDataSource(s.dataSource,
         [&proc, &s, index] (const IoArchiveDataSource& source, const void* data) {
@@ -523,15 +503,6 @@ IoStatus IoArchiveBuilder::processFilesIf(
   }
 
   return IoStatus::eSuccess;
-}
-
-
-template<typename Proc>
-IoStatus IoArchiveBuilder::processFiles(
-  const Proc&                         proc) {
-  return processFilesIf([] (const IoArchiveSubFileDesc&) {
-    return true;
-  }, proc);
 }
 
 }
