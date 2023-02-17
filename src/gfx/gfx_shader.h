@@ -29,6 +29,20 @@ enum class GfxShaderFormat : uint16_t {
 
 
 /**
+ * \brief Shader format info
+ *
+ * Specifies the shader format to
+ * use for a given graphics device.
+ */
+struct GfxShaderFormatInfo {
+  /** Format of the shader binary */
+  GfxShaderFormat format = GfxShaderFormat::eUnknown;
+  /** FourCC of this format in archive files */
+  FourCC identifier = FourCC();
+};
+
+
+/**
  * \brief Shader binding type
  */
 enum class GfxShaderBindingType : uint32_t {

@@ -25,6 +25,12 @@ public:
   ~GfxDebugDevice();
 
   /**
+   * \brief Queries shader format info
+   * \returns Shader format info
+   */
+  GfxShaderFormatInfo getShaderInfo() const override;
+
+  /**
    * \brief Queries device features
    * \returns Supported device capabilities
    */

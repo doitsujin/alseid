@@ -16,6 +16,11 @@ GfxDebugDevice::~GfxDebugDevice() {
 }
 
 
+GfxShaderFormatInfo GfxDebugDevice::getShaderInfo() const {
+  return m_device->getShaderInfo();
+}
+
+
 GfxDeviceFeatures GfxDebugDevice::getFeatures() const {
   return m_device->getFeatures();
 }

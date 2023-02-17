@@ -165,6 +165,15 @@ public:
     const uint32_t**                    queueFamilies) const;
 
   /**
+   * \brief Queries shader format info
+   *
+   * This will return info for the compressed SPIR-V
+   * binaries as they are stored in archive files.
+   * \returns Shader format info
+   */
+  GfxShaderFormatInfo getShaderInfo() const override;
+
+  /**
    * \brief Queries device features
    * \returns Supported device capabilities
    */

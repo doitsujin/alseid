@@ -107,6 +107,12 @@ public:
   virtual ~GfxDeviceIface() { }
 
   /**
+   * \brief Queries shader format info
+   * \returns Shader format info
+   */
+  virtual GfxShaderFormatInfo getShaderInfo() const = 0;
+
+  /**
    * \brief Queries device features
    * \returns Supported device capabilities
    */

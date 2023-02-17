@@ -104,6 +104,14 @@ void GfxVulkanDevice::getQueueSharingInfo(
 }
 
 
+GfxShaderFormatInfo GfxVulkanDevice::getShaderInfo() const {
+  GfxShaderFormatInfo result;
+  result.format = GfxShaderFormat::eVulkanSpirvCompressed;
+  result.identifier = FourCC('S', 'P', 'I', 'R');
+  return result;
+}
+
+
 GfxDeviceFeatures GfxVulkanDevice::getFeatures() const {
   GfxDeviceFeatures result = { };
   result.fastLinkGraphicsPipelines = m_features.extGraphicsPipelineLibrary.graphicsPipelineLibrary;
