@@ -1,2 +1,2 @@
-subdir('asmerge')
+subdir('asarchive')
 subdir('asshader')
