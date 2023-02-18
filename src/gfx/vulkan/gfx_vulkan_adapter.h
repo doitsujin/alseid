@@ -44,6 +44,7 @@ public:
   uint32_t extGraphicsPipelineLibrary     = 0;
   uint32_t extMeshShader                  = 0;
   uint32_t extRobustness2                 = 0;
+  uint32_t extShaderStencilExport         = 0;
 
   /**
    * \brief Checks whether required extensions are supported
@@ -72,7 +73,7 @@ private:
 
   std::vector<const char*> m_extensionList;
 
-  const std::array<Extension, 12> s_extensions = {{
+  const std::array<Extension, 13> s_extensions = {{
     { &khrAccelerationStructure,        VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,     1, false },
     { &khrDeferredHostOperations,       VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,   1, false },
     { &khrPipelineLibrary,              VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,           1, false },
@@ -85,6 +86,7 @@ private:
     { &extGraphicsPipelineLibrary,      VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME,  1, false },
     { &extMeshShader,                   VK_EXT_MESH_SHADER_EXTENSION_NAME,                1, false },
     { &extRobustness2,                  VK_EXT_ROBUSTNESS_2_EXTENSION_NAME,               1, true  },
+    { &extShaderStencilExport,          VK_EXT_SHADER_STENCIL_EXPORT_EXTENSION_NAME,      1, false },
   }};
 
 };

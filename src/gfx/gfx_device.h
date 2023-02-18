@@ -32,6 +32,9 @@ struct GfxDeviceFeatures {
    *  runtime, so that explicit calls to \c compileVariant are
    *  not necessary in order to avoid stutter. */
   uint32_t fastLinkGraphicsPipelines : 1;
+  /** Indicates whether the fragment shader can export
+   *  a per-pixel stencil reference. */
+  uint32_t fragmentShaderStencilExport : 1;
   /** Indicates support for ray tracing using ray queries. */
   uint32_t rayTracing : 1;
   /** Indicates support for 16-bit float

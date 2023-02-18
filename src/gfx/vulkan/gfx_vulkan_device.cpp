@@ -118,6 +118,7 @@ GfxDeviceFeatures GfxVulkanDevice::getFeatures() const {
   result.depthBounds = m_features.core.features.depthBounds;
   result.dualSourceBlending = m_features.core.features.dualSrcBlend;
   result.fastLinkGraphicsPipelines = m_features.extGraphicsPipelineLibrary.graphicsPipelineLibrary;
+  result.fragmentShaderStencilExport = m_extensions.extShaderStencilExport;
 
   result.rayTracing =
     m_features.khrRayQuery.rayQuery &&
