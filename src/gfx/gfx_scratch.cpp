@@ -57,7 +57,7 @@ std::optional<GfxScratchBuffer> GfxScratchBufferPage::alloc(
   GfxScratchBuffer result;
   result.buffer = m_parent->getBuffer();
   result.offset = GfxScratchPageSize * m_pageIndex + *offset;
-  result.size = GfxScratchPageSize * m_pageCount;
+  result.size = align(size, alignment);
   return std::make_optional(std::move(result));
 }
 

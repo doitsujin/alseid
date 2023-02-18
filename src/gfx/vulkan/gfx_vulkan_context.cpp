@@ -1332,21 +1332,25 @@ std::pair<VkPipelineStageFlags2, VkAccessFlags2> GfxVulkanContext::getVkStageAcc
         break;
 
       case GfxUsage::eVertexBuffer:
-        vkStages |= VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+        vkStages |= VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT;
         vkAccess |= VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT;
         break;
 
       case GfxUsage::eConstantBuffer:
-        vkAccess |= VK_ACCESS_2_UNIFORM_READ_BIT;
+        if (gfxStages)
+          vkAccess |= VK_ACCESS_2_UNIFORM_READ_BIT;
         break;
 
       case GfxUsage::eShaderResource:
-        vkAccess |= VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+        if (gfxStages)
+          vkAccess |= VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
         break;
 
       case GfxUsage::eShaderStorage:
-        vkAccess |= VK_ACCESS_2_SHADER_STORAGE_READ_BIT
-                 |  VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+        if (gfxStages) {
+          vkAccess |= VK_ACCESS_2_SHADER_STORAGE_READ_BIT
+                   |  VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+        }
         break;
 
       case GfxUsage::eRenderTarget:
