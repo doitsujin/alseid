@@ -50,6 +50,9 @@ GfxVulkanFormatMap::GfxVulkanFormatMap() {
   map(GfxFormat::eR32G32ui, VK_FORMAT_R32G32_UINT);
   map(GfxFormat::eR32G32si, VK_FORMAT_R32G32_SINT);
   map(GfxFormat::eR32G32f, VK_FORMAT_R32G32_SFLOAT);
+  map(GfxFormat::eR32G32B32ui, VK_FORMAT_R32G32B32_UINT);
+  map(GfxFormat::eR32G32B32si, VK_FORMAT_R32G32B32_SINT);
+  map(GfxFormat::eR32G32B32f, VK_FORMAT_R32G32B32_SFLOAT);
   map(GfxFormat::eR32G32B32A32ui, VK_FORMAT_R32G32B32A32_UINT);
   map(GfxFormat::eR32G32B32A32si, VK_FORMAT_R32G32B32A32_SINT);
   map(GfxFormat::eR32G32B32A32f, VK_FORMAT_R32G32B32A32_SFLOAT);
@@ -68,6 +71,7 @@ GfxVulkanFormatMap::GfxVulkanFormatMap() {
   map(GfxFormat::eBc7un, VK_FORMAT_BC7_UNORM_BLOCK);
   map(GfxFormat::eBc7srgb, VK_FORMAT_BC7_SRGB_BLOCK);
   map(GfxFormat::eD16, VK_FORMAT_D16_UNORM);
+  map(GfxFormat::eD24, VK_FORMAT_X8_D24_UNORM_PACK32);
   map(GfxFormat::eD24S8, VK_FORMAT_D24_UNORM_S8_UINT);
   map(GfxFormat::eD32, VK_FORMAT_D32_SFLOAT);
   map(GfxFormat::eD32S8, VK_FORMAT_D32_SFLOAT_S8_UINT); 

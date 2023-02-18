@@ -52,6 +52,9 @@ GfxFormatMetadataMap::GfxFormatMetadataMap() {
   addFormat(GfxFormat::eR32G32ui,           GfxImageAspect::eColor, g_1x1, 0, { 8u, g_1x1, GfxFormatType::eUint });
   addFormat(GfxFormat::eR32G32si,           GfxImageAspect::eColor, g_1x1, 0, { 8u, g_1x1, GfxFormatType::eSint });
   addFormat(GfxFormat::eR32G32f,            GfxImageAspect::eColor, g_1x1, 0, { 8u, g_1x1, GfxFormatType::eFloat });
+  addFormat(GfxFormat::eR32G32B32ui,        GfxImageAspect::eColor, g_1x1, 0, {12u, g_1x1, GfxFormatType::eUint });
+  addFormat(GfxFormat::eR32G32B32si,        GfxImageAspect::eColor, g_1x1, 0, {12u, g_1x1, GfxFormatType::eSint });
+  addFormat(GfxFormat::eR32G32B32f,         GfxImageAspect::eColor, g_1x1, 0, {12u, g_1x1, GfxFormatType::eFloat });
   addFormat(GfxFormat::eR32G32B32A32ui,     GfxImageAspect::eColor, g_1x1, 0, {16u, g_1x1, GfxFormatType::eUint });
   addFormat(GfxFormat::eR32G32B32A32si,     GfxImageAspect::eColor, g_1x1, 0, {16u, g_1x1, GfxFormatType::eSint });
   addFormat(GfxFormat::eR32G32B32A32f,      GfxImageAspect::eColor, g_1x1, 0, {16u, g_1x1, GfxFormatType::eFloat });
@@ -70,6 +73,7 @@ GfxFormatMetadataMap::GfxFormatMetadataMap() {
   addFormat(GfxFormat::eBc7un,              GfxImageAspect::eColor, g_4x4, 0, {16u, g_1x1, GfxFormatType::eFloat });
   addFormat(GfxFormat::eBc7srgb,            GfxImageAspect::eColor, g_4x4, GfxFormatFlag::eSrgb, {16u, g_1x1, GfxFormatType::eFloat });
   addFormat(GfxFormat::eD16,                GfxImageAspect::eDepth, g_1x1, 0, { 2u, g_1x1, GfxFormatType::eFloat });
+  addFormat(GfxFormat::eD24,                GfxImageAspect::eDepth, g_1x1, 0, { 4u, g_1x1, GfxFormatType::eFloat });
   addFormat(GfxFormat::eD32,                GfxImageAspect::eDepth, g_1x1, 0, { 4u, g_1x1, GfxFormatType::eFloat });
   addFormat(GfxFormat::eD24S8,              GfxImageAspect::eDepth | GfxImageAspect::eStencil, g_1x1, 0, { 4u, g_1x1, GfxFormatType::eFloat }, { 1u, g_1x1, GfxFormatType::eUint });
   addFormat(GfxFormat::eD32S8,              GfxImageAspect::eDepth | GfxImageAspect::eStencil, g_1x1, 0, { 4u, g_1x1, GfxFormatType::eFloat }, { 1u, g_1x1, GfxFormatType::eUint });
