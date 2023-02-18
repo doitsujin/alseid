@@ -260,6 +260,15 @@ enum class GfxPrimitiveType : uint32_t {
  * since both have to be set in one go anyway.
  */
 struct GfxViewport {
+  GfxViewport() { }
+
+  GfxViewport(
+          Offset2D                      offset_,
+          Extent2D                      extent_)
+  : offset(Vector2D(offset_))
+  , extent(Vector2D(extent_))
+  , scissor(offset_, extent_) { }
+
   Vector2D  offset    = Vector2D(0.0f, 0.0f);
   Vector2D  extent    = Vector2D(0.0f, 0.0f);
   float     minDepth  = 0.0f;

@@ -98,6 +98,25 @@ public:
           uint64_t                      size) = 0;
 
   /**
+   * \brief Allocates and writes scratch memory
+   *
+   * Convenience method that allocates a scratch buffer and immediately
+   * writes data to it. See \ref allocScratchData for more details.
+   * \param [in] usage Scratch buffer usage for the resulting descriptor.
+   *    The necessary CPU access bits are implied and need not be set.
+   * \param [in] data Data to write to the allocated slice
+   * \returns Descriptor for allocated buffer slice
+   */
+  template<typename T>
+  GfxDescriptor writeScratch(
+          GfxUsage                      usage,
+    const T&                            data) {
+    GfxScratchBuffer slice = allocScratch(usage | GfxUsage::eCpuWrite, sizeof(data));
+    std::memcpy(slice.buffer->map(GfxUsage::eCpuWrite, slice.offset), &data, sizeof(data));
+    return slice.getDescriptor(usage);
+  }
+
+  /**
    * \brief Begins render pass
    *
    * Binds the given set of render targets, and clears any render
@@ -549,17 +568,6 @@ public:
     const void*                         data) = 0;
 
   /**
-   * \brief Sets stencil reference
-   *
-   * Sets the reference value to use for the stencil test.
-   * \param [in] front Front face stencil reference
-   * \param [in] back Back face stencil reference
-   */
-  virtual void setStencilReference(
-          uint32_t                      front,
-          uint32_t                      back) = 0;
-
-  /**
    * \brief Sets shader constants
    *
    * Convenience method to pass an arbitrary data
@@ -573,6 +581,17 @@ public:
     const T&                            data) {
     setShaderConstants(offset, sizeof(data), &data);
   }
+
+  /**
+   * \brief Sets stencil reference
+   *
+   * Sets the reference value to use for the stencil test.
+   * \param [in] front Front face stencil reference
+   * \param [in] back Back face stencil reference
+   */
+  virtual void setStencilReference(
+          uint32_t                      front,
+          uint32_t                      back) = 0;
 
   /**
    * \brief Sets vertex input state

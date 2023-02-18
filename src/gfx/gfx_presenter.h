@@ -64,6 +64,16 @@ public:
   GfxPresenterContext& operator = (const GfxPresenterContext&) = delete;
 
   /**
+   * \brief Queries current swap chain size
+   *
+   * Same as the 2D dimensions of the swap image.
+   * \returns Current swap chain size
+   */
+  Extent2D getExtent() const {
+    return Extent2D(m_image->getDesc().extent);
+  }
+
+  /**
    * \brief Retrieves the context object for presentation
    *
    * Presentation commands \e must be recorded into this context.
