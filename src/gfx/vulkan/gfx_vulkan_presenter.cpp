@@ -138,6 +138,9 @@ GfxPresentStatus GfxVulkanPresenter::present(
   if (m_swapchain && !m_dirty) {
     vr = vk.vkAcquireNextImageKHR(vk.device, m_swapchain,
       ~0ull, VK_NULL_HANDLE, m_fence, &imageId);
+
+    if (vr > 0)
+      waitForFence();
   }
 
   while (vr) {
@@ -162,13 +165,7 @@ GfxPresentStatus GfxVulkanPresenter::present(
 
   // Wait for image acquisition to complete. Most drivers will stall
   // here anyway, so there's no real advantage to using semaphores.
-  vr = vk.vkWaitForFences(vk.device, 1, &m_fence, VK_TRUE, ~0ull);
-
-  if (!vr)
-    vr = vk.vkResetFences(vk.device, 1, &m_fence);
-
-  if (vr)
-    throw VulkanError("Vulkan: Failed to wait for presenter fence.", vr);
+  waitForFence();
 
   // The acquisition fence itself doesn't quite guarantee
   // that it's actually safe to reset the command buffers,
@@ -212,6 +209,19 @@ GfxPresentStatus GfxVulkanPresenter::present(
   }
 
   return GfxPresentStatus::ePresentFailed;
+}
+
+
+void GfxVulkanPresenter::waitForFence() {
+  auto& vk = m_device->vk();
+
+  VkResult vr = vk.vkWaitForFences(vk.device, 1, &m_fence, VK_TRUE, ~0ull);
+
+  if (!vr)
+    vr = vk.vkResetFences(vk.device, 1, &m_fence);
+
+  if (vr)
+    throw VulkanError("Vulkan: Failed to wait for presenter fence.", vr);
 }
 
 

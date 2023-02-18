@@ -130,6 +130,8 @@ private:
 
   std::vector<GfxVulkanPresenterObjects> m_objects;
 
+  void waitForFence();
+
   uint32_t pickImageCount(
     const VkSurfaceCapabilitiesKHR&     caps) const;
 
