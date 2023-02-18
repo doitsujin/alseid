@@ -69,6 +69,10 @@ public:
   Flags& operator ^= (Flags f) { m_raw ^= f.m_raw; return *this; }
   Flags& operator -= (Flags f) { m_raw &=~f.m_raw; return *this; }
 
+  bool all(Flags f) {
+    return (m_raw & f.m_raw) == f.m_raw;
+  }
+
   bool operator == (Flags f) const { return m_raw == f.m_raw; }
   bool operator != (Flags f) const { return m_raw != f.m_raw; }
 
