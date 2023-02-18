@@ -41,7 +41,7 @@ const IoArchiveFile* IoArchive::findFile(const std::string& name) const {
 
 IoStatus IoArchive::read(
   const IoArchiveSubFile*             subFile,
-        void*                         dst) {
+        void*                         dst) const {
   if (!subFile->isCompressed())
     return readCompressed(subFile, dst);
 

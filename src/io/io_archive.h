@@ -368,7 +368,7 @@ public:
    */
   IoStatus read(
     const IoArchiveSubFile*             subFile,
-          void*                         dst);
+          void*                         dst) const;
 
   /**
    * \brief Synchronously reads compresseed sub file
@@ -381,7 +381,7 @@ public:
    */
   IoStatus readCompressed(
     const IoArchiveSubFile*             subFile,
-          void*                         dst) {
+          void*                         dst) const {
     return m_file->read(
       subFile->getOffsetInArchive(),
       subFile->getCompressedSize(),
@@ -400,7 +400,7 @@ public:
   void read(
     const IoRequest&                    request,
     const IoArchiveSubFile*             subFile,
-          void*                         dst) {
+          void*                         dst) const {
     if (!subFile->isCompressed())
       readCompressed(request, subFile, dst);
 
@@ -429,7 +429,7 @@ public:
     const IoRequest&                    request,
     const IoArchiveSubFile*             subFile,
           void*                         dst,
-          Cb&&                          callback) {
+          Cb&&                          callback) const {
     if (!subFile->isCompressed())
       readCompressed(request, subFile, dst, std::move(callback));
 
@@ -454,7 +454,7 @@ public:
   void readCompressed(
     const IoRequest&                    request,
     const IoArchiveSubFile*             subFile,
-          void*                         dst) {
+          void*                         dst) const {
     request->read(m_file,
       subFile->getOffsetInArchive(),
       subFile->getCompressedSize(),
@@ -478,7 +478,7 @@ public:
     const IoRequest&                    request,
     const IoArchiveSubFile*             subFile,
           void*                         dst,
-          Cb&&                          callback) {
+          Cb&&                          callback) const {
     request->read(m_file,
       subFile->getOffsetInArchive(),
       subFile->getCompressedSize(),
@@ -507,7 +507,7 @@ public:
   void streamCompressed(
     const IoRequest&                    request,
     const IoArchiveSubFile*             subFile,
-          Cb&&                          callback) {
+          Cb&&                          callback) const {
     request->stream(m_file,
       subFile->getOffsetInArchive(),
       subFile->getCompressedSize(),
