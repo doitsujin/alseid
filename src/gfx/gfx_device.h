@@ -22,21 +22,37 @@ namespace as {
  * \brief Adapter features and capabilities
  */
 struct GfxDeviceFeatures {
+  /** Indicates support for conservative rasterization. */
+  uint32_t conservativeRasterization : 1;
+  /** Indicates support for the depth bounds test. */
+  uint32_t depthBounds : 1;
+  /** Indicates support for dual-source blending. */
+  uint32_t dualSourceBlending : 1;
   /** Indicates that graphics pipelines can be fast-linked at
    *  runtime, so that explicit calls to \c compileVariant are
    *  not necessary in order to avoid stutter. */
   uint32_t fastLinkGraphicsPipelines : 1;
+  /** Indicates support for ray tracing using ray queries. */
+  uint32_t rayTracing : 1;
+  /** Indicates support for 16-bit float
+   *  and integer arithmetic in shaders */
+  uint32_t shader16Bit : 1;
+  /** Indicates support for 64-bit float
+   *  and integer arithmetic in shaders */
+  uint32_t shader64Bit : 1;
+  /** Indicates support for reading and writing 16-bit
+   *  values to or from storage buffers in shaders. */
+  uint32_t shaderStorage16Bit : 1;
+  /** Indicates whether vertex, geometry and tessellation
+   *  shaders can access shader storage resources. */
+  uint32_t vertexShaderStorage : 1;
   /** Indicates whether shader stages other than the geometry
    *  shader can export the viewport index or layer index */
   uint32_t vertexShaderViewportLayerExport : 1;
-  /** Indicates support for mesh shader pipelines */
-  uint32_t meshShader : 1;
-  /** Indicates support for task shaders in mesh shader pipelines. */
-  uint32_t taskShader : 1;
-  /** Indicates support for ray tracing using ray queries. */
-  uint32_t rayTracing : 1;
-  /** Indicates support for conservative rasterization. */
-  uint32_t conservativeRasterization : 1;
+  /** Bit mask of supported shader stages. Support is guaranteed
+   *  for vertex, fragment and compute shaders, and desktop systems
+   *  will typically include support for tessellation and geometry. */
+  GfxShaderStages shaderStages;
   /** Maximum number of sampler descriptors in descriptor arrays.
    *  This amount applies to \e all descriptor arrays combined,
    *  and is also the maximum number of sampler descriptors in

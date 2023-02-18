@@ -114,13 +114,44 @@ GfxShaderFormatInfo GfxVulkanDevice::getShaderInfo() const {
 
 GfxDeviceFeatures GfxVulkanDevice::getFeatures() const {
   GfxDeviceFeatures result = { };
+  result.conservativeRasterization = m_extensions.extConservativeRasterization;
+  result.depthBounds = m_features.core.features.depthBounds;
+  result.dualSourceBlending = m_features.core.features.dualSrcBlend;
   result.fastLinkGraphicsPipelines = m_features.extGraphicsPipelineLibrary.graphicsPipelineLibrary;
-  result.vertexShaderViewportLayerExport = m_features.vk12.shaderOutputViewportIndex
-                                        && m_features.vk12.shaderOutputLayer;
-  result.meshShader = m_features.extMeshShader.meshShader;
-  result.taskShader = m_features.extMeshShader.taskShader;
-  result.rayTracing = m_features.khrRayQuery.rayQuery
-                   && m_features.khrAccelerationStructure.accelerationStructure;
+
+  result.rayTracing =
+    m_features.khrRayQuery.rayQuery &&
+    m_features.khrAccelerationStructure.accelerationStructure;
+
+  result.shader16Bit =
+    m_features.core.features.shaderInt16 &&
+    m_features.vk12.shaderFloat16;
+
+  result.shader64Bit =
+    m_features.core.features.shaderInt64 &&
+    m_features.core.features.shaderFloat64;
+
+  result.shaderStorage16Bit = m_features.vk11.storageBuffer16BitAccess;
+
+  result.vertexShaderStorage = m_features.core.features.vertexPipelineStoresAndAtomics;
+  result.vertexShaderViewportLayerExport =
+    m_features.vk12.shaderOutputViewportIndex &&
+    m_features.vk12.shaderOutputLayer;
+
+  // Fill in supported shader stages based on extension support
+  result.shaderStages = GfxShaderStage::eVertex | GfxShaderStage::eFragment | GfxShaderStage::eCompute;
+
+  if (m_features.core.features.geometryShader)
+    result.shaderStages |= GfxShaderStage::eGeometry;
+
+  if (m_features.core.features.tessellationShader)
+    result.shaderStages |= GfxShaderStage::eTessControl | GfxShaderStage::eTessEval;
+
+  if (m_features.extMeshShader.meshShader)
+    result.shaderStages |= GfxShaderStage::eMesh;
+
+  if (m_features.extMeshShader.taskShader)
+    result.shaderStages |= GfxShaderStage::eTask;
 
   // We could expose more here depending on device properties,
   // but just be conservative. These are guaranteed to work on
