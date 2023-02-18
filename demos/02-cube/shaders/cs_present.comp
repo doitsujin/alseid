@@ -1,0 +1,33 @@
+#version 450
+
+#extension GL_EXT_samplerless_texture_functions : require
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) writeonly uniform image2D r_dst;
+layout(set = 0, binding = 1) uniform texture2D r_src;
+layout(set = 0, binding = 2) uniform sampler r_sampler;
+
+layout(push_constant, std430)
+uniform push_t {
+  ivec2 dstImageSize;
+  ivec2 srcImageSize;
+};
+
+vec3 encodeSrgb(vec3 linear) {
+  bvec3 isLo = lessThanEqual(linear, vec3(0.0031308f));
+
+  vec3 loPart = linear * 12.92f;
+  vec3 hiPart = pow(linear, vec3(5.0f / 12.0f)) * 1.055f - 0.055f;
+  return mix(hiPart, loPart, isLo);
+}
+
+void main() {
+  ivec2 dstCoord = ivec2(gl_GlobalInvocationID.xy);
+
+  if (all(lessThan(dstCoord, dstImageSize))) {
+    vec2 srcCoord = vec2(dstCoord) / vec2(dstImageSize - 1);
+    vec3 srcColor = textureLod(sampler2D(r_src, r_sampler), srcCoord, 0).rgb;
+    imageStore(r_dst, dstCoord, vec4(encodeSrgb(srcColor), 1.0f));
+  }
+}
