@@ -276,4 +276,39 @@ struct GfxViewport {
   Rect2D    scissor   = Rect2D(Offset2D(0, 0), Extent2D(0, 0));
 };
 
+
+/**
+ * \brief Indirect draw arguments
+ */
+struct GfxDrawArgs {
+  uint32_t vertexCount;
+  uint32_t instanceCount;
+  uint32_t firstVertex;
+  uint32_t firstInstance;
+};
+
+
+/**
+ * \brief Indirect instanced draw arguments
+ */
+struct GfxDrawIndexedArgs {
+  uint32_t indexCount;
+  uint32_t instanceCount;
+  uint32_t firstIndex;
+  uint32_t firstVertex;
+  uint32_t firstInstance;
+};
+
+
+/**
+ * \brief Indirect dispatch count
+ *
+ * Applies to compute and mesh dispaches.
+ */
+struct GfxDispatchArgs {
+  uint32_t x;
+  uint32_t y;
+  uint32_t z;
+};
+
 }

@@ -473,6 +473,16 @@ public:
           Extent3D                      workgroupCount) = 0;
 
   /**
+   * \brief Executes an indirect compute dispatch
+   *
+   * Only valid outside of render passes.
+   * \param [in] args Argument buffer descriptor pointing
+   *    to a single \c GfxDispatchArgs struct.
+   */
+  virtual void dispatchIndirect(
+    const GfxDescriptor&                args) = 0;
+
+  /**
    * \brief Executes a non-indexed draw
    *
    * \param [in] vertexCount Number of vertices
@@ -485,6 +495,33 @@ public:
           uint32_t                      instanceCount,
           uint32_t                      firstVertex,
           uint32_t                      firstInstance) = 0;
+
+  /**
+   * \brief Executes an indirect draw
+   *
+   * \param [in] args Argument buffer descriptor pointing
+   *    to tightly packed \c GfxDrawArgs structs.
+   * \param [in] count Count buffer descriptor. If
+   *    null, \c maxCount draws will be performed.
+   * \param [in] maxCount Maximum number of draws
+   */
+  virtual void drawIndirect(
+    const GfxDescriptor&                args,
+    const GfxDescriptor&                count,
+          uint32_t                      maxCount) = 0;
+
+  /**
+   * \brief Executes an indirect draw
+   *
+   * Convenience method that omits the count buffer.
+   * \param [in] args Argument buffer descriptor
+   * \param [in] count Number of draws to perform
+   */
+  void drawIndirect(
+    const GfxDescriptor&                args,
+          uint32_t                      count) {
+    drawIndirect(args, GfxDescriptor(), count);
+  }
 
   /**
    * \brief Executes an indexed draw
@@ -501,6 +538,33 @@ public:
           uint32_t                      firstIndex,
           int32_t                       firstVertex,
           uint32_t                      firstInstance) = 0;
+
+  /**
+   * \brief Executes an indirect indexed draw
+   *
+   * \param [in] args Argument buffer descriptor pointing
+   *    to tightly packed \c GfxDrawIndexedArgs structs.
+   * \param [in] count Count buffer descriptor. If
+   *    null, \c maxCount draws will be performed.
+   * \param [in] maxCount Maximum number of draws
+   */
+  virtual void drawIndexedIndirect(
+    const GfxDescriptor&                args,
+    const GfxDescriptor&                count,
+          uint32_t                      maxCount) = 0;
+
+  /**
+   * \brief Executes an indirect indexed draw
+   *
+   * Convenience method that omits the count buffer.
+   * \param [in] args Argument buffer descriptor
+   * \param [in] count Number of draws to perform
+   */
+  void drawIndexedIndirect(
+    const GfxDescriptor&                args,
+          uint32_t                      count) {
+    drawIndexedIndirect(args, GfxDescriptor(), count);
+  }
 
   /**
    * \brief Sets blend constants

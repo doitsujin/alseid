@@ -325,6 +325,13 @@ public:
           Extent3D                      workgroupCount) override;
 
   /**
+   * \brief Executes an indirect compute dispatch
+   * \param [in] args Argument buffer descriptor
+   */
+  void dispatchIndirect(
+    const GfxDescriptor&                args) override;
+
+  /**
    * \brief Executes a non-indexed draw
    *
    * \param [in] vertexCount Number of vertices
@@ -337,6 +344,18 @@ public:
           uint32_t                      instanceCount,
           uint32_t                      firstVertex,
           uint32_t                      firstInstance) override;
+
+  /**
+   * \brief Executes an indirect draw
+   *
+   * \param [in] args Argument buffer descriptor
+   * \param [in] count Count buffer descriptor
+   * \param [in] maxCount Maximum number of draws
+   */
+  void drawIndirect(
+    const GfxDescriptor&                args,
+    const GfxDescriptor&                count,
+          uint32_t                      maxCount) override;
 
   /**
    * \brief Executes an indexed draw
@@ -353,6 +372,18 @@ public:
           uint32_t                      firstIndex,
           int32_t                       firstVertex,
           uint32_t                      firstInstance) override;
+
+  /**
+   * \brief Executes an indirect indexed draw
+   *
+   * \param [in] args Argument buffer descriptor
+   * \param [in] count Count buffer descriptor
+   * \param [in] maxCount Maximum number of draws
+   */
+  void drawIndexedIndirect(
+    const GfxDescriptor&                args,
+    const GfxDescriptor&                count,
+          uint32_t                      maxCount) override;
 
   /**
    * \brief Sets blend constants

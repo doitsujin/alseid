@@ -709,6 +709,20 @@ void GfxVulkanContext::dispatch(
 }
 
 
+void GfxVulkanContext::dispatchIndirect(
+    const GfxDescriptor&                args) {
+  auto& vk = m_device->vk();
+
+  this->updateComputeState(vk);
+
+  auto descriptor = importVkDescriptor(args);
+
+  vk.vkCmdDispatchIndirect(m_cmd,
+    descriptor.buffer.buffer,
+    descriptor.buffer.offset);
+}
+
+
 void GfxVulkanContext::draw(
         uint32_t                      vertexCount,
         uint32_t                      instanceCount,
@@ -721,6 +735,33 @@ void GfxVulkanContext::draw(
   vk.vkCmdDraw(m_cmd,
     vertexCount, instanceCount,
     firstVertex, firstInstance);
+}
+
+
+void GfxVulkanContext::drawIndirect(
+    const GfxDescriptor&                args,
+    const GfxDescriptor&                count,
+          uint32_t                      maxCount) {
+  auto& vk = m_device->vk();
+
+  this->updateGraphicsState(vk, false);
+
+  auto argDescriptor = importVkDescriptor(args);
+  auto cntDescriptor = importVkDescriptor(count);
+
+  if (!cntDescriptor.buffer.buffer) {
+    vk.vkCmdDrawIndirect(m_cmd,
+      argDescriptor.buffer.buffer,
+      argDescriptor.buffer.offset,
+      maxCount, sizeof(GfxDrawArgs));
+  } else {
+    vk.vkCmdDrawIndirectCount(m_cmd,
+      argDescriptor.buffer.buffer,
+      argDescriptor.buffer.offset,
+      cntDescriptor.buffer.buffer,
+      cntDescriptor.buffer.offset,
+      maxCount, sizeof(GfxDrawArgs));
+  }
 }
 
 
@@ -737,6 +778,33 @@ void GfxVulkanContext::drawIndexed(
   vk.vkCmdDrawIndexed(m_cmd,
     indexCount, instanceCount,
     firstIndex, firstVertex, firstInstance);
+}
+
+
+void GfxVulkanContext::drawIndexedIndirect(
+    const GfxDescriptor&                args,
+    const GfxDescriptor&                count,
+          uint32_t                      maxCount) {
+  auto& vk = m_device->vk();
+
+  this->updateGraphicsState(vk, false);
+
+  auto argDescriptor = importVkDescriptor(args);
+  auto cntDescriptor = importVkDescriptor(count);
+
+  if (!cntDescriptor.buffer.buffer) {
+    vk.vkCmdDrawIndexedIndirect(m_cmd,
+      argDescriptor.buffer.buffer,
+      argDescriptor.buffer.offset,
+      maxCount, sizeof(GfxDrawIndexedArgs));
+  } else {
+    vk.vkCmdDrawIndexedIndirectCount(m_cmd,
+      argDescriptor.buffer.buffer,
+      argDescriptor.buffer.offset,
+      cntDescriptor.buffer.buffer,
+      cntDescriptor.buffer.offset,
+      maxCount, sizeof(GfxDrawIndexedArgs));
+  }
 }
 
 
