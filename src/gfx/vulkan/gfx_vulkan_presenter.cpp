@@ -126,7 +126,7 @@ void GfxVulkanPresenter::setPresentMode(
 }
 
 
-bool GfxVulkanPresenter::present(
+GfxPresentStatus GfxVulkanPresenter::present(
   const GfxPresenterProc&             proc) {
   auto& vk = m_device->vk();
 
@@ -154,7 +154,7 @@ bool GfxVulkanPresenter::present(
       continue;
 
     if (!m_swapchain)
-      return false;
+      return GfxPresentStatus::eAcquireFailed;
 
     vr = vk.vkAcquireNextImageKHR(vk.device, m_swapchain,
       ~0ull, VK_NULL_HANDLE, m_fence, &imageId);
@@ -203,7 +203,7 @@ bool GfxVulkanPresenter::present(
     m_swapchain, imageId);
 
   if (vr >= 0)
-    return true;
+    return GfxPresentStatus::eSuccess;
 
   if (vr == VK_ERROR_SURFACE_LOST_KHR) {
     destroySwapchain();
@@ -211,7 +211,7 @@ bool GfxVulkanPresenter::present(
     createSurface();
   }
 
-  return false;
+  return GfxPresentStatus::ePresentFailed;
 }
 
 

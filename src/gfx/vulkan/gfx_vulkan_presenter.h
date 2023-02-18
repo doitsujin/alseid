@@ -97,9 +97,9 @@ public:
    * Recreates the underlying Vulkan swap chain and
    * surface as necessary.
    * \param [in] proc Presenter callback
-   * \returns \c true if presentation was successful
+   * \returns Presentation status
    */
-  bool present(
+  GfxPresentStatus present(
     const GfxPresenterProc&             proc) override;
 
 private:

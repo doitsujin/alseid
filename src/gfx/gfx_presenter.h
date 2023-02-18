@@ -164,6 +164,21 @@ struct GfxPresenterDesc {
 
 
 /**
+ * \brief Presentation status
+ */
+enum class GfxPresentStatus : uint32_t {
+  /** Presentation was successful. */
+  eSuccess        = 0,
+  /** No swap chain image could be acquired and the
+   *  presentation callback was not executed. */
+  eAcquireFailed  = 1,
+  /** A swap chain image was acquired and the presentation
+   *  callback was executed, but final presentation failed. */
+  ePresentFailed  = 2,
+};
+
+
+/**
  * \brief Presenter interface
  */
 class GfxPresenterIface {
@@ -230,8 +245,19 @@ public:
 
   /**
    * \brief Presents an image
+   *
+   * Acquires a swap image from the graphics backend, executes
+   * the given callback which should render to the swap image,
+   * and then presents the image.
+   *
+   * Note that if no image can be acquired, e.g. if the window is
+   * minimized on some platforms, the callback may never be called.
+   * In that case, \c GfxPresentStatus::eAcquire is returned.
+   * \param [in] proc Presentation callback. The swap chain image
+   *    and a context for rendering will be provided to the callback.
+   * \returns Present status
    */
-  virtual bool present(
+  virtual GfxPresentStatus present(
     const GfxPresenterProc&             proc) = 0;
 
 };
