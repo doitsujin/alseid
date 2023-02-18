@@ -567,6 +567,42 @@ public:
   }
 
   /**
+   * \brief Executes a mesh shader draw
+   *
+   * Requires a mesh shader pipeline to be bound.
+   * \param workgroupCount Workgroup count vector
+   */
+  virtual void drawMesh(
+          Extent3D                      workgroupCount) = 0;
+
+  /**
+   * \brief Executes an indirect mesh shader draw
+   *
+   * \param [in] args Argument buffer descriptor pointing
+   *    to tightly packed \c GfxDispatchArgs structs.
+   * \param [in] count Count buffer descriptor. If
+   *    null, \c maxCount draws will be performed.
+   * \param [in] maxCount Maximum number of draws
+   */
+  virtual void drawMeshIndirect(
+    const GfxDescriptor&                args,
+    const GfxDescriptor&                count,
+          uint32_t                      maxCount) = 0;
+
+  /**
+   * \brief Executes an indirect mesh shader draw
+   *
+   * Convenience method that omits the count buffer.
+   * \param [in] args Argument buffer descriptor
+   * \param [in] count Number of draws to perform
+   */
+  void drawMeshIndirect(
+    const GfxDescriptor&                args,
+          uint32_t                      count) {
+    drawMeshIndirect(args, GfxDescriptor(), count);
+  }
+
+  /**
    * \brief Sets blend constants
    *
    * Provides values for constant blend factors

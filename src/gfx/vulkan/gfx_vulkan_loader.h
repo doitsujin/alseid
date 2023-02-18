@@ -154,6 +154,9 @@ public:
   GFX_VK_DPROC(vkCmdDrawIndexedIndirectCount);
   GFX_VK_DPROC(vkCmdDrawIndirect);
   GFX_VK_DPROC(vkCmdDrawIndirectCount);
+  GFX_VK_DPROC(vkCmdDrawMeshTasksEXT);
+  GFX_VK_DPROC(vkCmdDrawMeshTasksIndirectCountEXT);
+  GFX_VK_DPROC(vkCmdDrawMeshTasksIndirectEXT);
   GFX_VK_DPROC(vkCmdEndDebugUtilsLabelEXT);
   GFX_VK_DPROC(vkCmdEndQuery);
   GFX_VK_DPROC(vkCmdEndRendering);

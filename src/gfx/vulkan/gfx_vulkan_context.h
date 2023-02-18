@@ -386,6 +386,25 @@ public:
           uint32_t                      maxCount) override;
 
   /**
+   * \brief Executes a mesh shader draw
+   * \param workgroupCount Workgroup count vector
+   */
+  void drawMesh(
+          Extent3D                      workgroupCount) override;
+
+  /**
+   * \brief Executes an indirect mesh shader draw
+   *
+   * \param [in] args Argument buffer descriptor
+   * \param [in] count Count buffer descriptor
+   * \param [in] maxCount Maximum number of draws
+   */
+  void drawMeshIndirect(
+    const GfxDescriptor&                args,
+    const GfxDescriptor&                count,
+          uint32_t                      maxCount) override;
+
+  /**
    * \brief Sets blend constants
    * \param [in] constants Blend constants
    */

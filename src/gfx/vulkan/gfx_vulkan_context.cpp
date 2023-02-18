@@ -808,6 +808,46 @@ void GfxVulkanContext::drawIndexedIndirect(
 }
 
 
+void GfxVulkanContext::drawMesh(
+        Extent3D                      workgroupCount) {
+  auto& vk = m_device->vk();
+
+  this->updateGraphicsState(vk, false);
+
+  vk.vkCmdDrawMeshTasksEXT(m_cmd,
+    workgroupCount.at<0>(),
+    workgroupCount.at<1>(),
+    workgroupCount.at<2>());
+}
+
+
+void GfxVulkanContext::drawMeshIndirect(
+  const GfxDescriptor&                args,
+  const GfxDescriptor&                count,
+        uint32_t                      maxCount) {
+  auto& vk = m_device->vk();
+
+  this->updateGraphicsState(vk, false);
+
+  auto argDescriptor = importVkDescriptor(args);
+  auto cntDescriptor = importVkDescriptor(count);
+
+  if (!cntDescriptor.buffer.buffer) {
+    vk.vkCmdDrawMeshTasksIndirectEXT(m_cmd,
+      argDescriptor.buffer.buffer,
+      argDescriptor.buffer.offset,
+      maxCount, sizeof(GfxDispatchArgs));
+  } else {
+    vk.vkCmdDrawMeshTasksIndirectCountEXT(m_cmd,
+      argDescriptor.buffer.buffer,
+      argDescriptor.buffer.offset,
+      cntDescriptor.buffer.buffer,
+      cntDescriptor.buffer.offset,
+      maxCount, sizeof(GfxDispatchArgs));
+  }
+}
+
+
 void GfxVulkanContext::setBlendConstants(
         GfxColorValue                 constants) {
   m_blendConstants = getVkClearValue(constants).color;
