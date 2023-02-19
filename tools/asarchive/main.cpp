@@ -17,10 +17,7 @@ using namespace as;
 enum class ArgMode : uint32_t {
   eInput,
   eOutput,
-  eDecodingTableMap,
 };
-
-using DecodingTableMap = std::unordered_map<uint16_t, uint16_t>;
 
 using InputDataList = std::list<std::vector<char>>;
 
@@ -31,10 +28,8 @@ void printHelp(const char* name) {
 
 
 void printMergeHelp(const char* name) {
-  std::cout << "Usage: " << name << " merge -o outfile [[-m map] [input1, input2, ...]]" << std::endl
+  std::cout << "Usage: " << name << " merge -o outfile [[input1, input2, ...]]" << std::endl
             << "  -o  outfile   : Specifies output file" << std::endl
-            << "  -m  a:b[,c:d] : Maps the decoding table a in subsequent inputs to decoding" << std::endl
-            << "                  table b in the output. Can perform multiple mappings." << std::endl
             << "  --help        : Shows this message." << std::endl;
 }
 
@@ -122,7 +117,6 @@ bool processInput(
   const Io&                             io,
         IoArchiveDesc&                  outputDesc,
         InputDataList&                  inputs,
-        DecodingTableMap&               decodingTableMap,
         std::filesystem::path           path) {
   IoArchive archive(io->open(path, IoOpenMode::eRead));
 
@@ -171,12 +165,6 @@ bool processInput(
       subInfo.dataSource.size = sub->getSize();
       subInfo.identifier = sub->getIdentifier();
       subInfo.compression = sub->getCompressionType();
-      subInfo.decodingTable = sub->getDecodingTableIndex();
-
-      auto entry = decodingTableMap.find(subInfo.decodingTable);
-
-      if (entry != decodingTableMap.end())
-        subInfo.decodingTable = entry->second;
 
       dataOffset += sub->getSize();
     }
@@ -194,10 +182,6 @@ bool processInput(
 
 
 int merge(const Io& io, int argc, char** argv) {
-  // Current decoding table map. This can
-  // change as we process inputs.
-  DecodingTableMap decodingTableMap;
-
   // Source data arrays, one vector per source file.
   InputDataList inputs;
 
@@ -217,13 +201,11 @@ int merge(const Io& io, int argc, char** argv) {
       case ArgMode::eInput: {
         if (arg == "-o") {
           argMode = ArgMode::eOutput;
-        } else if (arg == "-m") {
-          argMode = ArgMode::eDecodingTableMap;
         } else if (arg == "-h" || arg == "--help") {
           printHelp(argv[0]);
           return 0;
         } else {
-          if (!processInput(io, outputDesc, inputs, decodingTableMap, arg))
+          if (!processInput(io, outputDesc, inputs, arg))
             return 1;
         }
       } break;
@@ -235,21 +217,6 @@ int merge(const Io& io, int argc, char** argv) {
         }
 
         outputPath = arg;
-        argMode = ArgMode::eInput;
-      } break;
-
-      case ArgMode::eDecodingTableMap: {
-        decodingTableMap.clear();
-
-        auto cb = [map = &decodingTableMap] (uint16_t k, uint16_t v) {
-          return map->insert({ k, v }).second;
-        };
-
-        if (!parseDecodingMap(arg, cb)) {
-          Log::err("Invalid map: ", arg);
-          return 1;
-        }
-
         argMode = ArgMode::eInput;
       } break;
     }
@@ -448,7 +415,6 @@ int print(const Io& io, int argc, char** argv) {
   }
 
   std::cout << "Files: " << archive.getFileCount() << std::endl;
-  uint32_t decodingTableCount = 0;
 
   for (uint32_t i = 0; i < archive.getFileCount(); i++) {
     auto file = archive.getFile(i);
@@ -470,34 +436,19 @@ int print(const Io& io, int argc, char** argv) {
 
       std::string compression;
 
-      if (!subFile->isCompressed()) {
-        compression = "None";
-      } else {
-        switch (subFile->getCompressionType()) {
-          case IoArchiveCompression::eDefault:
-            compression = "Huffman";
-            break;
+      switch (subFile->getCompressionType()) {
+        case IoArchiveCompression::eNone:
+          compression = "None";
+          break;
 
-          default:
-            compression = strcat("IoArchiveCompression(", uint32_t(subFile->getCompressionType()), ")");
-            break;
-        }
+        default:
+          compression = strcat("IoArchiveCompression(", uint32_t(subFile->getCompressionType()), ")");
+          break;
       }
 
       std::cout << "                Compression: " << compression << std::endl;
-
-      if (subFile->hasDecodingTable()) {
-        uint32_t tableIndex = subFile->getDecodingTableIndex();
-        decodingTableCount = std::max(decodingTableCount, tableIndex + 1);
-        std::cout << "                Decoding table: " << tableIndex << std::endl;
-      }
     }
   }
-
-  std::cout << std::endl << "Decoding tables: " << decodingTableCount << std::endl;
-
-  for (uint32_t i = 0; i < decodingTableCount; i++)
-    std::cout << "    " << i << ": " << archive.getDecoder(i)->computeSize() << " bytes" << std::endl;
 
   return 0;
 }

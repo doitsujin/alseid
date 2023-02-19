@@ -81,7 +81,6 @@ int main(int argc, char** argv) {
     subFile.dataSource.memory = shaderBinaryData.data();
     subFile.dataSource.size = shaderBinaryData.size();
     subFile.identifier = FourCC('S', 'P', 'I', 'R');
-    subFile.decodingTable = 0;
   }
 
   IoArchiveBuilder builder(io, desc);

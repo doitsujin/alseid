@@ -4,7 +4,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "../util/util_huffman.h"
 #include "../util/util_types.h"
 
 #include "io.h"
@@ -24,10 +23,6 @@ struct IoArchiveHeader {
   uint16_t version;
   /** Number of files */
   uint32_t fileCount;
-  /** Number of Huffman decoding tables */
-  uint16_t decodingTableCount;
-  /** Reserved value that's always 0 for now */
-  uint16_t reserved;
 };
 
 
@@ -49,15 +44,10 @@ struct IoArchiveFileMetadata {
 
 /**
  * \brief Compression type
- *
- * Note that all data can use Huffman compression with
- * one of the global decoding tables regardless of the
- * compression method specified here.
  */
 enum class IoArchiveCompression : uint16_t {
-  /** Data is uncompressed other than
-   *  basic Huffman encoding. */
-  eDefault        = 0,
+  /** Data is uncompressed. */
+  eNone         = 0,
 };
 
 
@@ -71,9 +61,8 @@ struct IoArchiveSubFileMetadata {
   /** Compression type. Can be one of the values specified
    *  in the \ref IoArchiveCompression enum, or custom. */
   IoArchiveCompression compression;
-  /** Index to Huffman decoding table. If this is \c -1,
-   *  this sub-file does not use Huffman encoding. */
-  uint16_t decodingTable;
+  /** Currently unused field, always 0 */
+  uint16_t reserved;
   /** Offset of this sub-file within the archive, in bytes,
    *  counted from the start of the archive file itself. */
   uint64_t offset;
@@ -84,15 +73,6 @@ struct IoArchiveSubFileMetadata {
   uint32_t rawSize;
 };
 
-
-
-/**
- * \brief Huffman decoding table metadata
- */
-struct IoArchiveDecodingTableMetadata {
-  /** Number of bytes required to store the decoding table. */
-  uint32_t tableSize;
-};
 
 
 /**
@@ -123,14 +103,6 @@ public:
   }
 
   /**
-   * \brief Retrieves decoding table index
-   * \returns Decoding table index
-   */
-  uint16_t getDecodingTableIndex() const {
-    return m_metadata.decodingTable;
-  }
-
-  /**
    * \brief Retrieves file offset in archive
    * \returns File offset in archive
    */
@@ -155,20 +127,11 @@ public:
   }
 
   /** 
-   * \brief Checks whether Huffman compression is used
-   * \returns \c true if the decoding table index is valid
-   */
-  bool hasDecodingTable() const {
-    return m_metadata.decodingTable != 0xFFFF;
-  }
-
-  /** 
    * \brief Checks whether any compression is used
    * \returns \c true if the sub file is compressed
    */
   bool isCompressed() const {
-    return m_metadata.decodingTable != 0xFFFF
-        || m_metadata.compression != IoArchiveCompression::eDefault;
+    return m_metadata.compression != IoArchiveCompression::eNone;
   }
 
 private:
@@ -307,8 +270,7 @@ public:
   /**
    * \brief Loads an archive from a file
    *
-   * Loads and parses all file metadata, inline
-   * data, as well as Huffman decoding tables.
+   * Loads and parses all file metadata and inline data.
    * \param [in] file The file
    */
   IoArchive(IoFile file);
@@ -345,17 +307,6 @@ public:
    *    if no file with the given name could be found.
    */
   const IoArchiveFile* findFile(const std::string& name) const;
-
-  /**
-   * \brief Retrieves Huffman decoding table
-   *
-   * \param [in] index Decoding table index
-   * \returns Pointer to Huffman decoder, or \c nullptr
-   *    if the given index is out of bounds.
-   */
-  const HuffmanDecoder<uint16_t>* getDecoder(uint32_t index) const {
-    return index < m_decoders.size() ? &m_decoders[index] : nullptr;
-  }
 
   /**
    * \brief Synchronously reads sub file
@@ -545,8 +496,6 @@ private:
   std::vector<char>             m_fileNames;
   std::vector<char>             m_inlineData;
 
-  std::vector<HuffmanDecoder<uint16_t>> m_decoders;
-
   std::vector<IoArchiveSubFile> m_subFiles;
   std::vector<IoArchiveFile>    m_files;
 
@@ -579,10 +528,7 @@ struct IoArchiveSubFileDesc {
   /** Identifier */
   FourCC identifier = FourCC();
   /** Compression method */
-  IoArchiveCompression compression = IoArchiveCompression::eDefault;
-  /** Huffman decoding table. If this is 0xFFFF,
-   *  this sub-file will not be compressed. */
-  uint16_t decodingTable = 0xFFF;
+  IoArchiveCompression compression = IoArchiveCompression::eNone;
 };
 
 
@@ -638,24 +584,8 @@ public:
 
 private:
 
-  template<typename CodeType, typename CountType>
-  struct HuffmanObjects {
-    HuffmanCounter<CodeType, CountType> counter;
-    HuffmanEncoder<CodeType> encoder;
-    HuffmanDecoder<CodeType> decoder;
-  };
-
   Io            m_io;
   IoArchiveDesc m_desc;
-
-  std::vector<HuffmanObjects<uint16_t, uint64_t>> m_huffmanObjects;
-  std::vector<HuffmanCounter<uint16_t, uint64_t>> m_huffmanCounters;
-
-  IoStatus buildHuffmanObjects();
-
-  uint64_t computeCompressedSize(
-    const IoArchiveSubFileDesc&         subfile,
-          uint32_t                      subfileIndex) const;
 
   bool writeCompressedSubfile(
           OutStream&                    stream,

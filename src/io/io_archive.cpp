@@ -1,6 +1,8 @@
 #include "../util/util_assert.h"
 #include "../util/util_error.h"
+#include "../util/util_huffman.h"
 #include "../util/util_log.h"
+#include "../util/util_lzss.h"
 
 #include "io_archive.h"
 
@@ -16,7 +18,6 @@ IoArchive::IoArchive(IoFile file)
     m_file = nullptr;
     m_fileNames.clear();
     m_inlineData.clear();
-    m_decoders.clear();
     m_subFiles.clear();
     m_files.clear();
     m_lookupTable.clear();
@@ -70,21 +71,11 @@ bool IoArchive::decompress(
     return true;
   }
 
-  // Currently, no further compression types are defined
-  if (subFile->getCompressionType() != IoArchiveCompression::eDefault)
+  // Currently, no compression types are defined
+  if (subFile->getCompressionType() != IoArchiveCompression::eNone)
     return false;
 
-  // Decode huffman-compressed binary using the provided decoder
-  auto decoder = getDecoder(subFile->getDecodingTableIndex());
-
-  if (!decoder)
-    return false;
-
-  InMemoryStream reader(srcData, subFile->getCompressedSize());
-  BitstreamReader bitstream(reader);
-
-  OutMemoryStream writer(dstData, subFile->getSize());
-  return decoder->decode(writer, bitstream, subFile->getSize());
+  return false;
 }
 
 
@@ -151,27 +142,6 @@ bool IoArchive::parseMetadata() {
     return false;
   }
 
-  // Read decoding table metadata and then all decoding tables in one go.
-  std::vector<IoArchiveDecodingTableMetadata> decodingTables(fileHeader.decodingTableCount);
-
-  if (!stream.read(decodingTables)) {
-    Log::err("Archive: Failed to read decoding table metadata");
-    return false;
-  }
-
-  size_t totalDecodingTableSize = 0;
-
-  for (const auto& t : decodingTables)
-    totalDecodingTableSize += t.tableSize;
-
-  // Copy all decoding tables into memory to reduce the number of I/O operations.
-  std::vector<char> decodingTableData(totalDecodingTableSize);
-
-  if (!stream.read(decodingTableData)) {
-    Log::err("Archive: Failed to read decoding tables (", totalDecodingTableSize, " bytes)");
-    return false;
-  }
-
   // Read all inline data directly into the array
   m_inlineData.resize(totalInlineDataSize);
 
@@ -180,34 +150,11 @@ bool IoArchive::parseMetadata() {
     return false;
   }
 
-  // Now that everything is loaded, create the Huffman
-  // decoder objects first.
-  m_decoders.resize(fileHeader.decodingTableCount);
-  size_t decodingTableOffset = 0;
-
-  for (uint32_t i = 0; i < fileHeader.decodingTableCount; i++) {
-    InMemoryStream reader(&decodingTableData[decodingTableOffset], decodingTables[i].tableSize);
-    BitstreamReader bitstream(reader);
-
-    if (!m_decoders[i].deserialize(bitstream)) {
-      Log::err("Archive: Failed to parse decoding table ", i);
-      return false;
-    }
-
-    decodingTableOffset += decodingTables[i].tableSize;
-  }
-
   // Initialize and validate sub-file objects
   m_subFiles.reserve(totalSubFileCount);
 
   for (size_t i = 0; i < totalSubFileCount; i++) {
     auto& subFile = m_subFiles.emplace_back(subFiles[i]);
-
-    if (subFile.hasDecodingTable()
-     && subFile.getDecodingTableIndex() >= fileHeader.decodingTableCount) {
-      Log::err("Archive: Invalid decoding table index: ", subFile.getDecodingTableIndex());
-      return false;
-    }
 
     if (subFile.getOffsetInArchive() + subFile.getCompressedSize() > stream.getSize()) {
       Log::err("Archive: Sub-file out of bounds:"
@@ -284,12 +231,6 @@ IoStatus IoArchiveBuilder::build(
 
   OutFileStream stream(std::move(file));
 
-  // Create Huffman encoder/decoder objects
-  IoStatus status = buildHuffmanObjects();
-
-  if (status != IoStatus::eSuccess)
-    return status;
-
   // Prepare and write out the header
   IoArchiveHeader header = { };
   std::memcpy(header.magic, IoArchiveMagic.data(), IoArchiveMagic.size());
@@ -316,37 +257,14 @@ IoStatus IoArchiveBuilder::build(
     totalSubFileCount += info.subFileCount;
   }
 
-  // Process decoding tables
-  std::vector<IoArchiveDecodingTableMetadata> decodingTables;
-  decodingTables.reserve(m_huffmanObjects.size());
-
-  OutVectorStream decodingTableStream;
-
-  for (const auto& o : m_huffmanObjects) {
-    size_t tableSize = o.decoder.computeSize();
-
-    IoArchiveDecodingTableMetadata& info = decodingTables.emplace_back();
-    info.tableSize = tableSize;
-
-    BitstreamWriter bitstream(decodingTableStream);
-    o.decoder.serialize(bitstream);
-    bitstream.flush();
-  }
-
-  std::vector<char> decodingTableData = std::move(decodingTableStream).getData();
-
   // Now we can compute the size of the header, which is
   // important for being able to know sub-file offsets
   header.fileCount = files.size();
-  header.decodingTableCount = decodingTables.size();
-  header.reserved = 0;
  
   uint64_t metadataSize = sizeof(header) + totalInlineDataSize +
     (sizeof(IoArchiveFileMetadata) * header.fileCount) +
     (sizeof(char) * fileNames.size()) +
-    (sizeof(IoArchiveSubFileMetadata) * totalSubFileCount) +
-    (sizeof(IoArchiveDecodingTableMetadata) * header.decodingTableCount) +
-    (sizeof(char) * decodingTableData.size());
+    (sizeof(IoArchiveSubFileMetadata) * totalSubFileCount);
 
   // Process sub-file metadata
   std::vector<IoArchiveSubFileMetadata> subFiles;
@@ -358,12 +276,12 @@ IoStatus IoArchiveBuilder::build(
   for (const auto& f : m_desc.files) {
     for (const auto& s : f.subFiles) {
       uint32_t index = subfileIndex++;
-      uint64_t compressedSize = computeCompressedSize(s, index);
+      uint64_t compressedSize = s.dataSource.size;
 
       auto& info = subFiles.emplace_back();
       info.identifier = s.identifier;
       info.compression = s.compression;
-      info.decodingTable = s.decodingTable;
+      info.reserved = 0;
       info.offset = subfileOffset;
       info.compressedSize = compressedSize;
       info.rawSize = s.dataSource.size;
@@ -376,9 +294,7 @@ IoStatus IoArchiveBuilder::build(
   if (!stream.write(header)
    || !stream.write(files)
    || !stream.write(fileNames)
-   || !stream.write(subFiles)
-   || !stream.write(decodingTables)
-   || !stream.write(decodingTableData))
+   || !stream.write(subFiles))
     return IoStatus::eError;
 
   // Write inline data
@@ -386,7 +302,7 @@ IoStatus IoArchiveBuilder::build(
     if (!f.inlineDataSource.size)
       continue;
 
-    status = processDataSource(f.inlineDataSource,
+    IoStatus status = processDataSource(f.inlineDataSource,
       [&stream] (const IoArchiveDataSource& source, const void* data) {
         return stream.write(data, source.size);
       });
@@ -396,7 +312,7 @@ IoStatus IoArchiveBuilder::build(
   }
 
   // Write subfile data
-  status = processFiles([this, &stream] (const IoArchiveSubFileDesc& subFile, const void* data, uint32_t index) {
+  IoStatus status = processFiles([this, &stream] (const IoArchiveSubFileDesc& subFile, const void* data, uint32_t index) {
     return writeCompressedSubfile(stream, subFile, data);
   });
 
@@ -409,67 +325,11 @@ IoStatus IoArchiveBuilder::build(
 }
 
 
-IoStatus IoArchiveBuilder::buildHuffmanObjects() {
-  size_t subfileCount = 0;
-
-  for (const auto& f : m_desc.files)
-    subfileCount += f.subFiles.size();
-
-  m_huffmanCounters.resize(subfileCount);
-
-  IoStatus status = processFiles(
-    [this] (const IoArchiveSubFileDesc& subFile, const void* data, uint32_t index) {
-      if (subFile.decodingTable == 0xFFFFu)
-        return true;
-
-      uint16_t table = subFile.decodingTable;
-
-      if (table >= m_huffmanObjects.size())
-        m_huffmanObjects.resize(table + 1);
-
-      auto& ctr = m_huffmanCounters.at(index);
-      ctr.add(data, subFile.dataSource.size);
-
-      m_huffmanObjects[table].counter.accumulate(ctr);
-      return true;
-    });
-
-  if (status != IoStatus::eSuccess)
-    return status;
-
-  // Build decoders and encoders
-  for (auto& o : m_huffmanObjects) {
-    HuffmanTrie trie(o.counter);
-    o.encoder = trie.createEncoder();
-    o.decoder = trie.createDecoder();
-  }
-
-  return IoStatus::eSuccess;
-}
-
-
-uint64_t IoArchiveBuilder::computeCompressedSize(
-  const IoArchiveSubFileDesc&         subfile,
-        uint32_t                      subfileIndex) const {
-  if (subfile.decodingTable == 0xFFFF)
-    return subfile.dataSource.size;
-
-  const auto& encoder = m_huffmanObjects.at(subfile.decodingTable).encoder;
-  return encoder.computeEncodedSize(m_huffmanCounters.at(subfileIndex));
-}
-
-
 bool IoArchiveBuilder::writeCompressedSubfile(
         OutStream&                    stream,
   const IoArchiveSubFileDesc&         subfile,
   const void*                         data) {
-  if (subfile.decodingTable == 0xFFFF)
-    return stream.write(data, subfile.dataSource.size);
-
-  BitstreamWriter bitstream(stream);
-
-  const auto& encoder = m_huffmanObjects.at(subfile.decodingTable).encoder;
-  return encoder.encode(bitstream, data, subfile.dataSource.size);
+  return stream.write(data, subfile.dataSource.size);
 }
 
 
