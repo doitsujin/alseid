@@ -71,11 +71,19 @@ bool IoArchive::decompress(
     return true;
   }
 
-  // Currently, no compression types are defined
-  if (subFile->getCompressionType() != IoArchiveCompression::eNone)
+  // Currently, no further compression types are defined
+  if (subFile->getCompressionType() != IoArchiveCompression::eHuffLzss)
     return false;
 
-  return false;
+  // Decode Huffman binary first
+  OutVectorStream huffStream;
+
+  if (!decodeHuffmanBinary<uint8_t>(huffStream, lwrap(InMemoryStream(srcData, subFile->getCompressedSize()))))
+    return false;
+
+  // Decompress LZSS binary
+  auto huffData = std::move(huffStream).getData();
+  return lzssDecode(dstData, subFile->getSize(), lwrap(InMemoryStream(huffData)));
 }
 
 
@@ -235,6 +243,26 @@ IoStatus IoArchiveBuilder::build(
   IoArchiveHeader header = { };
   std::memcpy(header.magic, IoArchiveMagic.data(), IoArchiveMagic.size());
 
+  // Compress all sub files that need compression
+  std::vector<std::unique_ptr<SubfileData>> subfileData;
+
+  for (const auto& f : m_desc.files) {
+    for (const auto& s : f.subFiles) {
+      std::unique_ptr<SubfileData> object;
+
+      if (s.compression != IoArchiveCompression::eNone) {
+        OutVectorStream stream;
+
+        if (compress(stream, s)) {
+          object = std::make_unique<SubfileData>();
+          object->data = std::move(stream).getData();
+        }
+      }
+
+      subfileData.push_back(std::move(object));
+    }
+  }
+
   // Process basic file metadata
   uint32_t totalInlineDataSize = 0;
   uint32_t totalSubFileCount = 0;
@@ -271,12 +299,14 @@ IoStatus IoArchiveBuilder::build(
   subFiles.reserve(totalSubFileCount);
 
   uint64_t subfileOffset = metadataSize;
-  uint32_t subfileIndex = 0;
+  uint64_t subfileIndex = 0;
 
   for (const auto& f : m_desc.files) {
     for (const auto& s : f.subFiles) {
-      uint32_t index = subfileIndex++;
       uint64_t compressedSize = s.dataSource.size;
+
+      if (subfileData[subfileIndex])
+        compressedSize = subfileData[subfileIndex]->data.size();
 
       auto& info = subFiles.emplace_back();
       info.identifier = s.identifier;
@@ -287,6 +317,7 @@ IoStatus IoArchiveBuilder::build(
       info.rawSize = s.dataSource.size;
 
       subfileOffset += compressedSize;
+      subfileIndex += 1;
     }
   }
 
@@ -302,22 +333,28 @@ IoStatus IoArchiveBuilder::build(
     if (!f.inlineDataSource.size)
       continue;
 
-    IoStatus status = processDataSource(f.inlineDataSource,
-      [&stream] (const IoArchiveDataSource& source, const void* data) {
-        return stream.write(data, source.size);
-      });
-
-    if (status != IoStatus::eSuccess)
-      return status;
+    if (!stream.write(f.inlineDataSource.memory, f.inlineDataSource.size))
+      return IoStatus::eError;
   }
 
   // Write subfile data
-  IoStatus status = processFiles([this, &stream] (const IoArchiveSubFileDesc& subFile, const void* data, uint32_t index) {
-    return writeCompressedSubfile(stream, subFile, data);
-  });
+  subfileIndex = 0;
 
-  if (status != IoStatus::eSuccess)
-    return status;
+  for (const auto& f : m_desc.files) {
+    for (const auto& s : f.subFiles) {
+      IoArchiveDataSource source = s.dataSource;
+
+      if (subfileData[subfileIndex]) {
+        source.memory = subfileData[subfileIndex]->data.data();
+        source.size = subfileData[subfileIndex]->data.size();
+      }
+
+      if (!stream.write(source.memory, source.size))
+        return IoStatus::eError;
+
+      subfileIndex += 1;
+    }
+  }
 
   return stream.flush()
     ? IoStatus::eSuccess
@@ -325,44 +362,18 @@ IoStatus IoArchiveBuilder::build(
 }
 
 
-bool IoArchiveBuilder::writeCompressedSubfile(
+bool IoArchiveBuilder::compress(
         OutStream&                    stream,
-  const IoArchiveSubFileDesc&         subfile,
-  const void*                         data) {
-  return stream.write(data, subfile.dataSource.size);
-}
+  const IoArchiveSubFileDesc&         subfile) {
+  // Apply LZSS compression first
+  OutVectorStream lzssStream;
 
+  if (!lzssEncode(lzssStream, subfile.dataSource.memory, subfile.dataSource.size, 65536))
+    return false;
 
-template<typename Proc>
-IoStatus IoArchiveBuilder::processDataSource(
-  const IoArchiveDataSource&          source,
-  const Proc&                         proc) {
-  return proc(source, source.memory)
-    ? IoStatus::eSuccess
-    : IoStatus::eError;
-}
-
-
-template<typename Proc>
-IoStatus IoArchiveBuilder::processFiles(
-  const Proc&                         proc) {
-  uint32_t subfileIndex = 0;
-
-  for (const auto& f : m_desc.files) {
-    for (const auto& s : f.subFiles) {
-      uint32_t index = subfileIndex++;
-
-      IoStatus status = processDataSource(s.dataSource,
-        [&proc, &s, index] (const IoArchiveDataSource& source, const void* data) {
-          return proc(s, data, index);
-        });
-
-      if (status != IoStatus::eSuccess)
-        return status;
-    }
-  }
-
-  return IoStatus::eSuccess;
+  // Apply Huffman compression
+  std::vector<char> lzssData = std::move(lzssStream).getData();
+  return encodeHuffmanBinary<uint8_t>(stream, lzssData.data(), lzssData.size());
 }
 
 }

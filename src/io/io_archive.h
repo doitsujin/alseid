@@ -48,6 +48,9 @@ struct IoArchiveFileMetadata {
 enum class IoArchiveCompression : uint16_t {
   /** Data is uncompressed. */
   eNone         = 0,
+  /** Entire file is encoded using LZSS first and
+   *  then using 8-bit Huffman compression. */
+  eHuffLzss     = 1,
 };
 
 
@@ -584,22 +587,16 @@ public:
 
 private:
 
+  struct SubfileData {
+    std::vector<char> data;
+  };
+
   Io            m_io;
   IoArchiveDesc m_desc;
 
-  bool writeCompressedSubfile(
+  bool compress(
           OutStream&                    stream,
-    const IoArchiveSubFileDesc&         subfile,
-    const void*                         data);
-
-  template<typename Proc>
-  IoStatus processDataSource(
-    const IoArchiveDataSource&          source,
-    const Proc&                         proc);
-
-  template<typename Proc>
-  IoStatus processFiles(
-    const Proc&                         proc);
+    const IoArchiveSubFileDesc&         subfile);
 
 };
 
