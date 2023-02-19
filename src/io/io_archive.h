@@ -353,7 +353,7 @@ public:
    * \returns Pointer to Huffman decoder, or \c nullptr
    *    if the given index is out of bounds.
    */
-  const HuffmanDecoder* getDecoder(uint32_t index) const {
+  const HuffmanDecoder<uint16_t>* getDecoder(uint32_t index) const {
     return index < m_decoders.size() ? &m_decoders[index] : nullptr;
   }
 
@@ -544,7 +544,8 @@ private:
 
   std::vector<char>             m_fileNames;
   std::vector<char>             m_inlineData;
-  std::vector<HuffmanDecoder>   m_decoders;
+
+  std::vector<HuffmanDecoder<uint16_t>> m_decoders;
 
   std::vector<IoArchiveSubFile> m_subFiles;
   std::vector<IoArchiveFile>    m_files;
@@ -637,17 +638,18 @@ public:
 
 private:
 
+  template<typename CodeType, typename CountType>
   struct HuffmanObjects {
-    HuffmanCounter counter;
-    HuffmanEncoder encoder;
-    HuffmanDecoder decoder;
+    HuffmanCounter<CodeType, CountType> counter;
+    HuffmanEncoder<CodeType> encoder;
+    HuffmanDecoder<CodeType> decoder;
   };
 
   Io            m_io;
   IoArchiveDesc m_desc;
 
-  std::vector<HuffmanObjects> m_huffmanObjects;
-  std::vector<HuffmanCounter> m_huffmanCounters;
+  std::vector<HuffmanObjects<uint16_t, uint64_t>> m_huffmanObjects;
+  std::vector<HuffmanCounter<uint16_t, uint64_t>> m_huffmanCounters;
 
   IoStatus buildHuffmanObjects();
 

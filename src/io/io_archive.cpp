@@ -189,7 +189,7 @@ bool IoArchive::parseMetadata() {
     InMemoryStream reader(&decodingTableData[decodingTableOffset], decodingTables[i].tableSize);
     BitstreamReader bitstream(reader);
 
-    if (!m_decoders[i].read(bitstream)) {
+    if (!m_decoders[i].deserialize(bitstream)) {
       Log::err("Archive: Failed to parse decoding table ", i);
       return false;
     }
@@ -329,7 +329,7 @@ IoStatus IoArchiveBuilder::build(
     info.tableSize = tableSize;
 
     BitstreamWriter bitstream(decodingTableStream);
-    o.decoder.write(bitstream);
+    o.decoder.serialize(bitstream);
     bitstream.flush();
   }
 
