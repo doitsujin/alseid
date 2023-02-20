@@ -1,19 +1,59 @@
 #include <algorithm>
-#include <memory>
 
-#include "job_manager.h"
+#include "job.h"
 
 namespace as {
 
-JobManager::JobManager() {
-  m_workers.resize(std::thread::hardware_concurrency());
+JobIface::JobIface(
+        uint32_t                      itemCount,
+        uint32_t                      itemGroup)
+: m_itemCount (itemCount)
+, m_itemGroup (itemGroup) {
+
+}
+
+
+JobIface::~JobIface() {
+
+}
+
+
+bool JobIface::getWorkItems(
+        uint32_t&                     index,
+        uint32_t&                     count) {
+  uint32_t next = m_next.load(std::memory_order_acquire);
+  uint32_t size = std::min(m_itemCount - next, m_itemGroup);
+
+  while (size && !m_next.compare_exchange_weak(next, next + size,
+      std::memory_order_acquire, std::memory_order_relaxed))
+    size = std::min(m_itemCount - next, m_itemGroup);
+
+  index = next;
+  count = size;
+
+  return next + size < m_itemCount;
+}
+
+
+bool JobIface::notifyWorkItems(
+        uint32_t                      count) {
+  uint32_t done = m_done.fetch_add(count,
+    std::memory_order_release) + count;
+  return done == m_itemCount;
+}
+
+
+
+
+JobsIface::JobsIface(uint32_t threadCount) {
+  m_workers.resize(std::max(1u, threadCount));
 
   for (uint32_t i = 0; i < m_workers.size(); i++)
     m_workers[i] = std::thread([this, i] { runWorker(i); });
 }
 
 
-JobManager::~JobManager() {
+JobsIface::~JobsIface() {
   waitAll();
 
   { std::lock_guard lock(m_mutex);
@@ -25,8 +65,8 @@ JobManager::~JobManager() {
 }
 
 
-void JobManager::wait(
-  const std::shared_ptr<Job>&     job) {
+void JobsIface::wait(
+  const Job&                          job) {
   std::unique_lock lock(m_mutex);
   m_pendingCond.wait(lock, [job] {
     return job->isDone();
@@ -34,7 +74,7 @@ void JobManager::wait(
 }
 
 
-void JobManager::waitAll() {
+void JobsIface::waitAll() {
   std::unique_lock lock(m_mutex);
   m_pendingCond.wait(lock, [this] {
     return !m_pending;
@@ -42,9 +82,9 @@ void JobManager::waitAll() {
 }
 
 
-bool JobManager::registerDependency(
-  const std::shared_ptr<Job>&     job,
-  const std::shared_ptr<Job>&     dep) {
+bool JobsIface::registerDependency(
+  const Job&                          job,
+  const Job&                          dep) {
   if (!dep || dep->isDone())
     return false;
 
@@ -54,14 +94,14 @@ bool JobManager::registerDependency(
 }
 
 
-void JobManager::enqueueJob(
-        std::shared_ptr<Job>      job) {
+void JobsIface::enqueueJob(
+        Job                           job) {
   m_queue.push(std::move(job));
 }
 
 
-void JobManager::notifyJob(
-  const std::shared_ptr<Job>&     job) {
+void JobsIface::notifyJob(
+  const Job&                          job) {
   auto range = m_dependencies.equal_range(job);
   bool notify = false;
 
@@ -84,8 +124,8 @@ void JobManager::notifyJob(
 }
 
 
-void JobManager::runWorker(
-        uint32_t                  workerId) {
+void JobsIface::runWorker(
+        uint32_t                      workerId) {
   std::unique_lock lock(m_mutex, std::defer_lock);
 
   while (true) {
@@ -99,7 +139,7 @@ void JobManager::runWorker(
 
     // Fetch job and remove it from the queue if we
     // remove the last set of work items from it.
-    std::shared_ptr<Job> job = m_queue.front();
+    Job job = m_queue.front();
 
     if (!job)
       break;
@@ -131,6 +171,13 @@ void JobManager::runWorker(
       notifyJob(job);
     }
   }
+}
+
+
+Jobs::Jobs(
+        uint32_t                      threadCount)
+: IfaceRef<JobsIface>(std::make_shared<JobsIface>(threadCount)) {
+
 }
 
 }

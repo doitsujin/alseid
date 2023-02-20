@@ -17,8 +17,7 @@ as_files = files([
   'io/io_request.cpp',
   'io/io_stream.cpp',
 
-  'jobs/job.cpp',
-  'jobs/job_manager.cpp',
+  'job/job.cpp',
 
   'util/util_hash.cpp',
   'util/util_huffman.cpp',
