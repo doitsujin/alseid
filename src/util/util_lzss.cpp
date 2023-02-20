@@ -140,7 +140,24 @@ private:
     const uint8_t*                      a,
     const uint8_t*                      b,
           size_t                        maxLength) {
+    size_t offset = 0;
+
+#ifdef AS_HAS_X86_INTRINSICS
+    size_t doubleQuadCount = maxLength / sizeof(__m128i);
+    offset = doubleQuadCount * sizeof(__m128i);
+
+    for (size_t i = 0; i < doubleQuadCount; i++) {
+      __m128i dqa = _mm_loadu_si128(reinterpret_cast<const __m128i*>(a) + i);
+      __m128i dqb = _mm_loadu_si128(reinterpret_cast<const __m128i*>(b) + i);
+
+      uint32_t diffMask = _mm_movemask_epi8(_mm_cmpeq_epi8(dqa, dqb)) ^ 0xFFFF;
+
+      if (diffMask)
+        return i * sizeof(__m128i) + tzcnt(diffMask);
+    }
+#else
     size_t qwordCount = maxLength / sizeof(uint64_t);
+    offset = qwordCount * sizeof(uint64_t);
 
     for (size_t i = 0; i < qwordCount; i++) {
       uint64_t qa, qb;
@@ -155,8 +172,9 @@ private:
         return i * sizeof(uint64_t) + mismatchByte;
       }
     }
+#endif
 
-    for (size_t i = qwordCount * sizeof(uint64_t); i < maxLength; i++) {
+    for (size_t i = offset * sizeof(uint64_t); i < maxLength; i++) {
       if (a[i] != b[i])
         return i;
     }

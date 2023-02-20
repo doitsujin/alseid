@@ -5,6 +5,7 @@
 #include <cmath>
 
 #ifndef _MSC_VER
+  #define AS_HAS_X86_INTRINSICS
   #if defined(__WINE__) && defined(__clang__)
     #pragma push_macro("_WIN32")
     #undef _WIN32
@@ -14,6 +15,7 @@
     #pragma pop_macro("_WIN32")
   #endif
 #else
+  #define AS_HAS_X86_INTRINSICS
   #include <intrin.h>
 #endif
 
