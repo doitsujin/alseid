@@ -499,10 +499,10 @@ private:
 
   std::unordered_map<std::string, size_t> m_lookupTable;
 
-  bool decompress(
+  static bool decompress(
           WrMemoryView                  output,
           RdMemoryView                  input,
-          IoArchiveCompression          compression) const;
+          IoArchiveCompression          compression);
 
   bool parseMetadata();
 

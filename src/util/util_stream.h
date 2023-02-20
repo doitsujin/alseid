@@ -608,9 +608,12 @@ public:
 
   /**
    * \brief Queries size of the underlying vector
+   *
+   * Implicitly flushes to keep the result up to date.
    * \returns Size of the vector
    */
-  size_t getSize() const {
+  size_t getSize() {
+    flush();
     return m_vector.size();
   }
 

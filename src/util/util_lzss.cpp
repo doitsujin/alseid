@@ -263,7 +263,7 @@ private:
         uint8_t seqByte = length & 0x7F;
 
         if (length >>= 7)
-          length |= 0x80;
+          seqByte |= 0x80;
 
         success &= writer.write(seqByte);
       }

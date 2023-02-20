@@ -419,11 +419,13 @@ public:
    * \returns Decoding table size, in bytes
    */
   size_t computeSize() const {
-    size_t bitCount = BitCount + (BitCount + 1) * m_entryCount;
+    size_t offsetBits = computeOffsetBitCount(m_entryCount);
+    size_t bitCount = BitCount;
 
     for (uint32_t i = 0; i < m_entryCount; i++) {
-      if (m_entries[i].bits)
-        bitCount += LengthBits;
+      bitCount += (m_entries[i].bits)
+        ? (1 + LengthBits + offsetBits)
+        : (1 + BitCount);
     }
 
     return (bitCount + 7) / 8;

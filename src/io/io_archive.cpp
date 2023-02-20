@@ -1,8 +1,7 @@
 #include "../util/util_assert.h"
 #include "../util/util_error.h"
-#include "../util/util_huffman.h"
+#include "../util/util_huff_lzss.h"
 #include "../util/util_log.h"
-#include "../util/util_lzss.h"
 
 #include "io_archive.h"
 
@@ -72,26 +71,20 @@ bool IoArchive::decompress(
 bool IoArchive::decompress(
         WrMemoryView                  output,
         RdMemoryView                  input,
-        IoArchiveCompression          compression) const {
-  if (compression == IoArchiveCompression::eNone) {
-    if (output.getSize() != input.getSize())
-      return false;
+        IoArchiveCompression          compression) {
+  switch (compression) {
+    case IoArchiveCompression::eNone:
+      if (output.getSize() != input.getSize())
+        return false;
 
-    return input.read(output.getData(), output.getSize());
+      return input.read(output.getData(), output.getSize());
+
+    case IoArchiveCompression::eHuffLzss:
+      return huffLzssDecode(output, input);
+
   }
 
-  // Currently, no further compression types are defined
-  if (compression != IoArchiveCompression::eHuffLzss)
-    return false;
-
-  // Decode Huffman binary first
-  std::vector<char> huffData;
-
-  if (!decodeHuffmanBinary<uint8_t>(Lwrap<WrVectorStream>(huffData), input))
-    return false;
-
-  // Decompress LZSS binary
-  return lzssDecode(output, huffData);
+  return false;
 }
 
 
@@ -132,7 +125,7 @@ bool IoArchive::parseMetadata() {
     return false;
   }
 
-  if (!decompress(metadataBlob, compressedMetadata, IoArchiveCompression::eHuffLzss)) {
+  if (!huffLzssDecode(metadataBlob, compressedMetadata)) {
     Log::err("Archive: Failed to decompress metadata");
     return false;
   }
@@ -377,8 +370,7 @@ IoStatus IoArchiveBuilder::build(
   // Compress metadata blob
   std::vector<char> compressedMetadata;
 
-  if (!compress(Lwrap<WrVectorStream>(compressedMetadata),
-      metadataBlob, IoArchiveCompression::eHuffLzss))
+  if (!huffLzssEncode(Lwrap<WrVectorStream>(compressedMetadata), metadataBlob))
     return IoStatus::eError;
 
   // Write actual metadata blob
@@ -420,14 +412,15 @@ bool IoArchiveBuilder::compress(
         WrVectorStream&               output,
         RdMemoryView                  input,
         IoArchiveCompression          compression) {
-  // Apply LZSS compression first
-  std::vector<char> lzssData;
+  switch (compression) {
+    case IoArchiveCompression::eNone:
+      return output.write(input.getData(), input.getSize());
 
-  if (!lzssEncode(Lwrap<WrVectorStream>(lzssData), input, 0))
-    return false;
+    case IoArchiveCompression::eHuffLzss:
+      return huffLzssEncode(output, input);
+  }
 
-  // Apply Huffman compression
-  return encodeHuffmanBinary<uint8_t>(output, lzssData);
+  return false;
 }
 
 }
