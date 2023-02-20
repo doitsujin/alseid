@@ -165,7 +165,7 @@ bool IoArchive::parseMetadata() {
   m_subFiles.reserve(totalSubFileCount);
 
   for (size_t i = 0; i < totalSubFileCount; i++) {
-    auto& subFile = m_subFiles.emplace_back(subFiles[i]);
+    auto& subFile = m_subFiles.emplace_back(subFiles[i], fileHeader.fileOffset);
 
     if (subFile.getOffsetInArchive() + subFile.getCompressedSize() > stream->getSize()) {
       Log::err("Archive: Sub-file out of bounds:"
@@ -286,20 +286,11 @@ IoStatus IoArchiveBuilder::build(
     totalSubFileCount += info.subFileCount;
   }
 
-  // Now we can compute the size of the header, which is
-  // important for being able to know sub-file offsets
-  header.fileCount = files.size();
- 
-  uint64_t metadataSize = sizeof(header) + totalInlineDataSize +
-    (sizeof(IoArchiveFileMetadata) * header.fileCount) +
-    (sizeof(char) * fileNames.size()) +
-    (sizeof(IoArchiveSubFileMetadata) * totalSubFileCount);
-
   // Process sub-file metadata
   std::vector<IoArchiveSubFileMetadata> subFiles;
   subFiles.reserve(totalSubFileCount);
 
-  uint64_t subfileOffset = metadataSize;
+  uint64_t subfileOffset = 0;
   uint64_t subfileIndex = 0;
 
   for (const auto& f : m_desc.files) {
@@ -322,12 +313,16 @@ IoStatus IoArchiveBuilder::build(
     }
   }
 
-  // Write file header
-  if (!stream.write(header)
-   || !stream.write(files)
-   || !stream.write(fileNames)
-   || !stream.write(subFiles))
-    return IoStatus::eError;
+  // Create a separate stream for memory. This will be
+  // compressed just like regular files afterwards.
+  std::vector<char> metadataBlob;
+
+  WrVectorStream metadataStream(metadataBlob);
+  WrStream metadataWriter(metadataStream);
+  
+  if (!metadataWriter.write(files)
+   || !metadataWriter.write(fileNames)
+   || !metadataWriter.write(subFiles))
 
   // Write inline data
   for (const auto& f : m_desc.files) {
@@ -337,6 +332,19 @@ IoStatus IoArchiveBuilder::build(
     if (!stream.write(f.inlineDataSource.memory, f.inlineDataSource.size))
       return IoStatus::eError;
   }
+
+  if (!metadataWriter.flush())
+    return IoStatus::eError;
+
+  // Write actual metadata blob
+  header.fileCount = files.size();
+  header.fileOffset = sizeof(header) + metadataBlob.size();
+  header.compressedMetadataSize = metadataBlob.size();
+  header.rawMetadataSize = metadataBlob.size();
+
+  if (!stream.write(header)
+   || !stream.write(metadataBlob))
+    return IoStatus::eError;
 
   // Write subfile data
   subfileIndex = 0;

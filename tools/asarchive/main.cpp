@@ -438,13 +438,18 @@ int print(const Io& io, int argc, char** argv) {
 
       if (subFile->isCompressed())
         std::cout << " (" << subFile->getCompressedSize() << " compressed)";
-      std::cout << std::endl;
+
+      std::cout << ", offset: " << subFile->getOffsetInArchive() << std::endl;
 
       std::string compression;
 
       switch (subFile->getCompressionType()) {
         case IoArchiveCompression::eNone:
           compression = "None";
+          break;
+
+        case IoArchiveCompression::eHuffLzss:
+          compression = "HuffLzss";
           break;
 
         default:

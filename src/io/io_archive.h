@@ -23,6 +23,12 @@ struct IoArchiveHeader {
   uint16_t version;
   /** Number of files */
   uint32_t fileCount;
+  /** Offset to file data section */
+  uint32_t fileOffset;
+  /** Compressed metadata size */
+  uint32_t compressedMetadataSize;
+  /** Size of uncompressed metadata */
+  uint32_t rawMetadataSize;
 };
 
 
@@ -67,7 +73,7 @@ struct IoArchiveSubFileMetadata {
   /** Currently unused field, always 0 */
   uint16_t reserved;
   /** Offset of this sub-file within the archive, in bytes,
-   *  counted from the start of the archive file itself. */
+   *  counted from the start of the file data section. */
   uint64_t offset;
   /** Size of the compressed sub-file. This is the number of
    *  bytes that the sub-file takes in the archive. */
@@ -86,8 +92,11 @@ class IoArchiveSubFile {
 public:
 
   explicit IoArchiveSubFile(
-    const IoArchiveSubFileMetadata&     metadata)
-  : m_metadata(metadata) { }
+    const IoArchiveSubFileMetadata&     metadata,
+          uint64_t                      extraOffset)
+  : m_metadata(metadata) {
+    m_metadata.offset += extraOffset;
+  }
 
   /**
    * \brief Retrieves sub-file identifier
