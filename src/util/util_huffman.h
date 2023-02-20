@@ -9,6 +9,7 @@
 #include "util_assert.h"
 #include "util_bitstream.h"
 #include "util_likely.h"
+#include "util_math.h"
 #include "util_small_vector.h"
 
 namespace as {
@@ -352,13 +353,18 @@ public:
     // so it only takes up two bytes, expand it here.
     m_entryCount = decodeOffset(entryCountCompressed);
 
+    // Compute number of bits used to encode table offsets
+    uint32_t offsetBits = computeOffsetBitCount(m_entryCount);
+
     for (uint32_t i = 0; i < m_entryCount; i++) {
       Entry e = { };
 
-      if (!stream.read(1))
+      if (stream.read(1)) {
+        e.data = CodeType(stream.read(BitCount));
+      } else {
         e.bits = uint8_t(stream.read(LengthBits)) + 1;
-
-      e.data = CodeType(stream.read(BitCount));
+        e.data = CodeType(stream.read(offsetBits));
+      }
 
       // Validate that entry is valid. Entry offsets are
       // compressed in the same way as the node count.
@@ -384,6 +390,11 @@ public:
     // the last bit. This way it will always fit into 8/16 bits.
     stream.write(encodeOffset(m_entryCount), BitCount);
 
+    // Compute number of bits for each offset based on
+    // the actual offset count. If the actual alphabet
+    // is small, this can save some space that way.
+    uint32_t offsetBits = computeOffsetBitCount(m_entryCount);
+
     // We can compress each entry with 5 bits for the bit count,
     // since the depth is at most 8/16 for the worst case and zero
     // for leaf nodes. Offsets are compressed like the entry count.
@@ -393,11 +404,11 @@ public:
       if (e.bits) {
         success &= stream.write(0, 1);
         success &= stream.write(e.bits - 1, LengthBits);
+        success &= stream.write(e.data, offsetBits);
       } else {
         success &= stream.write(1, 1);
+        success &= stream.write(e.data, BitCount);
       }
-
-      success &= stream.write(e.data, BitCount);
     }
 
     return success;
@@ -489,6 +500,11 @@ private:
   static uint32_t decodeOffset(
           CodeType                      compressed) {
     return (uint32_t(compressed) << 1) + 1;
+  }
+
+  static uint32_t computeOffsetBitCount(
+          uint32_t                      entryCount) {
+    return uint32_t(findmsb(uint32_t(encodeOffset(entryCount))) + 1);
   }
 
 };
