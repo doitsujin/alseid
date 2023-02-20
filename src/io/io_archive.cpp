@@ -62,29 +62,36 @@ bool IoArchive::decompress(
   const IoArchiveSubFile*             subFile,
         void*                         dstData,
   const void*                         srcData) const {
-  if (!subFile->isCompressed()) {
-    if (subFile->getSize() != subFile->getCompressedSize())
+  return decompress(
+    WrMemoryView(dstData, subFile->getSize()),
+    RdMemoryView(srcData, subFile->getCompressedSize()),
+    subFile->getCompressionType());
+}
+
+
+bool IoArchive::decompress(
+        WrMemoryView                  output,
+        RdMemoryView                  input,
+        IoArchiveCompression          compression) const {
+  if (compression == IoArchiveCompression::eNone) {
+    if (output.getSize() != input.getSize())
       return false;
 
-    // Callers should avoid this whenever possible
-    std::memcpy(dstData, srcData, subFile->getSize());
-    return true;
+    return input.read(output.getData(), output.getSize());
   }
 
   // Currently, no further compression types are defined
-  if (subFile->getCompressionType() != IoArchiveCompression::eHuffLzss)
+  if (compression != IoArchiveCompression::eHuffLzss)
     return false;
 
   // Decode Huffman binary first
   std::vector<char> huffData;
 
-  if (!decodeHuffmanBinary<uint8_t>(
-      Lwrap<WrVectorStream>(huffData),
-      Lwrap<RdMemoryView>(srcData, subFile->getCompressedSize())))
+  if (!decodeHuffmanBinary<uint8_t>(Lwrap<WrVectorStream>(huffData), input))
     return false;
 
   // Decompress LZSS binary
-  return lzssDecode(WrMemoryView(dstData, subFile->getSize()), huffData);
+  return lzssDecode(output, huffData);
 }
 
 
@@ -95,11 +102,11 @@ bool IoArchive::parseMetadata() {
   }
 
   RdFileStream file(m_file);
-  RdStream stream(file);
+  RdStream fileStream(file);
 
   IoArchiveHeader fileHeader;
 
-  if (!stream.read(fileHeader)) {
+  if (!fileStream.read(fileHeader)) {
     Log::err("Archive: Failed to read header");
     return false;
   }
@@ -116,12 +123,32 @@ bool IoArchive::parseMetadata() {
     return false;
   }
 
+  // Metadata is compressed, so we need to decode it.
+  std::vector<char> compressedMetadata(fileHeader.compressedMetadataSize);
+  std::vector<char> metadataBlob(fileHeader.rawMetadataSize);
+
+  if (!fileStream.read(compressedMetadata)) {
+    Log::err("Archive: Failed to read compressed metadata");
+    return false;
+  }
+
+  if (!decompress(metadataBlob, compressedMetadata, IoArchiveCompression::eHuffLzss)) {
+    Log::err("Archive: Failed to decompress metadata");
+    return false;
+  }
+
+  compressedMetadata.clear();
+  compressedMetadata.shrink_to_fit();
+
+  RdMemoryView metadataView(metadataBlob);
+  RdStream stream(metadataView);
+
   // Read all file metadata in one go. We cannot actually
   // create the file objects at this point yet, however.
   std::vector<IoArchiveFileMetadata> files(fileHeader.fileCount);
 
   if (!stream.read(files)) {
-    Log::err("Archive: Failed to read header");
+    Log::err("Archive: Failed to read file properties");
     return false;
   }
 
@@ -167,11 +194,11 @@ bool IoArchive::parseMetadata() {
   for (size_t i = 0; i < totalSubFileCount; i++) {
     auto& subFile = m_subFiles.emplace_back(subFiles[i], fileHeader.fileOffset);
 
-    if (subFile.getOffsetInArchive() + subFile.getCompressedSize() > stream->getSize()) {
+    if (subFile.getOffsetInArchive() + subFile.getCompressedSize() > fileStream->getSize()) {
       Log::err("Archive: Sub-file out of bounds:"
         "\n  Sub file Offset: ", subFile.getOffsetInArchive(),
         "\n  Sub file size:   ", subFile.getCompressedSize(),
-        "\n  Archive size:    ", stream->getSize());
+        "\n  Archive size:    ", fileStream->getSize());
       return false;
     }
   }
@@ -256,7 +283,9 @@ IoStatus IoArchiveBuilder::build(
       if (s.compression != IoArchiveCompression::eNone) {
         object = std::make_unique<SubfileData>();
 
-        if (!compress(Lwrap<WrVectorStream>(object->data), s))
+        if (!compress(Lwrap<WrVectorStream>(object->data),
+            RdMemoryView(s.dataSource.memory, s.dataSource.size),
+            s.compression))
           return IoStatus::eError;
       }
 
@@ -323,27 +352,35 @@ IoStatus IoArchiveBuilder::build(
   if (!metadataWriter.write(files)
    || !metadataWriter.write(fileNames)
    || !metadataWriter.write(subFiles))
+    return IoStatus::eError;
 
   // Write inline data
   for (const auto& f : m_desc.files) {
     if (!f.inlineDataSource.size)
       continue;
 
-    if (!stream.write(f.inlineDataSource.memory, f.inlineDataSource.size))
+    if (!metadataWriter.write(f.inlineDataSource.memory, f.inlineDataSource.size))
       return IoStatus::eError;
   }
 
   if (!metadataWriter.flush())
     return IoStatus::eError;
 
+  // Compress metadata blob
+  std::vector<char> compressedMetadata;
+
+  if (!compress(Lwrap<WrVectorStream>(compressedMetadata),
+      metadataBlob, IoArchiveCompression::eHuffLzss))
+    return IoStatus::eError;
+
   // Write actual metadata blob
   header.fileCount = files.size();
-  header.fileOffset = sizeof(header) + metadataBlob.size();
-  header.compressedMetadataSize = metadataBlob.size();
+  header.fileOffset = sizeof(header) + compressedMetadata.size();
+  header.compressedMetadataSize = compressedMetadata.size();
   header.rawMetadataSize = metadataBlob.size();
 
   if (!stream.write(header)
-   || !stream.write(metadataBlob))
+   || !stream.write(compressedMetadata))
     return IoStatus::eError;
 
   // Write subfile data
@@ -373,11 +410,12 @@ IoStatus IoArchiveBuilder::build(
 
 bool IoArchiveBuilder::compress(
         WrVectorStream&               output,
-  const IoArchiveSubFileDesc&         subfile) {
+        RdMemoryView                  input,
+        IoArchiveCompression          compression) {
   // Apply LZSS compression first
   std::vector<char> lzssData;
 
-  if (!lzssEncode(Lwrap<WrVectorStream>(lzssData), RdMemoryView(subfile.dataSource.memory, subfile.dataSource.size), 65536))
+  if (!lzssEncode(Lwrap<WrVectorStream>(lzssData), input, 65536))
     return false;
 
   // Apply Huffman compression

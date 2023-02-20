@@ -497,6 +497,11 @@ private:
 
   std::unordered_map<std::string, size_t> m_lookupTable;
 
+  bool decompress(
+          WrMemoryView                  output,
+          RdMemoryView                  input,
+          IoArchiveCompression          compression) const;
+
   bool parseMetadata();
 
 };
@@ -589,7 +594,8 @@ private:
 
   bool compress(
           WrVectorStream&               output,
-    const IoArchiveSubFileDesc&         subfile);
+          RdMemoryView                  input,
+          IoArchiveCompression          compression);
 
 };
 
