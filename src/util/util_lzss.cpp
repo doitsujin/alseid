@@ -1,28 +1,36 @@
 #include <array>
+#include <optional>
 #include <unordered_map>
 
+#include "util_log.h"
 #include "util_lzss.h"
 #include "util_math.h"
 
 namespace as {
 
-class LzssEncoder {
-  // Maximum length of uncompressed data between control words.
-  // The length is encoded using either 6 or 14 bits, and for
-  // the 14-bit encoding we'll add 64 to the encoded number.
-  constexpr static size_t MaxSequenceLength = 16448;
+/**
+ * \brief LZSS control word helper
+ */
+struct LzssControlWord {
+  uint32_t patternLength = 0;
+  uint32_t patternOffset = 0;
+  size_t sequenceLength = 0;
+};
 
+
+class LzssEncoder {
   // Maximum sliding window size based on relative offset encoding.
   constexpr static size_t MaxSlidingWindow = 65536;
 
   // Maximum length of patterns we'll encode. The length is
-  // encoded in 6 bits, with the minimum being 4 bytes.
-  constexpr static size_t MaxPatternLength = 67;
+  // encoded in up to 8 bits, with the minimum being 4 bytes.
+  constexpr static size_t MinPatternLength = 4;
+  constexpr static size_t MaxPatternLength = 259;
 public:
 
   explicit LzssEncoder(
           size_t                        window)
-  : m_window    (std::min(window, MaxSlidingWindow))
+  : m_window    (window ? std::min(window, MaxSlidingWindow) : MaxSlidingWindow)
   , m_freeCount (m_window) {
     for (size_t i = 0; i < m_freeCount; i++)
       m_free[i] = m_freeCount - i - 1;
@@ -41,8 +49,8 @@ public:
     std::unordered_multimap<uint32_t, size_t> lut;
     auto src = reinterpret_cast<const uint8_t*>(data);
 
-    // Length of current uncompressed sequence
-    size_t sequenceLength = 0;
+    // Current control block properties
+    LzssControlWord control = { };
     size_t skipLength = 0;
 
     // Encode actual data
@@ -89,27 +97,28 @@ public:
         insertLut(dw, i);
       }
 
-      if (!skipLength) {
-        if (matchLength) {
-          if (sequenceLength) {
-            success &= emitSequence(output, sequenceLength, &src[i - sequenceLength]);
-            sequenceLength = 0;
-          }
-
-          success &= emitRepetition(output, i - matchOffset, matchLength);
-          skipLength = matchLength - 1;
-        } else {
-          sequenceLength += 1;
-
-          if (sequenceLength == MaxSequenceLength || i + 1 == size) {
-            success &= emitSequence(output, sequenceLength, &src[i + 1 - sequenceLength]);
-            sequenceLength = 0;
-          }
-        }
-      } else {
+      if (skipLength) {
         skipLength -= 1;
+        continue;
       }
+
+      if (!matchLength) {
+        control.sequenceLength += 1;
+        continue;
+      }
+
+      if (control.sequenceLength || control.patternLength)
+        success &= emitControlBlock(output, control, &src[i - control.sequenceLength]);
+
+      control.patternOffset = i - matchOffset;
+      control.patternLength = matchLength;
+      control.sequenceLength = 0;
+
+      skipLength = matchLength - 1;
     }
+
+    if (control.sequenceLength || control.patternLength)
+      success &= emitControlBlock(output, control, &src[size - control.sequenceLength]);
 
     return success;
   }
@@ -135,7 +144,6 @@ private:
 
   size_t m_freeCount;
 
-
   size_t match(
     const uint8_t*                      a,
     const uint8_t*                      b,
@@ -143,6 +151,8 @@ private:
     size_t offset = 0;
 
 #ifdef AS_HAS_X86_INTRINSICS
+    // If possible, compare 16 bytes at once to compare performance, and
+    // find the first mismatching byte based on the mask of differences.
     size_t doubleQuadCount = maxLength / sizeof(__m128i);
     offset = doubleQuadCount * sizeof(__m128i);
 
@@ -155,15 +165,18 @@ private:
       if (diffMask)
         return i * sizeof(__m128i) + tzcnt(diffMask);
     }
-#else
+#endif
+
+    // Same idea as above, compare 8 bytes at once.
     size_t qwordCount = maxLength / sizeof(uint64_t);
+    size_t qwordOffset = offset / sizeof(uint64_t);
     offset = qwordCount * sizeof(uint64_t);
 
-    for (size_t i = 0; i < qwordCount; i++) {
+    for (size_t i = qwordOffset; i < qwordCount; i++) {
       uint64_t qa, qb;
 
-      std::memcpy(&qa, &a[sizeof(qa) * i], sizeof(qa));
-      std::memcpy(&qb, &b[sizeof(qb) * i], sizeof(qb));
+      std::memcpy(&qa, &a[sizeof(uint64_t) * i], sizeof(uint64_t));
+      std::memcpy(&qb, &b[sizeof(uint64_t) * i], sizeof(uint64_t));
 
       uint64_t delta = qa ^ qb;
 
@@ -172,14 +185,95 @@ private:
         return i * sizeof(uint64_t) + mismatchByte;
       }
     }
-#endif
 
-    for (size_t i = offset * sizeof(uint64_t); i < maxLength; i++) {
+    // If we still have bytes to check, don't bother optimizing
+    // this further, we'll rarely hit this code path anyway.
+    for (size_t i = offset; i < maxLength; i++) {
       if (a[i] != b[i])
         return i;
     }
 
     return maxLength;
+  }
+
+
+  bool emitControlBlock(
+          WrBufferedStream&             output,
+    const LzssControlWord&              control,
+    const void*                         data) {
+    WrStream writer(output);
+
+    // Encode the first byte of the sequence length. This is
+    // important as we need to know the continuation bit.
+    uint32_t seqHead = uint8_t(control.sequenceLength & 0xF);
+
+    if (control.sequenceLength > 0xF)
+      seqHead |= 0x10;
+
+    // Control words are encoded using the following format. Sequence
+    // lengths are encoded with variable length, with the msb of each
+    // byte serving as a continuaton marker and up to 7 bits of data.
+    // pfx   len   ofs   seq
+    // 0     3     7     5+
+    // 10    4     13    5+
+    // 110   8     16    5+
+    // 111   -     -     5+
+
+    // Choose a block encoding based on pattern properties.
+    bool success = true;
+
+    if (control.patternLength) {
+      uint32_t length = control.patternLength - MinPatternLength;
+      uint32_t offset = control.patternOffset - 1;
+
+      if (length < 0x8 && offset < 0x80) {
+        uint32_t word = (length << 12) | (offset << 5) | seqHead;
+
+        success &= writer.write(uint8_t(word >> 8))
+                && writer.write(uint8_t(word >> 0));
+      } else if (length < 0x10 && offset < 2000) {
+        uint32_t word = (0x1 << 23) | (length << 18) | (offset << 5) | seqHead;
+
+        success &= writer.write(uint8_t(word >> 16))
+                && writer.write(uint8_t(word >> 8))
+                && writer.write(uint8_t(word >> 0));
+      } else if (length < 0x100 && offset < 0x10000) {
+        uint32_t word = (0x3 << 30) | (length << 21) | (offset << 5) | seqHead;
+
+        success &= writer.write(uint8_t(word >> 24))
+                && writer.write(uint8_t(word >> 16))
+                && writer.write(uint8_t(word >> 8))
+                && writer.write(uint8_t(word >> 0));
+      } else {
+        // Some number is too big somehow
+        return false;
+      }
+    } else {
+      uint32_t word = (0x7 << 5) | seqHead;
+
+      success &= writer.write(uint8_t(word));
+    }
+
+    // Encode remaining bytes of sequence length,
+    // least significant bits first in memory.
+    if (control.sequenceLength > 0xF) {
+      uint32_t length = control.sequenceLength >> 4;
+
+      while (length) {
+        uint8_t seqByte = length & 0x7F;
+
+        if (length >>= 7)
+          length |= 0x80;
+
+        success &= writer.write(seqByte);
+      }
+    }
+
+    // Write out sequence data, if any
+    if (control.sequenceLength)
+      success &= writer.write(data, control.sequenceLength);
+
+    return success;
   }
 
 
@@ -319,59 +413,114 @@ bool lzssEncode(
 }
 
 
+std::optional<LzssControlWord> lzssDecodeControlWord(
+        RdMemoryView&                   input) {
+  constexpr size_t MinPatternLength = 4;
+
+  LzssControlWord result = { };
+  RdStream reader(input);
+
+  // Decode actual control word itself
+  std::array<uint8_t, 4> bytes = { };
+  uint32_t word = 0;
+
+  if (!reader.read(bytes[0]))
+    return std::nullopt;
+
+  if (!(bytes[0] & 0x80)) {
+    if (!reader.read(bytes[1]))
+      return std::nullopt;
+
+    word = (uint32_t(bytes[0]) <<  8)
+         | (uint32_t(bytes[1]) <<  0);
+
+    result.patternLength = bextract(word, 12,  3) + MinPatternLength;
+    result.patternOffset = bextract(word,  5,  7) + 1;
+  } else if (!(bytes[0] & 0x40)) {
+    if (!reader.read(bytes[1])
+     || !reader.read(bytes[2]))
+      return std::nullopt;
+
+    word = (uint32_t(bytes[0]) << 16)
+         | (uint32_t(bytes[1]) <<  8)
+         | (uint32_t(bytes[2]) <<  0);
+
+    result.patternLength = bextract(word, 18,  4) + MinPatternLength;
+    result.patternOffset = bextract(word,  5, 13) + 1;
+  } else if (!(bytes[0] & 0x20)) {
+    if (!reader.read(bytes[1])
+     || !reader.read(bytes[2])
+     || !reader.read(bytes[3]))
+      return std::nullopt;
+
+    word = (uint32_t(bytes[0]) << 24)
+         | (uint32_t(bytes[1]) << 16)
+         | (uint32_t(bytes[2]) <<  8)
+         | (uint32_t(bytes[3]) <<  0);
+
+    result.patternLength = bextract(word, 21,  8) + MinPatternLength;
+    result.patternOffset = bextract(word,  5, 16) + 1;
+  } else {
+    // No pattern present, only a sequence length
+    word = uint32_t(bytes[0]);
+  }
+
+  // Decode sequence length
+  result.sequenceLength = word & 0xF;
+
+  if (word & 0x10) {
+    uint32_t shift = 4;
+    uint8_t byte = 0;
+
+    do {
+      if (!reader.read(byte))
+        return std::nullopt;
+
+      result.sequenceLength |= uint32_t(byte & 0x7F) << shift;
+      shift += 7;
+    } while (byte & 0x80);
+  }
+
+  return result;
+}
+
+
 bool lzssDecode(
         WrMemoryView                    output,
         RdMemoryView                    input) {
-  RdStream reader(input);
-
   auto dst = reinterpret_cast<uint8_t*>(output.getData());
 
   size_t size = output.getSize();
   size_t written = 0;
 
   while (written < size) {
-    uint8_t control = 0;
+    auto control = lzssDecodeControlWord(input);
 
-    if (!reader.read(control))
+    if (!control)
       return false;
 
-    if (control & 0x80) {
-      size_t length = (control & 0x3F) + 4;
-      size_t offset = 0;
+    // Validate against output bounds
+    if (written + control->patternLength + control->sequenceLength > size)
+      return false;
 
-      bool success = (control & 0x40)
-        ? reader.readAs<uint16_t>(offset)
-        : reader.readAs<uint8_t>(offset);
-
-      offset += 1;
-
-      if (!success || written + length > size || offset > written)
+    if (control->patternLength) {
+      if (control->patternOffset > written)
         return false;
 
-      std::memcpy(&dst[written], &dst[written - offset], length);
-      written += length;
-    } else {
-      size_t length = (control & 0x3F);
+      // The control word only encodes relative offsets
+      size_t absoluteOffset = written - control->patternOffset;
 
-      if (control & 0x40) {
-        uint8_t control2 = 0;
-
-        if (!reader.read(control2))
-          return false;
-
-        length = (length << 8) + control2 + 64;
-      }
-
-      length += 1;
-
-      if (length + written > size)
+      if (absoluteOffset + control->patternLength > written)
         return false;
 
-      if (!reader.read(&dst[written], length))
-        return false;
-
-      written += length;
+      std::memcpy(&dst[written], &dst[absoluteOffset], control->patternLength);
+      written += control->patternLength;
     }
+
+    if (!input.read(&dst[written], control->sequenceLength))
+      return false;
+
+    written += control->sequenceLength;
   }
 
   return true;

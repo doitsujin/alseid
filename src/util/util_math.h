@@ -210,4 +210,22 @@ inline int32_t findmsb(uint64_t number) {
 }
 
 
+/**
+ * \brief Extracts given set of bits
+ *
+ * \param [in] op Operand to extract from
+ * \param [in] first First bit to extract
+ * \param [in] count Number of bits to extract
+ * \returns Extracted bit pattern
+ */
+template<typename T>
+T bextract(T op, uint32_t first, uint32_t count) {
+  if (!count)
+    return 0;
+
+  T mask = (T(2) << (count - 1)) - T(1);
+  return (op >> first) & mask;
+}
+
+
 }

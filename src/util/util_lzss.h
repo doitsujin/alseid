@@ -9,7 +9,8 @@ namespace as {
  *
  * \param [in] output Output stream
  * \param [in] input Input stream
- * \param [in] window Sliding window size
+ * \param [in] window Sliding window size. If 0, the
+ *    maximum supported window size will be used.
  */
 bool lzssEncode(
         WrBufferedStream&               output,
