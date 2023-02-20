@@ -9,6 +9,8 @@
 #include "../../src/io/io_archive.h"
 #include "../../src/io/io_stream.h"
 
+#include "../../src/job/job.h"
+
 #include "../../src/util/util_log.h"
 
 using namespace as;
@@ -17,6 +19,7 @@ int main(int argc, char** argv) {
   Log::setLogLevel(LogSeverity::eError);
 
   Io io(IoBackend::eDefault, 1);
+  Jobs jobs(std::thread::hardware_concurrency());
 
   if (argc < 3) {
     Log::err("Usage: ", argv[0], " out.asa shader.spv [shader2.spv [...]]");
@@ -80,7 +83,7 @@ int main(int argc, char** argv) {
     subFile.compression = IoArchiveCompression::eHuffLzss;
   }
 
-  IoArchiveBuilder builder(io, desc);
+  IoArchiveBuilder builder(io, jobs, desc);
 
   if (builder.build(outPath) != IoStatus::eSuccess) {
     Log::err("Failed to write ", outPath);

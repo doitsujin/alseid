@@ -4,6 +4,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "../job/job.h"
+
 #include "../util/util_types.h"
 
 #include "io.h"
@@ -570,6 +572,7 @@ public:
 
   explicit IoArchiveBuilder(
           Io                            io,
+          Jobs                          jobs,
           IoArchiveDesc                 desc);
 
   ~IoArchiveBuilder();
@@ -586,13 +589,16 @@ public:
 private:
 
   struct SubfileData {
+    Job               job;
     std::vector<char> data;
+    bool              status = false;
   };
 
   Io            m_io;
+  Jobs          m_jobs;
   IoArchiveDesc m_desc;
 
-  bool compress(
+  static bool compress(
           WrVectorStream&               output,
           RdMemoryView                  input,
           IoArchiveCompression          compression);

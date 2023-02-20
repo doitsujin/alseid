@@ -248,8 +248,10 @@ bool IoArchive::parseMetadata() {
 
 IoArchiveBuilder::IoArchiveBuilder(
         Io                            io,
+        Jobs                          jobs,
         IoArchiveDesc                 desc)
 : m_io    (std::move(io))
+, m_jobs  (std::move(jobs))
 , m_desc  (std::move(desc)) {
 
 }
@@ -274,19 +276,19 @@ IoStatus IoArchiveBuilder::build(
   std::memcpy(header.magic, IoArchiveMagic.data(), IoArchiveMagic.size());
 
   // Compress all sub files that need compression
-  std::vector<std::unique_ptr<SubfileData>> subfileData;
+  std::vector<std::shared_ptr<SubfileData>> subfileData;
 
   for (const auto& f : m_desc.files) {
     for (const auto& s : f.subFiles) {
-      std::unique_ptr<SubfileData> object;
+      std::shared_ptr<SubfileData> object;
 
       if (s.compression != IoArchiveCompression::eNone) {
-        object = std::make_unique<SubfileData>();
-
-        if (!compress(Lwrap<WrVectorStream>(object->data),
+        object = std::make_shared<SubfileData>();
+        object->job = m_jobs->dispatch(m_jobs->create<SimpleJob>([object, s] () {
+          object->status = compress(Lwrap<WrVectorStream>(object->data),
             RdMemoryView(s.dataSource.memory, s.dataSource.size),
-            s.compression))
-          return IoStatus::eError;
+            s.compression);
+        }));
       }
 
       subfileData.push_back(std::move(object));
@@ -326,8 +328,14 @@ IoStatus IoArchiveBuilder::build(
     for (const auto& s : f.subFiles) {
       uint64_t compressedSize = s.dataSource.size;
 
-      if (subfileData[subfileIndex])
+      if (subfileData[subfileIndex]) {
+        m_jobs->wait(subfileData[subfileIndex]->job);
+
+        if (!subfileData[subfileIndex]->status)
+          return IoStatus::eError;
+
         compressedSize = subfileData[subfileIndex]->data.size();
+      }
 
       auto& info = subFiles.emplace_back();
       info.identifier = s.identifier;
@@ -415,7 +423,7 @@ bool IoArchiveBuilder::compress(
   // Apply LZSS compression first
   std::vector<char> lzssData;
 
-  if (!lzssEncode(Lwrap<WrVectorStream>(lzssData), input, 65536))
+  if (!lzssEncode(Lwrap<WrVectorStream>(lzssData), input, 0))
     return false;
 
   // Apply Huffman compression

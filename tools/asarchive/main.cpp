@@ -9,6 +9,8 @@
 
 #include "../../src/util/util_log.h"
 
+#include "../../src/job/job.h"
+
 #include "../../src/io/io.h"
 #include "../../src/io/io_archive.h"
 
@@ -183,7 +185,7 @@ bool processInput(
 }
 
 
-int merge(const Io& io, int argc, char** argv) {
+int merge(const Io& io, const Jobs& jobs, int argc, char** argv) {
   // Source data arrays, one vector per source file.
   InputDataList inputs;
 
@@ -229,7 +231,7 @@ int merge(const Io& io, int argc, char** argv) {
     return 1;
   }
 
-  IoArchiveBuilder builder(io, outputDesc);
+  IoArchiveBuilder builder(io, jobs, outputDesc);
 
   if (builder.build(*outputPath) != IoStatus::eSuccess) {
     Log::err("Failed to write output file ", *outputPath);
@@ -470,13 +472,13 @@ int main(int argc, char** argv) {
 
   // Initialize I/O system
   Io io(IoBackend::eDefault, std::thread::hardware_concurrency());
-
+  Jobs jobs(std::thread::hardware_concurrency());
 
   if (argc >= 2) {
     std::string op = argv[1];
 
     if (op == "merge")
-      return merge(io, argc, argv);
+      return merge(io, jobs, argc, argv);
 
     if (op == "extract")
       return extract(io, argc, argv);
