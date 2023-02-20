@@ -11,11 +11,13 @@
 
 namespace as {
 
-bool encodeSpirvBinary(
-        OutStream&                    writer,
-        InStream&                     reader,
-        size_t                        size) {
-  uint32_t dwordCount = size / sizeof(uint32_t);
+bool spirvEncodeBinary(
+        WrBufferedStream&             output,
+        RdMemoryView                  input) {
+  RdStream reader(input);
+  WrStream writer(output);
+
+  uint32_t dwordCount = input.getSize() / sizeof(uint32_t);
   writer.write(dwordCount);
 
   // Block of up to 16 compressed dwords, and one control
@@ -99,9 +101,12 @@ bool encodeSpirvBinary(
 }
 
 
-bool decodeSpirvBinary(
-        OutStream&                    writer,
-        InStream&                     reader) {
+bool spirvDecodeBinary(
+        WrMemoryView                  output,
+        RdMemoryView                  input) {
+  RdStream reader(input);
+  WrStream writer(output);
+
   // The first token stores the number of uncompressed dwords
   uint32_t dwordsTotal = 0;
   uint32_t dwordsWritten = 0;
@@ -147,6 +152,17 @@ bool decodeSpirvBinary(
   // Check whether we got bogus data somewhere
   return dwordsWritten == dwordsTotal;
 }
+
+
+size_t spirvGetDecodedSize(
+        RdMemoryView                  input) {
+  uint32_t dwordsTotal = 0;
+
+  return RdStream(input).read(dwordsTotal)
+    ? size_t(dwordsTotal * sizeof(uint32_t))
+    : size_t(0);
+}
+
 
 
 
@@ -504,7 +520,7 @@ private:
 
 
 
-std::optional<GfxShaderDesc> reflectSpirvBinary(
+std::optional<GfxShaderDesc> spirvReflectBinary(
         size_t                        size,
   const void*                         code) {
   GfxSpirvCrossReflection reflection(size, code);

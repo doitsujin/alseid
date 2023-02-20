@@ -22,7 +22,7 @@ constexpr size_t HuffmanCodeCount = size_t(1u << (sizeof(T) * 8));
  * Stores the number of times each 8/16-bit code
  * occured in a given input stream.
  */
-template<typename CodeType, typename CountType>
+template<typename CodeType>
 class HuffmanCounter {
   constexpr static size_t CodeCount = HuffmanCodeCount<CodeType>;
 public:
@@ -30,9 +30,7 @@ public:
   /**
    * \brief Zero-initializes counters
    */
-  HuffmanCounter() {
-
-  }
+  HuffmanCounter() { }
 
   /**
    * \brief Adds counters from another stream
@@ -70,8 +68,8 @@ public:
    * bytes as possible from the given stream.
    * \param [in] reader Stream to read from
    */
-  void add(
-          InStream&                     reader) {
+  template<typename Stream, std::enable_if_t<Stream::CanRead, bool> = true>
+  void add(Stream& reader) {
     std::array<char, 4096> buffer;
 
     size_t read;
@@ -102,7 +100,7 @@ public:
    * \param [in] code Code point
    * \returns Number of occurences of that code point
    */
-  CountType operator [] (CodeType code) const {
+  uint32_t operator [] (CodeType code) const {
     return m_counts[code];
   }
 
@@ -116,14 +114,14 @@ public:
 
 private:
 
-  std::array<CountType, CodeCount> m_counts = { };
-  std::array<CodeType,  CodeCount> m_codes = { };
+  std::array<uint32_t, CodeCount> m_counts = { };
+  std::array<CodeType, CodeCount> m_codes = { };
 
   uint32_t m_codeCount = 0;
 
   void count(
           CodeType                      code,
-          CountType                     count) {
+          uint32_t                      count) {
     if (!m_counts[code])
       m_codes[m_codeCount++] = code;
 
@@ -200,9 +198,10 @@ public:
    * \param [in] reader Source data stream
    * \returns \c true on success, \c false on error
    */
+  template<typename Stream, std::enable_if_t<Stream::CanRead, bool> = true>
   bool encode(
           BitstreamWriter&              stream,
-          InStream&                     reader) const {
+          Stream&                       reader) const {
     std::array<char, 4096> buffer;
 
     size_t read;
@@ -223,9 +222,8 @@ public:
    * \param [in] counter Corresponding counter
    * \returns Byte count of encoded file
    */
-  template<typename CountType>
   uint64_t computeEncodedSize(
-    const HuffmanCounter<CodeType, CountType>& counter) const {
+    const HuffmanCounter<CodeType>& counter) const {
     uint64_t bitCount = 0;
 
     auto iter = counter.getUniqueCodes();
@@ -294,15 +292,17 @@ public:
   /**
    * \brief Decodes bit stream
    *
-   * \param [in] writer Byte stream to write to
+   * \param [in] output Byte stream to write to
    * \param [in] stream Bit stream
    * \param [in] size Size of the output stream, in bytes
    * \returns \c true on success, \c false on error
    */
   bool decode(
-          OutStream&                    writer,
+          WrBufferedStream&             output,
           BitstreamReader&              stream,
           size_t                        size) const {
+    WrStream writer(output);
+
     bool success = true;
 
     for (uint32_t i = 0; i < size; i += sizeof(CodeType)) {
@@ -507,17 +507,14 @@ class HuffmanTrie {
   constexpr static size_t NodeCount = CodeCount * 2 - 1;
 public:
 
-  HuffmanTrie() {
-
-  }
+  HuffmanTrie() { }
 
   /**
    * \brief Constructs trie from existing counter struct
    * \param [in] counter Counter struct
    */
-  template<typename CountType>
   HuffmanTrie(
-    const HuffmanCounter<CodeType, CountType>& counter) {
+    const HuffmanCounter<CodeType>& counter) {
     // Write leaf nodes to the internal data structure
     std::array<BuildNode, CodeCount> nodeHeap;
     size_t nodeCount = 0;
@@ -729,28 +726,26 @@ private:
  * Convenience function to encode a single blob.
  * The resulting binary will store the full decoding
  * table in addition to the compressed binary itself.
- * \param [in] writer Byte stream to write to
- * \param [in] data Data to encode
- * \param [in] size Number of bytes to encode
+ * \param [in] output Byte stream to write to
+ * \param [in] input Memory view of uncompressed data
  * \returns \c true on success
  */
 template<typename CodeType>
 bool encodeHuffmanBinary(
-        OutStream&                    writer,
-  const void*                         data,
-        size_t                        size) {
-  BitstreamWriter bitstream(writer);
+        WrBufferedStream&             output,
+        RdMemoryView                  input) {
+  BitstreamWriter bitstream(output);
 
-  HuffmanCounter<CodeType, uint32_t> counter;
-  counter.add(data, size);
+  HuffmanCounter<CodeType> counter;
+  counter.add(input.getData(), input.getSize());
 
   HuffmanTrie<CodeType> trie(counter);
   HuffmanEncoder<CodeType> encoder = trie.createEncoder();
   HuffmanDecoder<CodeType> decoder = trie.createDecoder();
 
   return decoder.serialize(bitstream)
-      && bitstream.write(uint32_t(size), 32)
-      && encoder.encode(bitstream, data, size);
+      && bitstream.write(uint32_t(input.getSize()), 32)
+      && encoder.encode(bitstream, input.getData(), input.getSize());
 }
 
 
@@ -759,16 +754,15 @@ bool encodeHuffmanBinary(
  *
  * Can be used to decode binaries compressed with the
  * \ref encodeHuffmanBinary method.
- * \param [in] writer Byte stream to write to
- * \param [in] size Number of bytes to encode
- * \param [in] data Data to encode
+ * \param [in] output Byte stream to write to
+ * \param [in] input Byte stream to read from
  * \returns \c true on success
  */
 template<typename CodeType>
 bool decodeHuffmanBinary(
-        OutStream&                    writer,
-        InStream&                     reader) {
-  BitstreamReader bitstream(reader);
+        WrBufferedStream&             output,
+        RdMemoryView                  input) {
+  BitstreamReader bitstream(input);
 
   HuffmanDecoder<CodeType> decoder;
 
@@ -776,7 +770,7 @@ bool decodeHuffmanBinary(
     return false;
 
   uint32_t byteCount = bitstream.read(32);
-  decoder.decode(writer, bitstream, byteCount);
+  decoder.decode(output, bitstream, byteCount);
   return true;
 }
 

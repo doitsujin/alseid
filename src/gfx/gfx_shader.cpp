@@ -9,7 +9,8 @@
 namespace as {
 
 bool GfxShaderDesc::serialize(
-        OutStream&                    stream) const {
+        WrBufferedStream&             output) const {
+  WrStream stream(output);
   bool success = true;
 
   // The shader stage enum is used for bit mask but only
@@ -45,7 +46,9 @@ bool GfxShaderDesc::serialize(
 
 
 bool GfxShaderDesc::deserialize(
-        InStream&                     stream) {
+        RdMemoryView                  input) {
+  RdStream stream(input);
+
   // Read and decode basic binding info
   uint32_t stageNum = 0xFFFFu;
 

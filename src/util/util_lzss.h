@@ -7,27 +7,23 @@ namespace as {
 /**
  * \brief Encodes binary using LZSS
  *
- * \param [in] writer Output stream
- * \param [in] data Pointer to uncompressed data
- * \param [in] size Number of bytes to encode
+ * \param [in] output Output stream
+ * \param [in] input Input stream
  * \param [in] window Sliding window size
  */
 bool lzssEncode(
-        OutStream&                      writer,
-  const void*                           data,
-        size_t                          size,
+        WrBufferedStream&               output,
+        RdMemoryView                    input,
         size_t                          window);
 
 /**
  * \brief Decodes LZSS-encoded binary
  *
- * \param [in] data Buffer for decompressed data
- * \param [in] size Size of decompressed binary
- * \param [in] reader Input stream
+ * \param [in] output Output memory view
+ * \param [in] input Input memory view
  */
 bool lzssDecode(
-        void*                           data,
-        size_t                          size,
-        InStream&                       reader);
+        WrMemoryView                    output,
+        RdMemoryView                    input);
 
 }

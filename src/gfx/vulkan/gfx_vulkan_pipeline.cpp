@@ -1335,14 +1335,14 @@ bool GfxVulkanPipelineManager::initShaderStage(
     } break;
 
     case GfxShaderFormat::eVulkanSpirvCompressed: {
-      InMemoryStream compressed(binary.data, binary.size);
-      moduleInfo.codeSize = getDecodedSpirvSize(compressed);
+      RdMemoryView compressed(binary.data, binary.size);
+      size_t size = spirvGetDecodedSize(compressed);
 
-      void* buffer = std::malloc(moduleInfo.codeSize);
+      void* buffer = std::malloc(size);
+      moduleInfo.codeSize = size;
       moduleInfo.pCode = reinterpret_cast<uint32_t*>(buffer);
 
-      OutMemoryStream stream(buffer, moduleInfo.codeSize);
-      decodeSpirvBinary(stream, compressed);
+      spirvDecodeBinary(WrMemoryView(buffer, size), compressed);
     } break;
 
     default:

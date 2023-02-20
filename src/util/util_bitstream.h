@@ -24,12 +24,11 @@ public:
 
   /**
    * \brief Initializes bitstream reader
-   *
-   * \param [in] stream Stream to read from
+   * \param [in] input Stream to read from
    */
   explicit BitstreamReader(
-          InStream&                     stream)
-  : m_stream  (&stream)
+          RdMemoryView&                 input)
+  : m_stream  (&input)
   , m_curr    (readQword())
   , m_next    (readQword()) { }
 
@@ -76,7 +75,7 @@ public:
 
 private:
 
-  InStream* m_stream  = nullptr;
+  RdMemoryView* m_stream  = nullptr;
 
   uint32_t  m_bit     = 0;
   uint64_t  m_curr    = 0;
@@ -109,7 +108,7 @@ public:
    * \param [in] stream Byte stream to write to
    */
   BitstreamWriter(
-          OutStream&                    stream)
+          WrBufferedStream&             stream)
   : m_stream(&stream) { }
 
   ~BitstreamWriter() {
@@ -134,7 +133,7 @@ public:
     if (likely(m_bit < 64))
       return true;
 
-    bool success = m_stream->write(m_buffer);
+    bool success = m_stream->write(&m_buffer, sizeof(m_buffer));
     m_bit -= 64;
 
     // Handle the special case where the number of remaining
@@ -163,7 +162,7 @@ public:
 
 private:
 
-  OutStream* m_stream = nullptr;
+  WrBufferedStream* m_stream = nullptr;
 
   uint32_t  m_bit     = 0;
   uint64_t  m_buffer  = 0;

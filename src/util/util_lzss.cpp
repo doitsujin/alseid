@@ -30,9 +30,11 @@ public:
 
 
   bool encode(
-          OutStream&                    writer,
+          WrBufferedStream&             output,
     const void*                         data,
           size_t                        size) {
+    WrStream writer(output);
+
     // pattern -> offset lookup table for prior pattern occurences.
     // We use dwords to encode the pattern here since that's the
     // smallest unit of data that we'll compress.
@@ -90,17 +92,17 @@ public:
       if (!skipLength) {
         if (matchLength) {
           if (sequenceLength) {
-            success &= emitSequence(writer, sequenceLength, &src[i - sequenceLength]);
+            success &= emitSequence(output, sequenceLength, &src[i - sequenceLength]);
             sequenceLength = 0;
           }
 
-          success &= emitRepetition(writer, i - matchOffset, matchLength);
+          success &= emitRepetition(output, i - matchOffset, matchLength);
           skipLength = matchLength - 1;
         } else {
           sequenceLength += 1;
 
           if (sequenceLength == MaxSequenceLength || i + 1 == size) {
-            success &= emitSequence(writer, sequenceLength, &src[i + 1 - sequenceLength]);
+            success &= emitSequence(output, sequenceLength, &src[i + 1 - sequenceLength]);
             sequenceLength = 0;
           }
         }
@@ -135,9 +137,9 @@ private:
 
 
   size_t match(
-    const uint8_t*                        a,
-    const uint8_t*                        b,
-          size_t                          maxLength) {
+    const uint8_t*                      a,
+    const uint8_t*                      b,
+          size_t                        maxLength) {
     size_t qwordCount = maxLength / sizeof(uint64_t);
 
     for (size_t i = 0; i < qwordCount; i++) {
@@ -164,14 +166,13 @@ private:
 
 
   bool emitSequence(
-          OutStream&                      writer,
-          size_t                          length,
-    const void*                           data) {
-    if (!length)
-      return true;
+          WrBufferedStream&             output,
+          size_t                        length,
+    const void*                         data) {
+    WrStream writer(output);
 
-    if (length > size_t(1u << 14) + 64)
-      return false;
+    if (!length || length > size_t(1u << 14) + 64)
+      return !length;
 
     bool success = true;
 
@@ -196,9 +197,11 @@ private:
 
 
   bool emitRepetition(
-          OutStream&                      writer,
-          size_t                          offset,
-          size_t                          length) {
+          WrBufferedStream&             output,
+          size_t                        offset,
+          size_t                        length) {
+    WrStream writer(output);
+
     // We don't try to compress any patterns smaller than 4 bytes
     length -= 4;
 
@@ -288,21 +291,24 @@ private:
 
 
 bool lzssEncode(
-        OutStream&                      writer,
-  const void*                           data,
-        size_t                          size,
+        WrBufferedStream&               output,
+        RdMemoryView                    input,
         size_t                          window) {
   LzssEncoder encoder(window);
-  return encoder.encode(writer, data, size);
+
+  return encoder.encode(output,
+    input.getData(), input.getSize());
 }
 
 
 bool lzssDecode(
-        void*                           data,
-        size_t                          size,
-        InStream&                       reader) {
-  auto dst = reinterpret_cast<uint8_t*>(data);
+        WrMemoryView                    output,
+        RdMemoryView                    input) {
+  RdStream reader(input);
 
+  auto dst = reinterpret_cast<uint8_t*>(output.getData());
+
+  size_t size = output.getSize();
   size_t written = 0;
 
   while (written < size) {

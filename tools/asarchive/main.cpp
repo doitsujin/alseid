@@ -130,7 +130,7 @@ bool processInput(
 
   for (uint32_t i = 0; i < archive.getFileCount(); i++) {
     auto file = archive.getFile(i);
-    dataSize += file->getInlineDataSize();
+    dataSize += file->getInlineData().getSize();
 
     for (uint32_t j = 0; j < file->getSubFileCount(); j++)
       dataSize += file->getSubFile(j)->getSize();
@@ -147,13 +147,15 @@ bool processInput(
     auto& info = outputDesc.files.emplace_back();
     info.name = file->getName();
 
-    if (file->getInlineDataSize()) {
-      std::memcpy(&data[dataOffset], file->getInlineData(), file->getInlineDataSize());
+    auto inlineData = file->getInlineData();
+
+    if (inlineData) {
+      std::memcpy(&data[dataOffset], inlineData.getData(), inlineData.getSize());
 
       info.inlineDataSource.memory = &data[dataOffset];
-      info.inlineDataSource.size = file->getInlineDataSize();
+      info.inlineDataSource.size = inlineData.getSize();
 
-      dataOffset += file->getInlineDataSize();
+      dataOffset += inlineData.getSize();
     }
 
     for (uint32_t j = 0; j < file->getSubFileCount(); j++) {
@@ -360,8 +362,10 @@ int extract(const Io& io, int argc, char** argv) {
   std::vector<char> data;
 
   if (mode == ExtractMode::eInlineData) {
-    data.resize(file->getInlineDataSize());
-    std::memcpy(data.data(), file->getInlineData(), file->getInlineDataSize());
+    auto inlineData = file->getInlineData();
+
+    data.resize(inlineData.getSize());
+    std::memcpy(data.data(), inlineData.getData(), inlineData.getSize());
   } else {
     const IoArchiveSubFile* subFile = nullptr;
 
@@ -384,14 +388,14 @@ int extract(const Io& io, int argc, char** argv) {
     }
   }
 
-  IoFile outfile(io->open(*outputPath, IoOpenMode::eCreate));
+  WrFileStream outfile(io->open(*outputPath, IoOpenMode::eCreate));
 
   if (!outfile) {
     Log::err("Failed to open output file ", *outputPath);
     return 1;
   }
 
-  if (!OutFileStream(std::move(outfile)).write(data)) {
+  if (!WrStream(outfile).write(data)) {
     Log::err("Failed to write output file");
     return 1;
   }
@@ -420,8 +424,10 @@ int print(const Io& io, int argc, char** argv) {
     auto file = archive.getFile(i);
     std::cout << "    " << file->getName() << ":" << std::endl;
 
-    if (file->getInlineDataSize())
-      std::cout << "        Inline data: " << file->getInlineDataSize() << " bytes " << std::endl;
+    auto inlineData = file->getInlineData();
+
+    if (inlineData)
+      std::cout << "        Inline data: " << inlineData.getSize() << " bytes " << std::endl;
 
     std::cout << "        Sub files: " << file->getSubFileCount() << std::endl;
 

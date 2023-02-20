@@ -76,14 +76,15 @@ bool IoArchive::decompress(
     return false;
 
   // Decode Huffman binary first
-  OutVectorStream huffStream;
+  std::vector<char> huffData;
 
-  if (!decodeHuffmanBinary<uint8_t>(huffStream, lwrap(InMemoryStream(srcData, subFile->getCompressedSize()))))
+  if (!decodeHuffmanBinary<uint8_t>(
+      Lwrap<WrVectorStream>(huffData),
+      Lwrap<RdMemoryView>(srcData, subFile->getCompressedSize())))
     return false;
 
   // Decompress LZSS binary
-  auto huffData = std::move(huffStream).getData();
-  return lzssDecode(dstData, subFile->getSize(), lwrap(InMemoryStream(huffData)));
+  return lzssDecode(WrMemoryView(dstData, subFile->getSize()), huffData);
 }
 
 
@@ -93,7 +94,9 @@ bool IoArchive::parseMetadata() {
     return false;
   }
 
-  InFileStream stream(m_file);
+  RdFileStream file(m_file);
+  RdStream stream(file);
+
   IoArchiveHeader fileHeader;
 
   if (!stream.read(fileHeader)) {
@@ -164,11 +167,11 @@ bool IoArchive::parseMetadata() {
   for (size_t i = 0; i < totalSubFileCount; i++) {
     auto& subFile = m_subFiles.emplace_back(subFiles[i]);
 
-    if (subFile.getOffsetInArchive() + subFile.getCompressedSize() > stream.getSize()) {
+    if (subFile.getOffsetInArchive() + subFile.getCompressedSize() > stream->getSize()) {
       Log::err("Archive: Sub-file out of bounds:"
         "\n  Sub file Offset: ", subFile.getOffsetInArchive(),
         "\n  Sub file size:   ", subFile.getCompressedSize(),
-        "\n  Archive size:    ", stream.getSize());
+        "\n  Archive size:    ", stream->getSize());
       return false;
     }
   }
@@ -232,12 +235,12 @@ IoArchiveBuilder::~IoArchiveBuilder() {
 
 IoStatus IoArchiveBuilder::build(
         std::filesystem::path         path) {
-  IoFile file = m_io->open(path, IoOpenMode::eCreate);
+  WrFileStream file(m_io->open(path, IoOpenMode::eCreate));
 
   if (!file)
     return IoStatus::eError;
 
-  OutFileStream stream(std::move(file));
+  WrStream stream(file);
 
   // Prepare and write out the header
   IoArchiveHeader header = { };
@@ -251,12 +254,10 @@ IoStatus IoArchiveBuilder::build(
       std::unique_ptr<SubfileData> object;
 
       if (s.compression != IoArchiveCompression::eNone) {
-        OutVectorStream stream;
+        object = std::make_unique<SubfileData>();
 
-        if (compress(stream, s)) {
-          object = std::make_unique<SubfileData>();
-          object->data = std::move(stream).getData();
-        }
+        if (!compress(Lwrap<WrVectorStream>(object->data), s))
+          return IoStatus::eError;
       }
 
       subfileData.push_back(std::move(object));
@@ -363,17 +364,16 @@ IoStatus IoArchiveBuilder::build(
 
 
 bool IoArchiveBuilder::compress(
-        OutStream&                    stream,
+        WrVectorStream&               output,
   const IoArchiveSubFileDesc&         subfile) {
   // Apply LZSS compression first
-  OutVectorStream lzssStream;
+  std::vector<char> lzssData;
 
-  if (!lzssEncode(lzssStream, subfile.dataSource.memory, subfile.dataSource.size, 65536))
+  if (!lzssEncode(Lwrap<WrVectorStream>(lzssData), RdMemoryView(subfile.dataSource.memory, subfile.dataSource.size), 65536))
     return false;
 
   // Apply Huffman compression
-  std::vector<char> lzssData = std::move(lzssStream).getData();
-  return encodeHuffmanBinary<uint8_t>(stream, lzssData.data(), lzssData.size());
+  return encodeHuffmanBinary<uint8_t>(output, lzssData);
 }
 
 }

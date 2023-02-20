@@ -12,11 +12,11 @@ namespace as {
  * Implements a stream object on top of
  * synchronous file operations.
  */
-class InFileStream : public InStream {
+class RdFileStream : public RdBufferedStream {
 
 public:
 
-  InFileStream();
+  RdFileStream();
 
   /**
    * \brief Initializes file writer
@@ -24,9 +24,9 @@ public:
    * Reading will always start at offset 0.
    * \param [in] file File to read from
    */
-  InFileStream(IoFile file);
+  RdFileStream(IoFile file);
 
-  ~InFileStream();
+  ~RdFileStream();
 
   /**
    * \brief Queries current offset in file
@@ -42,6 +42,14 @@ public:
    */
   uint64_t getSize() const {
     return m_size;
+  }
+
+  /**
+   * \brief Checks whether the file is valid
+   * \returns \c true if the file is valid
+   */
+  operator bool () const {
+    return bool(m_file);
   }
 
 private:
@@ -65,11 +73,11 @@ protected:
  * Implements a stream object on top of
  * synchronous file operations.
  */
-class OutFileStream : public OutStream {
+class WrFileStream : public WrBufferedStream {
 
 public:
 
-  OutFileStream();
+  WrFileStream();
 
   /**
    * \brief Initializes file writer
@@ -78,9 +86,9 @@ public:
    * will append data to the file.
    * \param [in] file File to write to
    */
-  OutFileStream(IoFile file);
+  WrFileStream(IoFile file);
 
-  ~OutFileStream();
+  ~WrFileStream();
 
   /**
    * \brief Queries file size
@@ -89,6 +97,14 @@ public:
   uint64_t getSize() {
     flush();
     return m_size;
+  }
+
+  /**
+   * \brief Checks whether the file is valid
+   * \returns \c true if the file is valid
+   */
+  operator bool () const {
+    return bool(m_file);
   }
 
 private:

@@ -14,45 +14,35 @@ namespace as {
 /**
  * \brief Compresses SPIR-V binary
  *
- * \param [in] writer Byte stream to write to
- * \param [in] reader Byte stream to read from
- * \param [in] size SPIR-V binary size in bytes
+ * \param [in] output Byte stream to write to
+ * \param [in] input Uncompressed SPIR-V binary
  */
-bool encodeSpirvBinary(
-        OutStream&                    writer,
-        InStream&                     reader,
-        size_t                        size);
+bool spirvEncodeBinary(
+        WrBufferedStream&             output,
+        RdMemoryView                  input);
 
 
 /**
  * \brief Decompresses SPIR-V binary
  *
- * \param [in] writer Byte stream to write to
+ * \param [in] output Memory region to write to
  * \param [in] reader Byte stream to read from
  * \returns \c true if decoding was successful
  */
-bool decodeSpirvBinary(
-        OutStream&                    writer,
-        InStream&                     reader);
+bool spirvDecodeBinary(
+        WrMemoryView                  output,
+        RdMemoryView                  input);
 
 
 /**
  * \brief Computes size of decoded SPIR-V binary
  *
- * \param [in] reader Stream containing compressed binary.
- *    Note that this takes a copy of the stream.
+ * \param [in] reader Byte stream to read from
  * \returns Size of the decompressed binary, in bytes,
  *    or \c 0 if the binary is invalid.
  */
-template<typename Stream>
-size_t getDecodedSpirvSize(
-        Stream                        reader) {
-  uint32_t dwordsTotal = 0;
-
-  return reader.read(dwordsTotal)
-    ? size_t(dwordsTotal * sizeof(uint32_t))
-    : size_t(0);
-}
+size_t spirvGetDecodedSize(
+        RdMemoryView                  input);
 
 
 /**
@@ -63,7 +53,7 @@ size_t getDecodedSpirvSize(
  * \param [in] code Compressed binary data
  * \returns Shader binary description, or \c nullopt on error.
  */
-std::optional<GfxShaderDesc> reflectSpirvBinary(
+std::optional<GfxShaderDesc> spirvReflectBinary(
         size_t                        size,
   const void*                         code);
 

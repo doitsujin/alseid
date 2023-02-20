@@ -122,20 +122,20 @@ struct GfxShaderDesc {
    *
    * Note that the debug name will \e not be included,
    * since this can be set to the file name itself.
-   * \param [in] stream Stream to write to
+   * \param [in] output Stream to write to
    * \returns \c true on success
    */
   bool serialize(
-          OutStream&                    stream) const;
+          WrBufferedStream&             output) const;
 
   /**
    * \brief Reads shader description from stream
    *
-   * \param [in] stream Stream to read from
+   * \param [in] input Stream to read from
    * \returns \c true on success
    */
   bool deserialize(
-          InStream&                     stream);
+          RdMemoryView                  input);
 
 };
 

@@ -2,24 +2,24 @@
 
 namespace as {
 
-InFileStream::InFileStream() {
+RdFileStream::RdFileStream() {
 
 }
 
 
-InFileStream::InFileStream(IoFile file)
+RdFileStream::RdFileStream(IoFile file)
 : m_file(std::move(file))
 , m_size(m_file->getSize()) {
 
 }
 
 
-InFileStream::~InFileStream() {
+RdFileStream::~RdFileStream() {
 
 }
 
 
-size_t InFileStream::readFromSource(
+size_t RdFileStream::readFromSource(
         void*                         data,
         size_t                        size) {
   size_t read = std::min(size, m_size - m_offset);
@@ -36,24 +36,25 @@ size_t InFileStream::readFromSource(
 
 
 
-OutFileStream::OutFileStream() {
+WrFileStream::WrFileStream() {
 
 }
 
 
-OutFileStream::OutFileStream(IoFile file)
-: m_file(std::move(file))
-, m_size(m_file->getSize()) {
-
+WrFileStream::WrFileStream(IoFile file)
+: m_file(std::move(file)) {
+  if (m_file)
+    m_size = m_file->getSize();
 }
 
 
-OutFileStream::~OutFileStream() {
-  flush();
+WrFileStream::~WrFileStream() {
+  if (m_file)
+    flush();
 }
 
 
-std::pair<size_t, size_t> OutFileStream::writeToContainer(
+std::pair<size_t, size_t> WrFileStream::writeToContainer(
   const void*                         data,
         size_t                        size) {
   if (m_file->write(m_size, size, data) != IoStatus::eSuccess)

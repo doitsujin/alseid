@@ -12,7 +12,7 @@ GfxShader createVkBuiltInShader(size_t size, const void* code) {
   binary.data.resize(size);
   std::memcpy(binary.data.data(), code, size);
 
-  auto desc = reflectSpirvBinary(size, code);
+  auto desc = spirvReflectBinary(size, code);
   dbg_assert(desc.has_value());
   return GfxShader(std::move(*desc), std::move(binary));
 }

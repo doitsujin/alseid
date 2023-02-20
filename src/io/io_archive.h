@@ -208,30 +208,14 @@ public:
   }
 
   /**
-   * \brief Queries size of inline data
-   * \returns Inline data size
-   */
-  size_t getInlineDataSize() const {
-    return m_inlineSize;
-  }
-
-  /**
-   * \brief Retrieves inline data pointer
+   * \brief Retrieves inline data view
    *
    * Note that this pointer does not necessarily
    * meet any specific alignment requirements.
    * \returns Pointer to inline data
    */
-  const void* getInlineData() const {
-    return m_inlineData;
-  }
-
-  /**
-   * \brief Retrieves inline data stream
-   * \returns Memory stream for inline data
-   */
-  InMemoryStream getInlineDataStream() const {
-    return InMemoryStream(m_inlineData, m_inlineSize);
+  RdMemoryView getInlineData() const {
+    return RdMemoryView(m_inlineData, m_inlineSize);
   }
 
 private:
@@ -595,7 +579,7 @@ private:
   IoArchiveDesc m_desc;
 
   bool compress(
-          OutStream&                    stream,
+          WrVectorStream&               output,
     const IoArchiveSubFileDesc&         subfile);
 
 };

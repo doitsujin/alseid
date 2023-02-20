@@ -567,7 +567,7 @@ private:
         GfxShaderDesc shaderDesc;
         shaderDesc.debugName = cFile->getName();
 
-        if (!shaderDesc.deserialize(lwrap(cFile->getInlineDataStream())))
+        if (!shaderDesc.deserialize(cFile->getInlineData()))
           return IoStatus::eError;
 
         GfxShaderBinaryDesc binaryDesc;

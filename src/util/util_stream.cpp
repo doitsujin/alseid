@@ -4,7 +4,12 @@
 
 namespace as {
 
-size_t InStream::readComplex(void* dst, size_t size) {
+RdBufferedStream::~RdBufferedStream() {
+
+}
+
+
+size_t RdBufferedStream::readComplex(void* dst, size_t size) {
   // Read remaining buffered data first, if any
   size_t remaining = m_bufferSize - m_bufferOffset;
 
@@ -35,7 +40,7 @@ size_t InStream::readComplex(void* dst, size_t size) {
 }
 
 
-size_t InStream::skipComplex(size_t size) {
+size_t RdBufferedStream::skipComplex(size_t size) {
   // Skip remaining buffered data first and flush buffer
   size -= m_bufferSize - m_bufferOffset;
 
@@ -48,7 +53,12 @@ size_t InStream::skipComplex(size_t size) {
 
 
 
-bool OutStream::flush() {
+WrBufferedStream::~WrBufferedStream() {
+
+}
+
+
+bool WrBufferedStream::flush() {
   size_t written;
   std::tie(written, m_bufferSize) = writeToContainer(m_buffer.data(), m_bufferOffset);
 
@@ -60,7 +70,7 @@ bool OutStream::flush() {
 }
 
 
-bool OutStream::writeComplex(const void* src, size_t size) {
+bool WrBufferedStream::writeComplex(const void* src, size_t size) {
   // Write as much data to the buffer as we can before flushing
   size_t written = m_bufferSize - m_bufferOffset;
 
@@ -91,91 +101,26 @@ bool OutStream::writeComplex(const void* src, size_t size) {
 
 
 
-size_t InMemoryStream::readFromSource(
-        void*                         data,
-        size_t                        size) {
-  size_t read = std::min(size, m_capacity - m_offset);
-
-  if (data)
-    std::memcpy(data, reinterpret_cast<const char*>(m_data) + m_offset, read);
-
-  m_offset += read;
-  return read;
-}
-
-
-
-
-OutMemoryStream::OutMemoryStream() {
+WrVectorStream::WrVectorStream(
+        std::vector<char>&            vector)
+: m_vector(vector) {
 
 }
 
 
-OutMemoryStream::~OutMemoryStream() {
+WrVectorStream::~WrVectorStream() {
   flush();
 }
 
 
-std::pair<size_t, size_t> OutMemoryStream::writeToContainer(
-  const void*                         data,
-        size_t                        size) {
-  size_t written = std::min(size, m_capacity - m_offset);
-
-  if (data)
-    std::memcpy(reinterpret_cast<char*>(m_data) + m_offset, data, written);
-
-  m_offset += written;
-  return std::make_pair(written, m_capacity - m_offset);
-}
-
-
-
-
-OutVectorStream::OutVectorStream() {
-
-}
-
-
-OutVectorStream::OutVectorStream(
-        std::vector<char>&&           vector)
-: m_vector(std::move(vector)) {
-
-}
-
-
-OutVectorStream::~OutVectorStream() {
-  // No need to flush since we have ownership of the vector, if
-  // we run out of scope then the app will not need the data.
-}
-
-
-std::pair<size_t, size_t> OutVectorStream::writeToContainer(
+std::pair<size_t, size_t> WrVectorStream::writeToContainer(
   const void*                         data,
         size_t                        size) {
   size_t oldSize = m_vector.size();
-  m_vector.resize(oldSize + size);
+  size_t newSize = oldSize + size;
+
+  m_vector.resize(newSize);
   std::memcpy(&m_vector[oldSize], data, size);
-
-  return std::make_pair(size, size_t(-1));
-}
-
-
-
-
-OutNullStream::OutNullStream() {
-
-}
-
-
-OutNullStream::~OutNullStream() {
-
-}
-
-
-std::pair<size_t, size_t> OutNullStream::writeToContainer(
-  const void*                         data,
-        size_t                        size) {
-  m_written += size;
   return std::make_pair(size, size_t(-1));
 }
 

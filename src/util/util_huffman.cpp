@@ -2,13 +2,8 @@
 
 namespace as {
 
-  template class HuffmanCounter<uint16_t, uint64_t>;
-  template class HuffmanCounter<uint16_t, uint32_t>;
-  template class HuffmanCounter<uint16_t, uint16_t>;
-
-  template class HuffmanCounter<uint8_t, uint64_t>;
-  template class HuffmanCounter<uint8_t, uint32_t>;
-  template class HuffmanCounter<uint8_t, uint16_t>;
+  template class HuffmanCounter<uint16_t>;
+  template class HuffmanCounter<uint8_t>;
 
   template class HuffmanDecoder<uint16_t>;
   template class HuffmanDecoder<uint8_t>;

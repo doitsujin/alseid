@@ -31,47 +31,43 @@ int main(int argc, char** argv) {
   for (int i = 2; i < argc; i++) {
     std::filesystem::path inPath = argv[i];
 
-    IoFile inFile = io->open(inPath, IoOpenMode::eRead);
+    RdFileStream inFile(io->open(inPath, IoOpenMode::eRead));
 
     if (!inFile) {
       Log::err("Failed to open ", inPath);
       return 1;
     }
 
-    std::vector<char> spv(inFile->getSize());
+    std::vector<char> spv(inFile.getSize());
 
-    if (!InFileStream(std::move(inFile)).read(spv)) {
+    if (!RdStream(inFile).read(spv)) {
       Log::err("Failed to read ", inPath);
       return 1;
     }
 
-    auto shaderDesc = reflectSpirvBinary(spv.size(), spv.data());
+    auto shaderDesc = spirvReflectBinary(spv.size(), spv.data());
 
     if (!shaderDesc) {
       Log::err("Failed to reflect SPIR-V binary");
       return 1;
     }
 
-    OutVectorStream shaderDescStream;
+    auto& shaderDescData = data.emplace_back();
 
-    if (!shaderDesc->serialize(shaderDescStream)) {
+    if (!shaderDesc->serialize(Lwrap<WrVectorStream>(shaderDescData))) {
       Log::err("Failed to serialize shader description");
       return 1;
     }
 
     // Encode actual shader binary
-    OutVectorStream shaderBinaryStream;
-    InMemoryStream shaderMemoryStream(spv);
+    auto& shaderBinaryData = data.emplace_back();
 
-    if (!encodeSpirvBinary(shaderBinaryStream, shaderMemoryStream, spv.size())) {
+    if (!spirvEncodeBinary(Lwrap<WrVectorStream>(shaderBinaryData), spv)) {
       Log::err("Failed to encode SPIR-V binary");
       return 1;
     }
 
     // Create archive file
-    auto& shaderDescData = data.emplace_back(std::move(shaderDescStream).getData());
-    auto& shaderBinaryData = data.emplace_back(std::move(shaderBinaryStream).getData());
-
     auto& file = desc.files.emplace_back();
     file.name = inPath.stem();
     file.inlineDataSource.memory = shaderDescData.data();
