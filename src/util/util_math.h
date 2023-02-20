@@ -5,7 +5,7 @@
 #include <cmath>
 
 #ifndef _MSC_VER
-  #define AS_HAS_X86_INTRINSICS
+  #define AS_HAS_X86_INTRINSICS 1
   #if defined(__WINE__) && defined(__clang__)
     #pragma push_macro("_WIN32")
     #undef _WIN32
@@ -15,7 +15,7 @@
     #pragma pop_macro("_WIN32")
   #endif
 #else
-  #define AS_HAS_X86_INTRINSICS
+  #define AS_HAS_X86_INTRINSICS 1
   #include <intrin.h>
 #endif
 
@@ -59,6 +59,8 @@ inline uint32_t popcnt(uint32_t n) {
 /**
  * \brief Trailing zero count (32-bit)
  *
+ * Returns operand size in bits if the
+ * input operand is zero.
  * \param [in] n Number
  * \returns Number of trailing zeroes
  */
@@ -84,8 +86,6 @@ inline uint32_t tzcnt(uint32_t n) {
     : "r" (n)
     : "cc");
   return res;
-  #elif defined(__GNUC__) || defined(__clang__)
-  return n != 0 ? __builtin_ctz(n) : 32;
   #else
   uint32_t r = 31;
   n &= -n;
@@ -102,15 +102,17 @@ inline uint32_t tzcnt(uint32_t n) {
 /**
  * \brief Trailing zero count (64-bit)
  *
+ * Returns operand size in bits if the
+ * input operand is zero.
  * \param [in] n Number
  * \returns Number of trailing zeroes
  */
 inline uint32_t tzcnt(uint64_t n) {
-  #if defined(DXVK_ARCH_X86_64) && defined(_MSC_VER) && !defined(__clang__)
+  #if defined(_MSC_VER) && !defined(__clang__)
   return (uint32_t)_tzcnt_u64(n);
-  #elif defined(DXVK_ARCH_X86_64) && defined(__BMI__)
+  #elif defined(__BMI__)
   return __tzcnt_u64(n);
-  #elif defined(DXVK_ARCH_X86_64) && (defined(__GNUC__) || defined(__clang__))
+  #elif (defined(__GNUC__) || defined(__clang__))
   uint64_t res;
   uint64_t tmp;
   asm (
@@ -122,8 +124,6 @@ inline uint32_t tzcnt(uint64_t n) {
     : "r" (n)
     : "cc");
   return res;
-  #elif defined(__GNUC__) || defined(__clang__)
-  return n != 0 ? __builtin_ctzll(n) : 64;
   #else
   uint32_t lo = uint32_t(n);
   if (lo) {
@@ -134,5 +134,80 @@ inline uint32_t tzcnt(uint64_t n) {
   }
   #endif
 }
+
+
+/**
+ * \brief Leading zero count
+ *
+ * Returns operand size in bits if the
+ * input operand is zero.
+ */
+inline uint32_t lzcnt(uint32_t n) {
+  #if defined(_MSC_VER) && !defined(__clang__)
+  return __lzcnt(n);
+  #elif defined (__BMI__)
+  return _lzcnt_u32(n);
+  #elif (defined(__GNUC__) || defined(__clang__))
+  return n ? __builtin_clz(n) : 32;
+  #else
+  uint32_t r = 0;
+  r += ((n << r) & 0xFFFF0000) ? 0 : 16;
+  r += ((n << r) & 0xFF000000) ? 0 : 8;
+  r += ((n << r) & 0xF0000000) ? 0 : 4;
+  r += ((n << r) & 0xC0000000) ? 0 : 2;
+  r += ((n << r) & 0x80000000) ? 0 : 1;
+  return n != 0 ? r : 32;
+  #endif
+}
+
+
+/**
+ * \brief Leading zero count (64-bit)
+ *
+ * Returns operand size in bits if the
+ * input operand is zero.
+ */
+inline uint32_t lzcnt(uint64_t n) {
+  #if defined(_MSC_VER) && !defined(__clang__)
+  return __lzcnt64(n);
+  #elif defined (__BMI__)
+  return _lzcnt_u64(n);
+  #elif (defined(__GNUC__) || defined(__clang__))
+  return n ? __builtin_clzll(n) : 64;
+  #else
+  uint32_t hi = uint32_t(n >> 32);
+  if (hi) {
+    return lzcnt(hi);
+  } else {
+    uint32_t lo = uint32_t(n);
+    return lzcnt(lo) + 32;
+  }
+  #endif
+}
+
+
+/**
+ * \brief Reverse bit scan
+ *
+ * \param [in] number Number to scan
+ * \returns Index of the most significant 1 bit,
+ *    or -1 if the number is zero.
+ */
+inline int32_t findmsb(uint32_t number) {
+  return 31 - int32_t(lzcnt(number));
+}
+
+
+/**
+ * \brief Reverse bit scan (64-bit)
+ *
+ * \param [in] number Number to scan
+ * \returns Index of the most significant 1 bit,
+ *    or -1 if the number is zero.
+ */
+inline int32_t findmsb(uint64_t number) {
+  return 63 - int32_t(lzcnt(number));
+}
+
 
 }
