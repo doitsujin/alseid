@@ -56,8 +56,10 @@ struct IoArchiveFileMetadata {
 enum class IoArchiveCompression : uint16_t {
   /** Data is uncompressed. */
   eNone         = 0,
-  /** Entire file is encoded using DEFLATE. */
+  /** File is encoded using DEFLATE. */
   eDeflate      = 1,
+  /** File is encoded using GDEFLATE. */
+  eGDeflate     = 2,
 };
 
 

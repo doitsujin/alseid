@@ -81,6 +81,9 @@ bool IoArchive::decompress(
 
     case IoArchiveCompression::eDeflate:
       return deflateDecode(output, input);
+
+    case IoArchiveCompression::eGDeflate:
+      return gdeflateDecode(output, input);
   }
 
   return false;
@@ -417,6 +420,9 @@ bool IoArchiveBuilder::compress(
 
     case IoArchiveCompression::eDeflate:
       return deflateEncode(output, input);
+
+    case IoArchiveCompression::eGDeflate:
+      return gdeflateEncode(output, input);
   }
 
   return false;

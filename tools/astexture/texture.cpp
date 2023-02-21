@@ -200,7 +200,7 @@ IoArchiveFileDesc Texture::getFileDesc() {
       subFile.dataSource.memory = image.encodedData.data();
       subFile.dataSource.size = image.encodedData.size();
       subFile.identifier = FourCC();
-      subFile.compression = IoArchiveCompression::eNone;
+      subFile.compression = IoArchiveCompression::eGDeflate;
     }
   }
 

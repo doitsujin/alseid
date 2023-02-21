@@ -454,6 +454,10 @@ int print(const Io& io, int argc, char** argv) {
           compression = "Deflate";
           break;
 
+        case IoArchiveCompression::eGDeflate:
+          compression = "GDeflate";
+          break;
+
         default:
           compression = strcat("IoArchiveCompression(", uint32_t(subFile->getCompressionType()), ")");
           break;
