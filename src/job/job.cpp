@@ -67,10 +67,12 @@ JobsIface::~JobsIface() {
 
 void JobsIface::wait(
   const Job&                          job) {
-  std::unique_lock lock(m_mutex);
-  m_pendingCond.wait(lock, [job] {
-    return job->isDone();
-  });
+  if (job && !job->isDone()) {
+    std::unique_lock lock(m_mutex);
+    m_pendingCond.wait(lock, [job] {
+      return job->isDone();
+    });
+  }
 }
 
 
