@@ -99,6 +99,8 @@ enum class GfxFormatFlag : uint32_t {
    *  a view of this format will be converted to or from linear
    *  space automatically. */
   eSrgb           = (1u << 0),
+  /** Format is block-compressed. */
+  eCompressed     = (1u << 1),
 
   eFlagEnum       = 0
 };

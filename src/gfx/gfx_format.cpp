@@ -4,10 +4,10 @@
 
 namespace as {
 
-const Extent2D g_1x1(1, 1);
-const Extent2D g_4x4(4, 4);
-
 GfxFormatMetadataMap::GfxFormatMetadataMap() {
+  const Extent2D g_1x1(0, 0);
+  const Extent2D g_4x4(2, 2);
+
   addFormat(GfxFormat::eR4G4B4A4un,         GfxImageAspect::eColor, g_1x1, 0, { 2u, g_1x1, GfxFormatType::eFloat });
   addFormat(GfxFormat::eR8un,               GfxImageAspect::eColor, g_1x1, 0, { 1u, g_1x1, GfxFormatType::eFloat });
   addFormat(GfxFormat::eR8sn,               GfxImageAspect::eColor, g_1x1, 0, { 1u, g_1x1, GfxFormatType::eFloat });
@@ -97,6 +97,9 @@ void GfxFormatMetadataMap::addFormat(
   info.blockExtent = Extent2D(1u, 1u) << blockExtentLog2;
   info.blockExtentLog2 = blockExtentLog2;
   info.flags = flags;
+
+  if (blockExtentLog2 != Extent2D(0u, 0u))
+    info.flags |= GfxFormatFlag::eCompressed;
 
   for (auto aspect : aspects) {
     uint32_t plane = info.planeCount++;
