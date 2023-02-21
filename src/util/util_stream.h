@@ -617,6 +617,17 @@ public:
     return m_vector.size();
   }
 
+  /**
+   * \brief Retrieves a reference to the vector
+   *
+   * Allows code to manipulate the vector directly.
+   * \returns Vector reference
+   */
+  std::vector<char>& getVector() {
+    flush();
+    return m_vector;
+  }
+
 private:
 
   std::vector<char>& m_vector;

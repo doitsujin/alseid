@@ -450,8 +450,8 @@ int print(const Io& io, int argc, char** argv) {
           compression = "None";
           break;
 
-        case IoArchiveCompression::eHuffLzss:
-          compression = "HuffLzss";
+        case IoArchiveCompression::eDeflate:
+          compression = "Deflate";
           break;
 
         default:

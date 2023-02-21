@@ -19,6 +19,7 @@ as_files = files([
 
   'job/job.cpp',
 
+  'util/util_deflate.cpp',
   'util/util_hash.cpp',
   'util/util_huff_lzss.cpp',
   'util/util_huffman.cpp',

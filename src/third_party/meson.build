@@ -17,3 +17,28 @@ as_lodepng_cpp_args = [
 as_nanojpeg_files = files([
   'nanojpeg/nanojpeg.c',
 ])
+
+libdeflate_files = files([
+  'libdeflate/lib/x86/cpu_features.c',
+
+  'libdeflate/lib/adler32.c',
+  'libdeflate/lib/crc32.c',
+  'libdeflate/lib/deflate_compress.c',
+  'libdeflate/lib/deflate_decompress.c',
+  'libdeflate/lib/gdeflate_compress.c',
+  'libdeflate/lib/gdeflate_decompress.c',
+  'libdeflate/lib/gzip_compress.c',
+  'libdeflate/lib/gzip_decompress.c',
+  'libdeflate/lib/utils.c',
+  'libdeflate/lib/zlib_compress.c',
+  'libdeflate/lib/zlib_decompress.c',
+])
+
+libdeflate_lib = static_library('libdeflate', libdeflate_files,
+  include_directories : 'libdeflate')
+
+libdeflate_dep = declare_dependency(
+  link_with           : libdeflate_lib,
+  include_directories : 'libdeflate')
+
+as_dependencies += libdeflate_dep

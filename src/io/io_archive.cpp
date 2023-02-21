@@ -1,6 +1,6 @@
 #include "../util/util_assert.h"
+#include "../util/util_deflate.h"
 #include "../util/util_error.h"
-#include "../util/util_huff_lzss.h"
 #include "../util/util_log.h"
 
 #include "io_archive.h"
@@ -79,9 +79,8 @@ bool IoArchive::decompress(
 
       return input.read(output.getData(), output.getSize());
 
-    case IoArchiveCompression::eHuffLzss:
-      return huffLzssDecode(output, input);
-
+    case IoArchiveCompression::eDeflate:
+      return deflateDecode(output, input);
   }
 
   return false;
@@ -125,7 +124,7 @@ bool IoArchive::parseMetadata() {
     return false;
   }
 
-  if (!huffLzssDecode(metadataBlob, compressedMetadata)) {
+  if (!deflateDecode(metadataBlob, compressedMetadata)) {
     Log::err("Archive: Failed to decompress metadata");
     return false;
   }
@@ -370,7 +369,7 @@ IoStatus IoArchiveBuilder::build(
   // Compress metadata blob
   std::vector<char> compressedMetadata;
 
-  if (!huffLzssEncode(Lwrap<WrVectorStream>(compressedMetadata), metadataBlob))
+  if (!deflateEncode(Lwrap<WrVectorStream>(compressedMetadata), metadataBlob))
     return IoStatus::eError;
 
   // Write actual metadata blob
@@ -416,8 +415,8 @@ bool IoArchiveBuilder::compress(
     case IoArchiveCompression::eNone:
       return output.write(input.getData(), input.getSize());
 
-    case IoArchiveCompression::eHuffLzss:
-      return huffLzssEncode(output, input);
+    case IoArchiveCompression::eDeflate:
+      return deflateEncode(output, input);
   }
 
   return false;

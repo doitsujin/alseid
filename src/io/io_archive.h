@@ -56,9 +56,8 @@ struct IoArchiveFileMetadata {
 enum class IoArchiveCompression : uint16_t {
   /** Data is uncompressed. */
   eNone         = 0,
-  /** Entire file is encoded using LZSS first and
-   *  then using 8-bit Huffman compression. */
-  eHuffLzss     = 1,
+  /** Entire file is encoded using DEFLATE. */
+  eDeflate      = 1,
 };
 
 
