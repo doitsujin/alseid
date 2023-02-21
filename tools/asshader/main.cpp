@@ -72,6 +72,7 @@ int main(int argc, char** argv) {
 
     // Create archive file
     auto& file = desc.files.emplace_back();
+    file.type = FourCC('S', 'H', 'D', 'R');
     file.name = inPath.stem();
     file.inlineDataSource.memory = shaderDescData.data();
     file.inlineDataSource.size = shaderDescData.size();

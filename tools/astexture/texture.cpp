@@ -180,6 +180,7 @@ IoArchiveFileDesc Texture::getFileDesc() {
 
   // Set up file description
   IoArchiveFileDesc desc;
+  desc.type = FourCC('T', 'E', 'X', ' ');
   desc.name = m_args.name;
 
   if (desc.name.empty())

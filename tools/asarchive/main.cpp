@@ -147,6 +147,7 @@ bool processInput(
   for (uint32_t i = 0; i < archive.getFileCount(); i++) {
     auto* file = archive.getFile(i);
     auto& info = outputDesc.files.emplace_back();
+    info.type = file->getType();
     info.name = file->getName();
 
     auto inlineData = file->getInlineData();
@@ -424,7 +425,12 @@ int print(const Io& io, int argc, char** argv) {
 
   for (uint32_t i = 0; i < archive.getFileCount(); i++) {
     auto file = archive.getFile(i);
-    std::cout << "    " << file->getName() << ":" << std::endl;
+    std::cout << "    " << file->getName() << ":";
+    
+    if (file->getType() != FourCC())
+      std::cout << " " << file->getType().toString();
+
+    std::cout << std::endl;
 
     auto inlineData = file->getInlineData();
 

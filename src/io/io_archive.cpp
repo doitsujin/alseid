@@ -300,6 +300,7 @@ IoStatus IoArchiveBuilder::build(
 
   for (const auto& f : m_desc.files) {
     IoArchiveFileMetadata& info = files.emplace_back();
+    info.type = f.type;
     info.nameLength = f.name.size() + 1;
     info.subFileCount = f.subFiles.size();
     info.inlineDataSize = f.inlineDataSource.size;

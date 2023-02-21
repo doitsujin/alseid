@@ -605,38 +605,43 @@ private:
 
     for (uint32_t i = 0; i < m_archive->getFileCount(); i++) {
       const IoArchiveFile* file = m_archive->getFile(i);
+
+      if (file->getType() != FourCC('S', 'H', 'D', 'R'))
+        continue;
+
       const IoArchiveSubFile* subFile = file->findSubFile(format.identifier);
 
-      if (subFile) {
-        m_archive->streamCompressed(request, subFile, [this,
-          cFile       = file,
-          cFormat     = format.format,
-          cSubFile    = subFile
-        ] (const void* compressedData, size_t compressedSize) {
-          GfxShaderDesc shaderDesc;
-          shaderDesc.debugName = cFile->getName();
+      if (!subFile)
+        continue;
 
-          if (!shaderDesc.deserialize(cFile->getInlineData()))
-            return IoStatus::eError;
+      m_archive->streamCompressed(request, subFile, [this,
+        cFile       = file,
+        cFormat     = format.format,
+        cSubFile    = subFile
+      ] (const void* compressedData, size_t compressedSize) {
+        GfxShaderDesc shaderDesc;
+        shaderDesc.debugName = cFile->getName();
 
-          GfxShaderBinaryDesc binaryDesc;
-          binaryDesc.format = cFormat;
-          binaryDesc.data.resize(cSubFile->getSize());
+        if (!shaderDesc.deserialize(cFile->getInlineData()))
+          return IoStatus::eError;
 
-          if (!m_archive->decompress(cSubFile, binaryDesc.data.data(), compressedData))
-            return IoStatus::eError;
+        GfxShaderBinaryDesc binaryDesc;
+        binaryDesc.format = cFormat;
+        binaryDesc.data.resize(cSubFile->getSize());
 
-          // Callbacks can be executed from worker threads, so we
-          // need to lock before modifying global data structures
-          std::lock_guard lock(m_shaderMutex);
+        if (!m_archive->decompress(cSubFile, binaryDesc.data.data(), compressedData))
+          return IoStatus::eError;
 
-          m_shaders.emplace(std::piecewise_construct,
-            std::forward_as_tuple(cFile->getName()),
-            std::forward_as_tuple(std::move(shaderDesc), std::move(binaryDesc)));
+        // Callbacks can be executed from worker threads, so we
+        // need to lock before modifying global data structures
+        std::lock_guard lock(m_shaderMutex);
 
-          return IoStatus::eSuccess;
-        });
-      }
+        m_shaders.emplace(std::piecewise_construct,
+          std::forward_as_tuple(cFile->getName()),
+          std::forward_as_tuple(std::move(shaderDesc), std::move(binaryDesc)));
+
+        return IoStatus::eSuccess;
+      });
     }
 
     m_io->submit(request);

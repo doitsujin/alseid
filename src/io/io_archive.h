@@ -38,6 +38,10 @@ struct IoArchiveHeader {
  * \brief File metadata
  */
 struct IoArchiveFileMetadata {
+  /** File type identifier. This can be useful when
+   *  iterating over files within an archive. Names
+   *  consisting of all-uppercase letters are reserved. */
+  FourCC type;
   /** Length of the name in bytes, including
    *  the terminating null character. */
   uint16_t nameLength;
@@ -169,6 +173,7 @@ public:
     const IoArchiveSubFile*             subFiles,
     const void*                         inlineData)
   : m_name          (metadata.nameLength ? name : nullptr)
+  , m_type          (metadata.type)
   , m_subFileCount  (metadata.subFileCount)
   , m_subFiles      (metadata.subFileCount ? subFiles : nullptr)
   , m_inlineSize    (metadata.inlineDataSize)
@@ -180,6 +185,14 @@ public:
    */
   const char* getName() const {
     return m_name;
+  }
+
+  /**
+   * \brief Retrieves type identifier
+   * \returns Type idenfitier
+   */
+  FourCC getType() const {
+    return m_type;
   }
 
   /**
@@ -233,6 +246,7 @@ public:
 private:
 
   const char*             m_name = nullptr;
+  FourCC                  m_type = FourCC();
 
   uint32_t                m_subFileCount  = 0;
   const IoArchiveSubFile* m_subFiles      = nullptr;
@@ -540,6 +554,8 @@ struct IoArchiveSubFileDesc {
  * \brief Archive file description
  */
 struct IoArchiveFileDesc {
+  /** File type identifier. */
+  FourCC type;
   /** File name. Must be a non-empty string. */
   std::string name;
   /** Data source for inline data. If the size of this
