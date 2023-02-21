@@ -7,6 +7,7 @@
 #include "../util/util_hash.h"
 #include "../util/util_iface.h"
 #include "../util/util_math.h"
+#include "../util/util_stream.h"
 #include "../util/util_types.h"
 
 #include "gfx_descriptor_handle.h"
@@ -116,10 +117,21 @@ using GfxImageFlags = Flags<GfxImageFlag>;
  * \brief Image type
  */
 enum class GfxImageType : uint32_t {
-  e1D,
-  e2D,
-  e3D,
+  e1D = 0,
+  e2D = 1,
+  e3D = 2,
 };
+
+
+/**
+ * \brief Computes image dimension from type
+ *
+ * \param [in] type Image type
+ * \returns Number of dimensions
+ */
+inline uint32_t gfxGetImageDimensions(GfxImageType type) {
+  return uint32_t(type) + 1;
+}
 
 
 /**
@@ -288,5 +300,71 @@ protected:
 };
 
 using GfxImage = IfaceRef<GfxImageIface>;
+
+
+/**
+ * \brief Texture flags
+ */
+enum class GfxTextureFlag : uint32_t {
+  eCubeMap      = (1u << 0),
+  eFlagEnum     = 0
+};
+
+using GfxTextureFlags = Flags<GfxTextureFlag>;
+
+
+/**
+ * \brief Texture info
+ *
+ * Stores the type, format and size of a texture, as well
+ * as subresource metadata. Can be serialized and used to
+ * populate image descriptions for read-only resources.
+ */
+struct GfxTextureDesc {
+  /** Image dimensionality. */
+  GfxImageType type = GfxImageType::e2D;
+  /** Image data format. */
+  GfxFormat format = GfxFormat::eUnknown;
+  /** Image dimensions, in texels */
+  Extent3D extent = Extent3D(0, 0, 0);
+  /** Mip level count */
+  uint32_t mips = 0;
+  /** Layer count */
+  uint32_t layers = 0;
+  /** Texture flags. These may roughly correspond
+   *  to certain image flags or properties. */
+  GfxTextureFlags flags = 0;
+
+  /**
+   * \brief Serializes texture info to a stream
+   *
+   * \param [in] output Stream to write to
+   * \returns \c true on success
+   */
+  bool serialize(
+          WrBufferedStream&             output);
+
+  /**
+   * \brief Reads serialized texture info
+   *
+   * \param [in] in Stream to read from
+   * \returns \c true on success
+   */
+  bool deserialize(
+          RdMemoryView                  input);
+
+  /**
+   * \brief Fills in image description
+   *
+   * Sets up image description with the texture's
+   * properties. Will not touch any fields other
+   * than the ones provided by this structure.
+   * \param [out] desc Image description
+   */
+  void fillImageDesc(
+          GfxImageDesc&                 desc);
+
+};
+
 
 }

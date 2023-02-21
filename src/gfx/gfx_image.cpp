@@ -32,4 +32,68 @@ GfxImageSubresource GfxImageIface::getAvailableSubresources() const {
     0, desc.mips, 0, desc.layers);
 }
 
+
+
+
+bool GfxTextureDesc::serialize(
+        WrBufferedStream&             output) {
+  bool success = true;
+  WrStream writer(output);
+
+  // Version number, image type etc
+  success &= writer.write(uint8_t(0))
+          && writer.write(uint8_t(type))
+          && writer.write(uint16_t(format));
+
+  // Write required size components only
+  for (uint32_t i = 0; i < gfxGetImageDimensions(type); i++)
+    success &= writer.write(uint16_t(extent[i]));
+
+  success &= writer.write(uint16_t(mips))
+          && writer.write(uint16_t(layers))
+          && writer.write(uint32_t(flags));
+
+  return success;
+}
+
+
+bool GfxTextureDesc::deserialize(
+        RdMemoryView                  input) {
+  RdStream reader(input);
+  uint8_t version = 0;
+
+  if (!reader.read(version) || version > 0)
+    return false;
+
+  if (!reader.readAs<uint8_t>(type)
+   || !reader.readAs<uint16_t>(format))
+    return false;
+
+  extent = Extent3D(1, 1, 1);
+
+  for (uint32_t i = 0; i < gfxGetImageDimensions(type); i++) {
+    if (!reader.readAs<uint16_t>(extent[i]))
+      return false;
+  }
+  if (!reader.readAs<uint16_t>(mips)
+   || !reader.readAs<uint16_t>(layers)
+   || !reader.readAs<uint32_t>(flags))
+    return false;
+
+  return true;
+}
+
+
+void GfxTextureDesc::fillImageDesc(
+        GfxImageDesc&                 desc) {
+  desc.type = type;
+  desc.format = format;
+  desc.extent = extent;
+  desc.mips = mips;
+  desc.layers = layers;
+
+  if (flags & GfxTextureFlag::eCubeMap)
+    desc.flags |= GfxImageFlag::eCubeViews;
+}
+
 }
