@@ -24,6 +24,20 @@ GfxImageIface::GfxImageIface(
 }
 
 
+uint32_t GfxImageIface::computeSubresourceIndex(
+  const GfxImageSubresource&          subresource) const {
+  uint32_t plane = 0;
+
+  if (subresource.aspects) {
+    auto formatInfo = Gfx::getFormatInfo(m_desc.format);
+    plane = formatInfo.computePlaneIndex(subresource.aspects.first());
+  }
+
+  return m_desc.mips * (m_desc.layers * plane +
+    subresource.layerIndex) + subresource.mipIndex;
+}
+
+
 GfxImageSubresource GfxImageIface::getAvailableSubresources() const {
   auto desc = getDesc();
   auto& formatInfo = Gfx::getFormatInfo(desc.format);

@@ -284,6 +284,16 @@ public:
   }
 
   /**
+   * \brief Computes subresource index
+   *
+   * This can be used to deal with archive files.
+   * \param [in] subresource Subresource to query
+   * \returns Subresource index
+   */
+  uint32_t computeSubresourceIndex(
+    const GfxImageSubresource&          subresource) const;
+
+  /**
    * \brief Queries available subresources
    *
    * Convenience method that returns all subresources available

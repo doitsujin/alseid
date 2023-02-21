@@ -73,6 +73,10 @@ public:
     return (m_raw & f.m_raw) == f.m_raw;
   }
 
+  T first() const {
+    return T(m_raw & -m_raw);
+  }
+
   bool operator == (Flags f) const { return m_raw == f.m_raw; }
   bool operator != (Flags f) const { return m_raw != f.m_raw; }
 

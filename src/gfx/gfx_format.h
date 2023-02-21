@@ -159,16 +159,25 @@ struct GfxFormatInfo {
   std::array<GfxFormatAspectInfo, 3> planes;
 
   /**
+   * \brief Computes plane index for a given aspect
+   *
+   * \param [in] aspect Aspect to query
+   * \returns Plane index
+   */
+  uint32_t computePlaneIndex(GfxImageAspect aspect) const {
+    dbg_assert(aspects & aspect);
+
+    return popcnt((uint32_t(aspect) - 1) & uint32_t(aspects));
+  }
+
+  /**
    * \brief Retrieves plane info for a given aspect
    *
    * \param [in] aspect The aspect to query
    * \returns Reference to that aspect
    */
   GfxFormatAspectInfo getAspectInfo(GfxImageAspect aspect) const {
-    dbg_assert(aspects & aspect);
-
-    uint32_t planeIdx = popcnt((uint32_t(aspect) - 1) & uint32_t(aspects));
-    return planes[planeIdx];
+    return planes[computePlaneIndex(aspect)];
   }
 };
 
