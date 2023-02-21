@@ -21,10 +21,7 @@ as_files = files([
 
   'util/util_deflate.cpp',
   'util/util_hash.cpp',
-  'util/util_huff_lzss.cpp',
-  'util/util_huffman.cpp',
   'util/util_log.cpp',
-  'util/util_lzss.cpp',
   'util/util_stream.cpp',
 
   'wsi/wsi.cpp',

@@ -1,6 +1,5 @@
 #include "../../util/util_assert.h"
 #include "../../util/util_bitstream.h"
-#include "../../util/util_huffman.h"
 #include "../../util/util_log.h"
 #include "../../util/util_string.h"
 #include "../../util/util_math.h"
