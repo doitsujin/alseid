@@ -608,13 +608,15 @@ void GfxVulkanContext::copyBufferToImage(
   auto& vk = m_device->vk();
   m_barrierBatch.recordCommands(vk, m_cmd);
 
+  Extent2D blockExtent = image->getFormatInfo().blockExtent;
+
   auto& vkImage = static_cast<GfxVulkanImage&>(*image);
   auto& vkBuffer = static_cast<GfxVulkanBuffer&>(*buffer);
 
   VkBufferImageCopy2 region = { VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2 };
   region.bufferOffset = bufferOffset;
-  region.bufferRowLength = bufferLayout.at<0>();
-  region.bufferImageHeight = bufferLayout.at<1>();
+  region.bufferRowLength = align(bufferLayout.at<0>(), blockExtent.at<0>());
+  region.bufferImageHeight = align(bufferLayout.at<1>(), blockExtent.at<1>());
   region.imageSubresource = getVkImageSubresourceLayers(imageSubresource);
   region.imageOffset = getVkOffset3D(imageOffset);
   region.imageExtent = getVkExtent3D(imageExtent);
@@ -674,13 +676,15 @@ void GfxVulkanContext::copyImageToBuffer(
   auto& vk = m_device->vk();
   m_barrierBatch.recordCommands(vk, m_cmd);
 
+  Extent2D blockExtent = image->getFormatInfo().blockExtent;
+
   auto& vkBuffer = static_cast<GfxVulkanBuffer&>(*buffer);
   auto& vkImage = static_cast<GfxVulkanImage&>(*image);
 
   VkBufferImageCopy2 region = { VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2 };
   region.bufferOffset = bufferOffset;
-  region.bufferRowLength = bufferLayout.at<0>();
-  region.bufferImageHeight = bufferLayout.at<1>();
+  region.bufferRowLength = align(bufferLayout.at<0>(), blockExtent.at<0>());
+  region.bufferImageHeight = align(bufferLayout.at<1>(), blockExtent.at<1>());
   region.imageSubresource = getVkImageSubresourceLayers(imageSubresource);
   region.imageOffset = getVkOffset3D(imageOffset);
   region.imageExtent = getVkExtent3D(imageExtent);

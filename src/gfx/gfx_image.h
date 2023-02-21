@@ -200,6 +200,12 @@ public:
   }
 
   /**
+   * \brief Queries format info
+   * \returns Format info
+   */
+  const GfxFormatInfo& getFormatInfo() const;
+
+  /**
    * \brief Queries image sample count
    * \returns Image sample count
    */
@@ -270,6 +276,12 @@ public:
   GfxImageDesc getDesc() const {
     return m_desc;
   }
+
+  /**
+   * \brief Queries format info
+   * \returns Format info
+   */
+  const GfxFormatInfo& getFormatInfo() const;
 
   /**
    * \brief Computes mip level extent

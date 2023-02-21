@@ -14,6 +14,11 @@ GfxImageViewIface::GfxImageViewIface(
 }
 
 
+const GfxFormatInfo& GfxImageViewIface::getFormatInfo() const {
+  return Gfx::getFormatInfo(m_desc.format);
+}
+
+
 GfxImageIface::GfxImageIface(
   const GfxImageDesc&                 desc)
 : m_desc(desc) {
@@ -21,6 +26,11 @@ GfxImageIface::GfxImageIface(
     m_debugName = m_desc.debugName;
     m_desc.debugName = m_debugName.c_str();
   }
+}
+
+
+const GfxFormatInfo& GfxImageIface::getFormatInfo() const {
+  return Gfx::getFormatInfo(m_desc.format);
 }
 
 
