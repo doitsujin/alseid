@@ -11,6 +11,7 @@
 
 #include "../../src/util/util_error.h"
 #include "../../src/util/util_log.h"
+#include "../../src/util/util_math.h"
 
 #include "../../src/wsi/wsi.h"
 
@@ -19,38 +20,39 @@ using namespace as;
 struct Vertex {
   Vector3D position;
   Vector3D normal;
+  Vector2D coord;
 };
 
 const std::array<Vertex, 24> g_vertexData = {
-  Vertex { Vector3D(-1.0f, -1.0f, -1.0f), Vector3D(-1.0f,  0.0f,  0.0f) },
-  Vertex { Vector3D(-1.0f,  1.0f, -1.0f), Vector3D(-1.0f,  0.0f,  0.0f) },
-  Vertex { Vector3D(-1.0f,  1.0f,  1.0f), Vector3D(-1.0f,  0.0f,  0.0f) },
-  Vertex { Vector3D(-1.0f, -1.0f,  1.0f), Vector3D(-1.0f,  0.0f,  0.0f) },
+  Vertex { Vector3D(-1.0f, -1.0f, -1.0f), Vector3D(-1.0f,  0.0f,  0.0f), Vector2D(0.0f, 0.0f) },
+  Vertex { Vector3D(-1.0f,  1.0f, -1.0f), Vector3D(-1.0f,  0.0f,  0.0f), Vector2D(1.0f, 0.0f) },
+  Vertex { Vector3D(-1.0f,  1.0f,  1.0f), Vector3D(-1.0f,  0.0f,  0.0f), Vector2D(1.0f, 1.0f) },
+  Vertex { Vector3D(-1.0f, -1.0f,  1.0f), Vector3D(-1.0f,  0.0f,  0.0f), Vector2D(0.0f, 1.0f) },
 
-  Vertex { Vector3D( 1.0f, -1.0f, -1.0f), Vector3D( 1.0f,  0.0f,  0.0f) },
-  Vertex { Vector3D( 1.0f,  1.0f, -1.0f), Vector3D( 1.0f,  0.0f,  0.0f) },
-  Vertex { Vector3D( 1.0f,  1.0f,  1.0f), Vector3D( 1.0f,  0.0f,  0.0f) },
-  Vertex { Vector3D( 1.0f, -1.0f,  1.0f), Vector3D( 1.0f,  0.0f,  0.0f) },
+  Vertex { Vector3D( 1.0f, -1.0f, -1.0f), Vector3D( 1.0f,  0.0f,  0.0f), Vector2D(0.0f, 0.0f) },
+  Vertex { Vector3D( 1.0f,  1.0f, -1.0f), Vector3D( 1.0f,  0.0f,  0.0f), Vector2D(1.0f, 0.0f) },
+  Vertex { Vector3D( 1.0f,  1.0f,  1.0f), Vector3D( 1.0f,  0.0f,  0.0f), Vector2D(1.0f, 1.0f) },
+  Vertex { Vector3D( 1.0f, -1.0f,  1.0f), Vector3D( 1.0f,  0.0f,  0.0f), Vector2D(0.0f, 1.0f) },
 
-  Vertex { Vector3D(-1.0f, -1.0f, -1.0f), Vector3D( 0.0f, -1.0f,  0.0f) },
-  Vertex { Vector3D( 1.0f, -1.0f, -1.0f), Vector3D( 0.0f, -1.0f,  0.0f) },
-  Vertex { Vector3D( 1.0f, -1.0f,  1.0f), Vector3D( 0.0f, -1.0f,  0.0f) },
-  Vertex { Vector3D(-1.0f, -1.0f,  1.0f), Vector3D( 0.0f, -1.0f,  0.0f) },
+  Vertex { Vector3D(-1.0f, -1.0f, -1.0f), Vector3D( 0.0f, -1.0f,  0.0f), Vector2D(0.0f, 0.0f) },
+  Vertex { Vector3D( 1.0f, -1.0f, -1.0f), Vector3D( 0.0f, -1.0f,  0.0f), Vector2D(1.0f, 0.0f) },
+  Vertex { Vector3D( 1.0f, -1.0f,  1.0f), Vector3D( 0.0f, -1.0f,  0.0f), Vector2D(1.0f, 1.0f) },
+  Vertex { Vector3D(-1.0f, -1.0f,  1.0f), Vector3D( 0.0f, -1.0f,  0.0f), Vector2D(0.0f, 1.0f) },
 
-  Vertex { Vector3D(-1.0f,  1.0f, -1.0f), Vector3D( 0.0f,  1.0f,  0.0f) },
-  Vertex { Vector3D( 1.0f,  1.0f, -1.0f), Vector3D( 0.0f,  1.0f,  0.0f) },
-  Vertex { Vector3D( 1.0f,  1.0f,  1.0f), Vector3D( 0.0f,  1.0f,  0.0f) },
-  Vertex { Vector3D(-1.0f,  1.0f,  1.0f), Vector3D( 0.0f,  1.0f,  0.0f) },
+  Vertex { Vector3D(-1.0f,  1.0f, -1.0f), Vector3D( 0.0f,  1.0f,  0.0f), Vector2D(0.0f, 0.0f) },
+  Vertex { Vector3D( 1.0f,  1.0f, -1.0f), Vector3D( 0.0f,  1.0f,  0.0f), Vector2D(1.0f, 0.0f) },
+  Vertex { Vector3D( 1.0f,  1.0f,  1.0f), Vector3D( 0.0f,  1.0f,  0.0f), Vector2D(1.0f, 1.0f) },
+  Vertex { Vector3D(-1.0f,  1.0f,  1.0f), Vector3D( 0.0f,  1.0f,  0.0f), Vector2D(0.0f, 1.0f) },
 
-  Vertex { Vector3D(-1.0f, -1.0f, -1.0f), Vector3D( 0.0f,  0.0f, -1.0f) },
-  Vertex { Vector3D( 1.0f, -1.0f, -1.0f), Vector3D( 0.0f,  0.0f, -1.0f) },
-  Vertex { Vector3D( 1.0f,  1.0f, -1.0f), Vector3D( 0.0f,  0.0f, -1.0f) },
-  Vertex { Vector3D(-1.0f,  1.0f, -1.0f), Vector3D( 0.0f,  0.0f, -1.0f) },
+  Vertex { Vector3D(-1.0f, -1.0f, -1.0f), Vector3D( 0.0f,  0.0f, -1.0f), Vector2D(0.0f, 0.0f) },
+  Vertex { Vector3D( 1.0f, -1.0f, -1.0f), Vector3D( 0.0f,  0.0f, -1.0f), Vector2D(1.0f, 0.0f) },
+  Vertex { Vector3D( 1.0f,  1.0f, -1.0f), Vector3D( 0.0f,  0.0f, -1.0f), Vector2D(1.0f, 1.0f) },
+  Vertex { Vector3D(-1.0f,  1.0f, -1.0f), Vector3D( 0.0f,  0.0f, -1.0f), Vector2D(0.0f, 1.0f) },
 
-  Vertex { Vector3D(-1.0f, -1.0f,  1.0f), Vector3D( 0.0f,  0.0f,  1.0f) },
-  Vertex { Vector3D( 1.0f, -1.0f,  1.0f), Vector3D( 0.0f,  0.0f,  1.0f) },
-  Vertex { Vector3D( 1.0f,  1.0f,  1.0f), Vector3D( 0.0f,  0.0f,  1.0f) },
-  Vertex { Vector3D(-1.0f,  1.0f,  1.0f), Vector3D( 0.0f,  0.0f,  1.0f) },
+  Vertex { Vector3D(-1.0f, -1.0f,  1.0f), Vector3D( 0.0f,  0.0f,  1.0f), Vector2D(0.0f, 0.0f) },
+  Vertex { Vector3D( 1.0f, -1.0f,  1.0f), Vector3D( 0.0f,  0.0f,  1.0f), Vector2D(1.0f, 0.0f) },
+  Vertex { Vector3D( 1.0f,  1.0f,  1.0f), Vector3D( 0.0f,  0.0f,  1.0f), Vector2D(1.0f, 1.0f) },
+  Vertex { Vector3D(-1.0f,  1.0f,  1.0f), Vector3D( 0.0f,  0.0f,  1.0f), Vector2D(0.0f, 1.0f) },
 };
 
 const std::array<uint16_t, 36> g_indexData = {
@@ -100,8 +102,17 @@ public:
 
     m_presenter = m_device->createPresenter(presenterDesc);
 
+    // Open archive file and load resources
+    m_archive = std::make_unique<IoArchive>(m_io->open(m_archivePath, IoOpenMode::eRead));
+
+    if (!(*m_archive))
+      throw Error(strcat(m_archivePath, " not found").c_str());
+
     // Load shaders from archive file
-    if (!loadShaders())
+    IoRequest shaderRequest = loadShaders();
+    IoRequest textureRequest = loadTexture();
+
+    if (!shaderRequest || shaderRequest->wait() != IoStatus::eSuccess)
       throw Error("Failed to load shaders");
 
     // Create presentation pipeline
@@ -144,6 +155,10 @@ public:
     vertexInputDesc.attributes[1].format = GfxFormat::eR32G32B32f;
     vertexInputDesc.attributes[1].offset = offsetof(Vertex, normal);
 
+    vertexInputDesc.attributes[2].binding = 0;
+    vertexInputDesc.attributes[2].format = GfxFormat::eR32G32f;
+    vertexInputDesc.attributes[2].offset = offsetof(Vertex, coord);
+
     m_viState = m_device->createVertexInputState(vertexInputDesc);
 
     // Create depth-stencil state objects
@@ -158,6 +173,25 @@ public:
 
     m_dsColorPass = m_device->createDepthStencilState(depthStencilDesc);
 
+    // Create the global descriptor array
+    GfxDescriptorArrayDesc descriptorArrayDesc;
+    descriptorArrayDesc.debugName = "Bindless set";
+    descriptorArrayDesc.bindingType = GfxShaderBindingType::eResourceImageView;
+    descriptorArrayDesc.descriptorCount = 1024;
+
+    m_descriptorArray = m_device->createDescriptorArray(descriptorArrayDesc);
+
+    // Create texture view and write it to the array. We do not
+    // need to wait for the data upload to finish to do this.
+    GfxImageViewDesc textureViewDesc;
+    textureViewDesc.type = GfxImageViewType::e2D;
+    textureViewDesc.format = m_texture->getDesc().format;
+    textureViewDesc.usage = GfxUsage::eShaderResource;
+    textureViewDesc.subresource = m_texture->getAvailableSubresources();
+
+    GfxImageView textureView = m_texture->createView(textureViewDesc);
+    m_descriptorArray->setDescriptor(m_textureIndex, textureView->getDescriptor());
+
     // Create context objects
     for (auto& context : m_contexts)
       context = m_device->createContext(GfxQueue::eGraphics);
@@ -165,6 +199,11 @@ public:
     // Create timeline semaphores for GPU->CPU synchronization
     m_graphicsSemaphore = createSemaphore("Graphics timeline", m_graphicsTimeline);
     m_computeSemaphore = createSemaphore("Compute timeline", m_computeTimeline);
+
+    // Wait for texture loading to finish and create view so
+    // that the first frame can copy the uploaded data
+    if (!textureRequest || textureRequest->wait() != IoStatus::eSuccess)
+      throw Error("Failed to load texture");
   }
 
   ~CubeApp() {
@@ -256,6 +295,9 @@ public:
       // We actually need to make the geometry buffer available after
       // the initial upload since that happened on the transfer queue
       context->memoryBarrier(0, 0, GfxUsage::eVertexBuffer | GfxUsage::eIndexBuffer, 0);
+
+      // We also need to finally initialize our texture.
+      initTexture(context);
     }
 
     // Initialize depth image and clear to zero.
@@ -291,8 +333,8 @@ public:
     vertexModelConstantData.modelMatrix = m_modelMatrix;
 
     GfxDescriptor vertexModelConstants = context->writeScratch(GfxUsage::eConstantBuffer, vertexModelConstantData);
-    context->bindDescriptors(0, 0, 1, &m_vertexGlobalConstants);
-    context->bindDescriptors(1, 0, 1, &vertexModelConstants);
+    context->bindDescriptor(1, 0, m_vertexGlobalConstants);
+    context->bindDescriptor(1, 1, vertexModelConstants);
 
     context->bindIndexBuffer(m_indexDescriptor, GfxFormat::eR16ui);
     context->bindVertexBuffer(0, m_vertexDescriptor, sizeof(Vertex));
@@ -370,11 +412,16 @@ public:
     vertexModelConstantData.modelMatrix = m_modelMatrix;
 
     GfxDescriptor vertexModelConstants = context->writeScratch(GfxUsage::eConstantBuffer, vertexModelConstantData);
-    context->bindDescriptors(0, 0, 1, &m_vertexGlobalConstants);
-    context->bindDescriptors(1, 0, 1, &vertexModelConstants);
+    context->bindDescriptorArray(0, m_descriptorArray);
+    context->bindDescriptor(1, 0, m_vertexGlobalConstants);
+    context->bindDescriptor(1, 1, vertexModelConstants);
+    context->bindDescriptor(1, 2, m_samplerLinear->getDescriptor());
 
     context->bindIndexBuffer(m_indexDescriptor, GfxFormat::eR16ui);
     context->bindVertexBuffer(0, m_vertexDescriptor, sizeof(Vertex));
+
+    context->setShaderConstants(0, m_textureIndex);
+
     context->drawIndexed(36, 1, 0, 0, 0);
 
     context->endRendering();
@@ -510,11 +557,18 @@ private:
 
   GfxDescriptor             m_vertexGlobalConstants = { };
 
+  GfxDescriptorArray        m_descriptorArray;
+
   Matrix4x4                 m_modelMatrix = { };
 
   GfxImage                  m_depthImageMs;
   GfxImage                  m_colorImageMs;
   GfxImage                  m_colorImage;
+
+  GfxImage                  m_texture;
+  GfxBuffer                 m_textureBuffer;
+  uint32_t                  m_textureIndex = 0;
+  std::vector<uint64_t>     m_textureMipOffsets;
 
   GfxSampler                m_samplerLinear;
   GfxSampler                m_samplerNearest;
@@ -530,6 +584,9 @@ private:
 
   std::chrono::high_resolution_clock::time_point m_startTime = { };
 
+  std::filesystem::path     m_archivePath = "resources/demo_02_cube_resources.asa";
+  std::unique_ptr<IoArchive> m_archive;
+
   // Initialize to context count
   GfxSemaphore              m_graphicsSemaphore;
   uint64_t                  m_graphicsTimeline = uint64_t(m_contexts.size());
@@ -541,61 +598,132 @@ private:
   std::mutex                                  m_shaderMutex;
   std::unordered_map<std::string, GfxShader>  m_shaders;
 
-  bool loadShaders() {
-    std::filesystem::path archivePath = "resources/demo_02_cube_shaders.asa";
-    IoArchive archive(m_io->open(archivePath, IoOpenMode::eRead));
-
-    if (!archive) {
-      Log::err(archivePath, " not found");
-      return false;
-    }
-
+  IoRequest loadShaders() {
     GfxShaderFormatInfo format = m_device->getShaderInfo();
 
     IoRequest request = m_io->createRequest();
 
-    for (uint32_t i = 0; i < archive.getFileCount(); i++) {
-      const IoArchiveFile* file = archive.getFile(i);
+    for (uint32_t i = 0; i < m_archive->getFileCount(); i++) {
+      const IoArchiveFile* file = m_archive->getFile(i);
       const IoArchiveSubFile* subFile = file->findSubFile(format.identifier);
 
-      archive.streamCompressed(request, subFile, [this,
-        cArchive    = &archive,
-        cFile       = file,
-        cFormat     = format.format,
-        cSubFile    = subFile
-      ] (const void* compressedData, size_t compressedSize) {
-        GfxShaderDesc shaderDesc;
-        shaderDesc.debugName = cFile->getName();
+      if (subFile) {
+        m_archive->streamCompressed(request, subFile, [this,
+          cFile       = file,
+          cFormat     = format.format,
+          cSubFile    = subFile
+        ] (const void* compressedData, size_t compressedSize) {
+          GfxShaderDesc shaderDesc;
+          shaderDesc.debugName = cFile->getName();
 
-        if (!shaderDesc.deserialize(cFile->getInlineData()))
-          return IoStatus::eError;
+          if (!shaderDesc.deserialize(cFile->getInlineData()))
+            return IoStatus::eError;
 
-        GfxShaderBinaryDesc binaryDesc;
-        binaryDesc.format = cFormat;
-        binaryDesc.data.resize(cSubFile->getSize());
+          GfxShaderBinaryDesc binaryDesc;
+          binaryDesc.format = cFormat;
+          binaryDesc.data.resize(cSubFile->getSize());
 
-        if (!cArchive->decompress(cSubFile, binaryDesc.data.data(), compressedData))
-          return IoStatus::eError;
+          if (!m_archive->decompress(cSubFile, binaryDesc.data.data(), compressedData))
+            return IoStatus::eError;
 
-        // Callbacks can be executed from worker threads, so we
-        // need to lock before modifying global data structures
-        std::lock_guard lock(m_shaderMutex);
+          // Callbacks can be executed from worker threads, so we
+          // need to lock before modifying global data structures
+          std::lock_guard lock(m_shaderMutex);
 
-        m_shaders.emplace(std::piecewise_construct,
-          std::forward_as_tuple(cFile->getName()),
-          std::forward_as_tuple(std::move(shaderDesc), std::move(binaryDesc)));
-        
-        return IoStatus::eSuccess;
-      });
+          m_shaders.emplace(std::piecewise_construct,
+            std::forward_as_tuple(cFile->getName()),
+            std::forward_as_tuple(std::move(shaderDesc), std::move(binaryDesc)));
+
+          return IoStatus::eSuccess;
+        });
+      }
     }
 
     m_io->submit(request);
-
-    if (request->wait() != IoStatus::eSuccess)
-      return false;
-
-    return true;
+    return request;
   }
+
+  IoRequest loadTexture() {
+    const IoArchiveFile* file = m_archive->findFile("texture");
+
+    if (!file) {
+      Log::err("File 'texture' not found in ", m_archivePath);
+      return IoRequest();
+    }
+
+    // Read texture metadata and create texture
+    GfxTextureDesc textureDesc;
+
+    if (!textureDesc.deserialize(file->getInlineData())) {
+      Log::err("Failed to read texture inline data");
+      return IoRequest();
+    }
+
+    GfxImageDesc imageDesc;
+    imageDesc.debugName = "Texture";
+    imageDesc.usage = GfxUsage::eShaderResource | GfxUsage::eTransferDst;
+    textureDesc.fillImageDesc(imageDesc);
+
+    m_texture = m_device->createImage(imageDesc, GfxMemoryType::eAny);
+
+    // Pick an arbitrary, non-zero descriptor index
+    m_textureIndex = 10;
+
+    // Create appropriately sized upload buffer. We can just iterate
+    // over the sub files to compute the size and offsets.
+    uint64_t bufferSize = 0;
+
+    for (uint32_t i = 0; i < file->getSubFileCount(); i++) {
+      m_textureMipOffsets.push_back(bufferSize);
+      bufferSize += align<uint64_t>(file->getSubFile(i)->getSize(), 64);
+    }
+
+    GfxBufferDesc bufferDesc;
+    bufferDesc.debugName = "Staging buffer";
+    bufferDesc.usage = GfxUsage::eTransferSrc | GfxUsage::eCpuWrite;
+    bufferDesc.size = bufferSize;
+
+    m_textureBuffer = m_device->createBuffer(bufferDesc, GfxMemoryType::eAny);
+
+    // Create I/O request to read all subresources into the mapped buffer
+    IoRequest request = m_io->createRequest();
+
+    for (uint32_t i = 0; i < file->getSubFileCount(); i++) {
+      const IoArchiveSubFile* subFile = file->getSubFile(i);
+
+      m_archive->read(request, subFile,
+        m_textureBuffer->map(GfxUsage::eCpuWrite, m_textureMipOffsets[i]));
+    }
+
+    m_io->submit(request);
+    return request;
+  }
+
+  void initTexture(
+    const GfxContext&                   context) {
+    GfxImageSubresource allSubresources = m_texture->getAvailableSubresources();
+
+    context->imageBarrier(m_texture, allSubresources,
+      0, 0, GfxUsage::eTransferDst, 0, GfxBarrierFlag::eDiscard);
+
+    for (uint32_t i = 0; i < allSubresources.layerCount; i++) {
+      for (uint32_t j = 0; j < allSubresources.mipCount; j++) {
+        GfxImageSubresource subresource = allSubresources.pickLayer(i).pickMip(j);
+        uint32_t subresourceIndex = m_texture->computeSubresourceIndex(subresource);
+        Extent3D mipExtent = m_texture->computeMipExtent(j);
+
+        context->copyBufferToImage(m_texture, subresource,
+          Offset3D(0, 0, 0), mipExtent, m_textureBuffer,
+          m_textureMipOffsets[subresourceIndex],
+          Extent2D(mipExtent));
+      }
+    }
+
+    context->imageBarrier(m_texture, allSubresources,
+      GfxUsage::eTransferDst, 0,
+      GfxUsage::eShaderResource, GfxShaderStage::eFragment, 0);
+  }
+
 
   GfxShader findShader(
     const char*                         name) {
