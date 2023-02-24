@@ -38,8 +38,9 @@ GfxVulkanBuffer::GfxVulkanBuffer(
         std::shared_ptr<GfxVulkanDevice> device,
   const GfxBufferDesc&                desc,
         VkBuffer                      buffer,
+        VkDeviceAddress               va,
         GfxVulkanMemorySlice&&        memory)
-: GfxBufferIface(desc, memory.getMapPtr())
+: GfxBufferIface(desc, va, memory.getMapPtr())
 , m_device(std::move(device))
 , m_memory(std::move(memory))
 , m_buffer(buffer) {

@@ -138,8 +138,9 @@ public:
 
   GfxBufferIface(
     const GfxBufferDesc&                desc,
+          uint64_t                      va,
           void*                         mapPtr)
-  : m_desc(desc), m_mapPtr(mapPtr) {
+  : m_desc(desc), m_va(va), m_mapPtr(mapPtr) {
     if (m_desc.debugName) {
       m_debugName = m_desc.debugName;
       m_desc.debugName = m_debugName.c_str();
@@ -183,6 +184,18 @@ public:
    * \returns Buffer memory allocation info
    */
   virtual GfxMemoryInfo getMemoryInfo() const = 0;
+
+  /**
+   * \brief Returns GPU address
+   *
+   * May be 0 if the graphics backend does not support returning
+   * native GPU addresses, or if the buffer cannot be used inside
+   * shaders.
+   * \returns GPU address of the buffer
+   */
+  uint64_t getGpuAddress() const {
+    return m_va;
+  }
 
   /**
    * \brief Returns pointer to mapped memory region
@@ -233,6 +246,7 @@ protected:
   GfxBufferDesc m_desc;
   std::string   m_debugName;
 
+  uint64_t      m_va = 0;
   void*         m_mapPtr = nullptr;
   GfxUsageFlags m_incoherentUsage = 0;
 
