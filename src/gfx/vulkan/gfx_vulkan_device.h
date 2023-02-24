@@ -11,6 +11,7 @@
 #include "gfx_vulkan.h"
 #include "gfx_vulkan_descriptor_pool.h"
 #include "gfx_vulkan_format.h"
+#include "gfx_vulkan_gdeflate.h"
 #include "gfx_vulkan_loader.h"
 #include "gfx_vulkan_memory.h"
 #include "gfx_vulkan_pipeline.h"
@@ -138,6 +139,14 @@ public:
    */
   GfxVulkanMemoryAllocator& getMemoryAllocator() const {
     return *m_memoryAllocator;
+  }
+
+  /**
+   * \brief Retrieves GDeflate pipeline
+   * \returns GDeflate pipeline
+   */
+  GfxVulkanGDeflatePipeline& getGDeflatePipeline() const {
+    return *m_gdeflatePipeline;
   }
 
   /**
@@ -416,6 +425,7 @@ private:
   std::unique_ptr<GfxVulkanDescriptorPoolManager> m_descriptorPoolManager;
   std::unique_ptr<GfxVulkanMemoryAllocator>       m_memoryAllocator;
   std::unique_ptr<GfxScratchBufferPool>           m_scratchBufferPool;
+  std::unique_ptr<GfxVulkanGDeflatePipeline>      m_gdeflatePipeline;
 
   std::mutex                          m_submissionMutex;
 

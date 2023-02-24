@@ -75,14 +75,18 @@ GfxVulkanDevice::GfxVulkanDevice(
       m_queues[i].queueFamily = VK_QUEUE_FAMILY_IGNORED;
     }
   }
+
+  // Initialize objects that depend on the device being initialized
+  m_gdeflatePipeline = std::make_unique<GfxVulkanGDeflatePipeline>(*this);
 }
 
 
 GfxVulkanDevice::~GfxVulkanDevice() {
+  m_gdeflatePipeline.reset();
+  m_scratchBufferPool.reset();
   m_memoryAllocator.reset();
   m_descriptorPoolManager.reset();
   m_pipelineManager.reset();
-  m_scratchBufferPool.reset();
 
   m_vk.vkDestroyDevice(m_vk.device, nullptr);
 }

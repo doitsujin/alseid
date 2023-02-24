@@ -9,6 +9,7 @@ as_files += files([
   'gfx_vulkan_descriptor_pool.cpp',
   'gfx_vulkan_device.cpp',
   'gfx_vulkan_format.cpp',
+  'gfx_vulkan_gdeflate.cpp',
   'gfx_vulkan_image.cpp',
   'gfx_vulkan_loader.cpp',
   'gfx_vulkan_memory.cpp',
