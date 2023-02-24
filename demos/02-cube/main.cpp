@@ -73,6 +73,13 @@ struct VertexModelConstants {
   Matrix4x4 modelMatrix;
 };
 
+struct SubresourceInfo {
+  uint64_t srcOffset;
+  uint64_t srcSize;
+  uint64_t dstOffset;
+  uint64_t dstSize;
+};
+
 class CubeApp {
 
 public:
@@ -92,6 +99,10 @@ public:
 
     // Create device. Always pick the first available adapter for now.
     m_device = m_gfx->createDevice(m_gfx->enumAdapters(0));
+
+    // Check for GPU decompression support
+    m_hasGpuDecompression = m_device->getFeatures().gdeflateDecompression;
+    Log::info("Using ", (m_hasGpuDecompression ? "GPU" : "CPU"), " decompression.");
 
     // Create presenter for the given window. We'll
     // perform presentation on the compute queue.
@@ -567,8 +578,10 @@ private:
 
   GfxImage                  m_texture;
   GfxBuffer                 m_textureBuffer;
+  GfxBuffer                 m_textureBufferDecompressed;
   uint32_t                  m_textureIndex = 0;
-  std::vector<uint64_t>     m_textureMipOffsets;
+
+  std::vector<SubresourceInfo> m_textureMipOffsets;
 
   GfxSampler                m_samplerLinear;
   GfxSampler                m_samplerNearest;
@@ -581,6 +594,7 @@ private:
   uint32_t                  m_contextId = 0;
 
   bool                      m_isFirstFrame = true;
+  bool                      m_hasGpuDecompression = false;
 
   std::chrono::high_resolution_clock::time_point m_startTime = { };
 
@@ -676,19 +690,40 @@ private:
 
     // Create appropriately sized upload buffer. We can just iterate
     // over the sub files to compute the size and offsets.
-    uint64_t bufferSize = 0;
+    uint64_t encodedSize = 0;
+    uint64_t decodedSize = 0;
 
     for (uint32_t i = 0; i < file->getSubFileCount(); i++) {
-      m_textureMipOffsets.push_back(bufferSize);
-      bufferSize += align<uint64_t>(file->getSubFile(i)->getSize(), 64);
+      SubresourceInfo info = { };
+      info.srcOffset = encodedSize;
+      info.srcSize = file->getSubFile(i)->getCompressedSize();
+      info.dstOffset = decodedSize;
+      info.dstSize = file->getSubFile(i)->getSize();
+
+      m_textureMipOffsets.push_back(info);
+
+      encodedSize += align<uint64_t>(info.srcSize, 64);
+      decodedSize += align<uint64_t>(info.dstSize, 64);
+    }
+
+    if (m_hasGpuDecompression) {
+      GfxBufferDesc bufferDesc;
+      bufferDesc.debugName = "Compressed buffer";
+      bufferDesc.usage = GfxUsage::eDecompressionSrc | GfxUsage::eCpuWrite;
+      bufferDesc.size = encodedSize;
+      m_textureBuffer = m_device->createBuffer(bufferDesc, GfxMemoryType::eAny);
     }
 
     GfxBufferDesc bufferDesc;
-    bufferDesc.debugName = "Staging buffer";
-    bufferDesc.usage = GfxUsage::eTransferSrc | GfxUsage::eCpuWrite;
-    bufferDesc.size = bufferSize;
+    bufferDesc.debugName = "Decompressed buffer";
+    bufferDesc.usage = GfxUsage::eTransferSrc;
+    bufferDesc.size = decodedSize;
 
-    m_textureBuffer = m_device->createBuffer(bufferDesc, GfxMemoryType::eAny);
+    bufferDesc.usage |= m_hasGpuDecompression
+      ? GfxUsage::eDecompressionDst
+      : GfxUsage::eCpuWrite;
+
+    m_textureBufferDecompressed = m_device->createBuffer(bufferDesc, GfxMemoryType::eAny);
 
     // Create I/O request to read all subresources into the mapped buffer
     IoRequest request = m_io->createRequest();
@@ -696,8 +731,13 @@ private:
     for (uint32_t i = 0; i < file->getSubFileCount(); i++) {
       const IoArchiveSubFile* subFile = file->getSubFile(i);
 
-      m_archive->read(request, subFile,
-        m_textureBuffer->map(GfxUsage::eCpuWrite, m_textureMipOffsets[i]));
+      if (m_hasGpuDecompression) {
+        m_archive->readCompressed(request, subFile, m_textureBuffer->map(
+          GfxUsage::eCpuWrite, m_textureMipOffsets[i].srcOffset));
+      } else {
+        m_archive->read(request, subFile, m_textureBufferDecompressed->map(
+          GfxUsage::eCpuWrite, m_textureMipOffsets[i].dstOffset));
+      }
     }
 
     m_io->submit(request);
@@ -711,6 +751,25 @@ private:
     context->imageBarrier(m_texture, allSubresources,
       0, 0, GfxUsage::eTransferDst, 0, GfxBarrierFlag::eDiscard);
 
+    if (m_hasGpuDecompression) {
+      for (uint32_t i = 0; i < allSubresources.layerCount; i++) {
+        for (uint32_t j = 0; j < allSubresources.mipCount; j++) {
+          GfxImageSubresource subresource = allSubresources.pickLayer(i).pickMip(j);
+          uint32_t subresourceIndex = m_texture->computeSubresourceIndex(subresource);
+
+          auto metadata = m_textureMipOffsets[subresourceIndex];
+
+          context->decompressBuffer(
+            m_textureBufferDecompressed, metadata.dstOffset, metadata.dstSize,
+            m_textureBuffer, metadata.srcOffset, metadata.srcSize);
+        }
+      }
+
+      context->memoryBarrier(
+        GfxUsage::eDecompressionDst, 0,
+        GfxUsage::eTransferSrc, 0);
+    }
+
     for (uint32_t i = 0; i < allSubresources.layerCount; i++) {
       for (uint32_t j = 0; j < allSubresources.mipCount; j++) {
         GfxImageSubresource subresource = allSubresources.pickLayer(i).pickMip(j);
@@ -718,8 +777,8 @@ private:
         Extent3D mipExtent = m_texture->computeMipExtent(j);
 
         context->copyBufferToImage(m_texture, subresource,
-          Offset3D(0, 0, 0), mipExtent, m_textureBuffer,
-          m_textureMipOffsets[subresourceIndex],
+          Offset3D(0, 0, 0), mipExtent, m_textureBufferDecompressed,
+          m_textureMipOffsets[subresourceIndex].dstOffset,
           Extent2D(mipExtent));
       }
     }
