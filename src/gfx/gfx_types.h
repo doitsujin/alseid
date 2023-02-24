@@ -63,6 +63,10 @@ enum class GfxUsage : uint32_t {
   /** Image can be presented. This is only allowed on presentable images
    *  and only as the destination usage parameter of a barrier. */
   ePresent          = (1u << 14),
+  /** Buffer can be used as an input for GPU decompression. */
+  eDecompressionSrc = (1u << 15),
+  /** Buffer can be used as an output for GPU decompression. */
+  eDecompressionDst = (1u << 16),
 
   eFlagEnum         = 0
 };

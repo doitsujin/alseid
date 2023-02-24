@@ -1496,6 +1496,19 @@ std::pair<VkPipelineStageFlags2, VkAccessFlags2> GfxVulkanContext::getVkStageAcc
         vkAccess |= VK_ACCESS_2_HOST_READ_BIT;
         break;
 
+      case GfxUsage::eDecompressionSrc:
+        vkStages |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+                 |  VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+        vkAccess |= VK_ACCESS_2_SHADER_READ_BIT
+                 |  VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+        break;
+
+      case GfxUsage::eDecompressionDst:
+        vkStages |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        vkAccess |= VK_ACCESS_2_SHADER_READ_BIT
+                 |  VK_ACCESS_2_SHADER_WRITE_BIT;
+        break;
+
       default:
       case GfxUsage::ePresent:
         // Nothing to do here

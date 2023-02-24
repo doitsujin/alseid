@@ -226,6 +226,17 @@ inline VkBufferUsageFlags getVkBufferUsage(
   if (usage & (GfxUsage::eBvhTraversal | GfxUsage::eBvhBuild))
     result |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR;
 
+  if (usage & GfxUsage::eDecompressionSrc) {
+    result |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT
+           |  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+           |  VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+  }
+
+  if (usage & GfxUsage::eDecompressionDst) {
+    result |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+           |  VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+  }
+
   return result;
 }
 
