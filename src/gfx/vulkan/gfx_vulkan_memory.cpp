@@ -290,7 +290,7 @@ GfxVulkanMemorySlice GfxVulkanMemoryAllocator::tryAllocateDedicatedMemoryFromTyp
   allocateInfo.memoryTypeIndex = memoryTypeId;
 
   if (properties.dedicated.buffer || properties.dedicated.image)
-    allocateInfo.pNext = &properties.dedicated;
+    allocateFlags.pNext = &properties.dedicated;
 
   VkDeviceMemory memory = VK_NULL_HANDLE;
   VkResult vr = vk.vkAllocateMemory(vk.device, &allocateInfo, nullptr, &memory);
