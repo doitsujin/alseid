@@ -700,11 +700,34 @@ void GfxVulkanContext::copyImageToBuffer(
 }
 
 
+void GfxVulkanContext::decompressBuffer(
+  const GfxBuffer&                    dstBuffer,
+        uint64_t                      dstOffset,
+        uint64_t                      dstSize,
+  const GfxBuffer&                    srcBuffer,
+        uint64_t                      srcOffset,
+        uint64_t                      srcSize) {
+  auto& vk = m_device->vk();
+
+  invalidateState();
+
+  GfxVulkanGDeflateArgs args = { };
+  args.srcVa = srcBuffer->getGpuAddress() + srcOffset;
+  args.dstVa = dstBuffer->getGpuAddress() + dstOffset;
+
+  auto& pipeline = m_device->getGDeflatePipeline();
+
+  vk.vkCmdBindPipeline(m_cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline.getPipeline());
+  vk.vkCmdPushConstants(m_cmd, pipeline.getLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(args), &args);
+  vk.vkCmdDispatchIndirect(m_cmd, static_cast<GfxVulkanBuffer&>(*srcBuffer).getHandle(), srcOffset);
+}
+
+
 void GfxVulkanContext::dispatch(
         Extent3D                      workgroupCount) {
   auto& vk = m_device->vk();
 
-  this->updateComputeState(vk);
+  updateComputeState(vk);
 
   vk.vkCmdDispatch(m_cmd,
     workgroupCount.at<0>(),
@@ -717,7 +740,7 @@ void GfxVulkanContext::dispatchIndirect(
     const GfxDescriptor&                args) {
   auto& vk = m_device->vk();
 
-  this->updateComputeState(vk);
+  updateComputeState(vk);
 
   auto descriptor = importVkDescriptor(args);
 
@@ -734,7 +757,7 @@ void GfxVulkanContext::draw(
         uint32_t                      firstInstance) {
   auto& vk = m_device->vk();
 
-  this->updateGraphicsState(vk, false);
+  updateGraphicsState(vk, false);
 
   vk.vkCmdDraw(m_cmd,
     vertexCount, instanceCount,
@@ -748,7 +771,7 @@ void GfxVulkanContext::drawIndirect(
           uint32_t                      maxCount) {
   auto& vk = m_device->vk();
 
-  this->updateGraphicsState(vk, false);
+  updateGraphicsState(vk, false);
 
   auto argDescriptor = importVkDescriptor(args);
   auto cntDescriptor = importVkDescriptor(count);
@@ -777,7 +800,7 @@ void GfxVulkanContext::drawIndexed(
         uint32_t                      firstInstance) {
   auto& vk = m_device->vk();
 
-  this->updateGraphicsState(vk, true);
+  updateGraphicsState(vk, true);
 
   vk.vkCmdDrawIndexed(m_cmd,
     indexCount, instanceCount,
@@ -791,7 +814,7 @@ void GfxVulkanContext::drawIndexedIndirect(
           uint32_t                      maxCount) {
   auto& vk = m_device->vk();
 
-  this->updateGraphicsState(vk, false);
+  updateGraphicsState(vk, false);
 
   auto argDescriptor = importVkDescriptor(args);
   auto cntDescriptor = importVkDescriptor(count);
@@ -816,7 +839,7 @@ void GfxVulkanContext::drawMesh(
         Extent3D                      workgroupCount) {
   auto& vk = m_device->vk();
 
-  this->updateGraphicsState(vk, false);
+  updateGraphicsState(vk, false);
 
   vk.vkCmdDrawMeshTasksEXT(m_cmd,
     workgroupCount.at<0>(),
@@ -831,7 +854,7 @@ void GfxVulkanContext::drawMeshIndirect(
         uint32_t                      maxCount) {
   auto& vk = m_device->vk();
 
-  this->updateGraphicsState(vk, false);
+  updateGraphicsState(vk, false);
 
   auto argDescriptor = importVkDescriptor(args);
   auto cntDescriptor = importVkDescriptor(count);
