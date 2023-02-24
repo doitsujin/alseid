@@ -318,6 +318,24 @@ public:
           Extent3D                      imageExtent) override;
 
   /**
+   * \brief Decompresses a buffer
+   *
+   * \param [in] dstBuffer Output buffer
+   * \param [in] dstOffset Output buffer offset
+   * \param [in] dstSize Decompressed data size
+   * \param [in] srcBuffer Compressed buffer
+   * \param [in] srcOffset Compressed buffer offset
+   * \param [in] srcSize Compressed data size
+   */
+  void decompressBuffer(
+    const GfxBuffer&                    dstBuffer,
+          uint64_t                      dstOffset,
+          uint64_t                      dstSize,
+    const GfxBuffer&                    srcBuffer,
+          uint64_t                      srcOffset,
+          uint64_t                      srcSize) override;
+
+  /**
    * \brief Executes a compute dispatch
    * \param workgroupCount Workgroup count vector
    */

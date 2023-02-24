@@ -36,7 +36,7 @@ public:
     return m_pipeline;
   }
 
-  VkPipelineLayout getPipelineLayout() const {
+  VkPipelineLayout getLayout() const {
     return m_pipelineLayout;
   }
 

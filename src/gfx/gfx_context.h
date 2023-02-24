@@ -464,6 +464,30 @@ public:
           Extent3D                      imageExtent) = 0;
 
   /**
+   * \brief Decompresses a buffer
+   *
+   * Decodes a GDeflate-encoded buffer. The buffer \e must
+   * begin with a \ref GDeflateHeader struct, immediately
+   * followed by a packed \ref GDeflatePage array.
+   * 
+   * Decompression commands must be synchronized using
+   * the corresponding GPU decompression usage flags.
+   * \param [in] dstBuffer Output buffer
+   * \param [in] dstOffset Output buffer offset
+   * \param [in] dstSize Decompressed data size
+   * \param [in] srcBuffer Compressed buffer
+   * \param [in] srcOffset Compressed buffer offset
+   * \param [in] srcSize Compressed data size
+   */
+  virtual void decompressBuffer(
+    const GfxBuffer&                    dstBuffer,
+          uint64_t                      dstOffset,
+          uint64_t                      dstSize,
+    const GfxBuffer&                    srcBuffer,
+          uint64_t                      srcOffset,
+          uint64_t                      srcSize) = 0;
+
+  /**
    * \brief Executes a compute dispatch
    *
    * Only valid outside of render passes.
