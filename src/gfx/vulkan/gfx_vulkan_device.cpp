@@ -308,8 +308,18 @@ GfxBuffer GfxVulkanDevice::createBuffer(
     }
   }
 
+  // Get device address if necessary
+  VkDeviceAddress va = 0;
+
+  if (bufferInfo.usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
+    VkBufferDeviceAddressInfo info = { VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
+    info.buffer = buffer;
+
+    va = m_vk.vkGetBufferDeviceAddress(m_vk.device, &info);
+  }
+
   return GfxBuffer(std::make_shared<GfxVulkanBuffer>(
-    shared_from_this(), desc, buffer, std::move(memorySlice)));
+    shared_from_this(), desc, buffer, va, std::move(memorySlice)));
 }
 
 

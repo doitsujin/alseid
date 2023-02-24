@@ -9,6 +9,7 @@
 
 #include "gfx_vulkan_descriptor_handle.h"
 #include "gfx_vulkan_device.h"
+#include "gfx_vulkan_loader.h"
 #include "gfx_vulkan_memory.h"
 
 namespace as {
@@ -63,6 +64,7 @@ public:
           std::shared_ptr<GfxVulkanDevice> device,
     const GfxBufferDesc&                desc,
           VkBuffer                      buffer,
+          VkDeviceAddress               va,
           GfxVulkanMemorySlice&&        memory);
 
   ~GfxVulkanBuffer();
