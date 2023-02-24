@@ -87,6 +87,7 @@ bool gdeflateEncode(
   header.workgroupCountX = pageCount;
   header.workgroupCountY = 1;
   header.workgroupCountZ = 1;
+  header.uncompressedSize = input.getSize();
 
   success &= writer.write(header);
 

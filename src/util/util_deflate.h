@@ -19,8 +19,8 @@ struct GDeflateHeader {
   uint32_t workgroupCountY;
   /* 1 */
   uint32_t workgroupCountZ;
-  /* Unused */
-  uint32_t reserved;
+  /* Uncompressed size */
+  uint32_t uncompressedSize;
 };
 
 
