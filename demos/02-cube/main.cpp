@@ -157,7 +157,11 @@ public:
 
     // Create and upload geometry
     m_geometryBuffer = createGeometryBuffer();
-    uploadGeometryData();
+    m_vertexDescriptor = m_geometryBuffer->getDescriptor(GfxUsage::eVertexBuffer, 0, sizeof(g_vertexData));
+    m_indexDescriptor = m_geometryBuffer->getDescriptor(GfxUsage::eVertexBuffer, sizeof(g_vertexData), sizeof(g_indexData));
+
+    std::memcpy(m_geometryBuffer->map(GfxUsage::eCpuWrite, 0), g_vertexData.data(), sizeof(g_vertexData));
+    std::memcpy(m_geometryBuffer->map(GfxUsage::eCpuWrite, sizeof(g_vertexData)), g_indexData.data(), sizeof(g_indexData));
 
     // Create vertex input state object
     GfxVertexInputStateDesc vertexInputDesc;
@@ -303,12 +307,6 @@ public:
   void renderDepthPass() {
     GfxContext context = m_contexts[m_contextId];
     context->beginDebugLabel("Depth pass", GfxColorValue(0.5f, 0.8f, 1.0f, 1.0f));
-
-    if (std::exchange(m_isFirstFrame, false)) {
-      // We actually need to make the geometry buffer available after
-      // the initial upload since that happened on the transfer queue
-      context->memoryBarrier(0, 0, GfxUsage::eVertexBuffer | GfxUsage::eIndexBuffer, 0);
-    }
 
     // Initialize depth image and clear to zero.
     // Transition depth image to read-only mode
@@ -594,8 +592,6 @@ private:
   std::array<GfxContext, 3> m_contexts;
   uint32_t                  m_contextId = 0;
 
-  bool                      m_isFirstFrame = true;
-
   std::chrono::high_resolution_clock::time_point m_startTime = { };
 
   std::filesystem::path     m_archivePath = "resources/demo_02_cube_resources.asa";
@@ -790,47 +786,10 @@ private:
   GfxBuffer createGeometryBuffer() {
     GfxBufferDesc desc;
     desc.debugName = "Geometry buffer";
-    desc.usage = GfxUsage::eTransferDst | GfxUsage::eIndexBuffer | GfxUsage::eVertexBuffer;
+    desc.usage = GfxUsage::eIndexBuffer | GfxUsage::eVertexBuffer | GfxUsage::eCpuWrite;
     desc.size = sizeof(g_indexData) + sizeof(g_vertexData);
 
     return m_device->createBuffer(desc, GfxMemoryType::eAny);
-  }
-
-
-  void uploadGeometryData() {
-    // Just be lazy and create a temporary context
-    // and staging buffer to perform the upload with.
-    GfxSemaphoreDesc semaphoreDesc;
-    semaphoreDesc.debugName = "Upload semaphore";
-    semaphoreDesc.initialValue = 0;
-
-    GfxSemaphore semaphore = m_device->createSemaphore(semaphoreDesc);
-
-    GfxBufferDesc bufferDesc;
-    bufferDesc.debugName = "Upload buffer";
-    bufferDesc.size = m_geometryBuffer->getDesc().size;
-    bufferDesc.usage = GfxUsage::eTransferSrc | GfxUsage::eCpuWrite;
-
-    // No need to explicitly unmap since only the CPU write bit is set on the buffer
-    GfxBuffer buffer = m_device->createBuffer(bufferDesc, GfxMemoryType::eSystemMemory);
-    std::memcpy(buffer->map(GfxUsage::eCpuWrite, 0), g_vertexData.data(), sizeof(g_vertexData));
-    std::memcpy(buffer->map(GfxUsage::eCpuWrite, sizeof(g_vertexData)), g_indexData.data(), sizeof(g_indexData));
-
-    GfxContext context = m_device->createContext(GfxQueue::eTransfer);
-    context->copyBuffer(m_geometryBuffer, 0, buffer, 0, bufferDesc.size);
-    context->memoryBarrier(GfxUsage::eTransferDst, 0, 0, 0);
-
-    // Submit and wait for completion
-    GfxCommandSubmission submission;
-    submission.addCommandList(context->endCommandList());
-    submission.addSignalSemaphore(semaphore, 1);
-    m_device->submit(GfxQueue::eTransfer, std::move(submission));
-
-    semaphore->wait(1);
-
-    // Set up descriptors
-    m_vertexDescriptor = m_geometryBuffer->getDescriptor(GfxUsage::eVertexBuffer, 0, sizeof(g_vertexData));
-    m_indexDescriptor = m_geometryBuffer->getDescriptor(GfxUsage::eVertexBuffer, sizeof(g_vertexData), sizeof(g_indexData));
   }
 
 
