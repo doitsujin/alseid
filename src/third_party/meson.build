@@ -18,6 +18,13 @@ as_nanojpeg_files = files([
   'nanojpeg/nanojpeg.c',
 ])
 
+as_gdeflate_glsl = custom_target('cs_gdeflate',
+  output  : 'cs_gdeflate.h',
+  input   : files('gdeflate/gdeflate.glsl'),
+  command : [ glsl_compiler, '--target-env', 'vulkan1.3', '--vn', 'cs_gdeflate', '-S', 'comp', '-o', '@OUTPUT@', '@INPUT@' ])
+
+as_files += as_gdeflate_glsl
+
 libdeflate_files = files([
   'libdeflate/lib/x86/cpu_features.c',
 

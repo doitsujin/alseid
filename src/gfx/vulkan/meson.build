@@ -25,7 +25,6 @@ as_files += files([
 ])
 
 as_vk_shaders = files([
-  'shaders/cs_gdeflate.comp',
   'shaders/cs_present_blit.comp',
   'shaders/fs_present_blit.frag',
   'shaders/vs_present_blit.vert',
