@@ -402,6 +402,16 @@ public:
   /**
    * \brief Copies buffer data to an image
    *
+   * Copies packed buffer data to one or more subresources
+   * of the given image.
+   *
+   * The \c bufferLayout parameter describes how each 2D
+   * slice or array layer is laid out in buffer memory.
+   * Its components are given in texels.
+   *
+   * When uploading multiple mip levels or aspects, the
+   * \c bufferLayout will also be scaled down accordingly.
+   * No additional padding is expected between subresources.
    * \param [in] image Image to copy to
    * \param [in] imageSubresource Image subresource.
    *    Must only contain one aspect and mip level.
@@ -444,6 +454,7 @@ public:
   /**
    * \brief Copies image data to a buffer
    *
+   * The data layout matches that of \c copyBufferToImage.
    * \param [in] buffer Buffer to write to
    * \param [in] bufferOffset Buffer offset, in bytes
    * \param [in] bufferLayout Extent of the image data

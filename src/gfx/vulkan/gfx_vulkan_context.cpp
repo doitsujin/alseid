@@ -608,25 +608,18 @@ void GfxVulkanContext::copyBufferToImage(
   auto& vk = m_device->vk();
   m_barrierBatch.recordCommands(vk, m_cmd);
 
-  Extent2D blockExtent = image->getFormatInfo().blockExtent;
-
   auto& vkImage = static_cast<GfxVulkanImage&>(*image);
   auto& vkBuffer = static_cast<GfxVulkanBuffer&>(*buffer);
 
-  VkBufferImageCopy2 region = { VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2 };
-  region.bufferOffset = bufferOffset;
-  region.bufferRowLength = align(bufferLayout.at<0>(), blockExtent.at<0>());
-  region.bufferImageHeight = align(bufferLayout.at<1>(), blockExtent.at<1>());
-  region.imageSubresource = getVkImageSubresourceLayers(imageSubresource);
-  region.imageOffset = getVkOffset3D(imageOffset);
-  region.imageExtent = getVkExtent3D(imageExtent);
+  auto regions = getVkBufferImageCopyRegions(image, imageSubresource,
+    imageOffset, imageExtent, buffer, bufferOffset, bufferLayout);
 
   VkCopyBufferToImageInfo2 copy = { VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2 };
   copy.srcBuffer = vkBuffer.getHandle();
   copy.dstImage = vkImage.getHandle();
   copy.dstImageLayout = vkImage.pickLayout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-  copy.regionCount = 1;
-  copy.pRegions = &region;
+  copy.regionCount = regions.size();
+  copy.pRegions = regions.data();
 
   vk.vkCmdCopyBufferToImage2(m_cmd, &copy);
 }
@@ -676,25 +669,18 @@ void GfxVulkanContext::copyImageToBuffer(
   auto& vk = m_device->vk();
   m_barrierBatch.recordCommands(vk, m_cmd);
 
-  Extent2D blockExtent = image->getFormatInfo().blockExtent;
-
   auto& vkBuffer = static_cast<GfxVulkanBuffer&>(*buffer);
   auto& vkImage = static_cast<GfxVulkanImage&>(*image);
 
-  VkBufferImageCopy2 region = { VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2 };
-  region.bufferOffset = bufferOffset;
-  region.bufferRowLength = align(bufferLayout.at<0>(), blockExtent.at<0>());
-  region.bufferImageHeight = align(bufferLayout.at<1>(), blockExtent.at<1>());
-  region.imageSubresource = getVkImageSubresourceLayers(imageSubresource);
-  region.imageOffset = getVkOffset3D(imageOffset);
-  region.imageExtent = getVkExtent3D(imageExtent);
+  auto regions = getVkBufferImageCopyRegions(image, imageSubresource,
+    imageOffset, imageExtent, buffer, bufferOffset, bufferLayout);
 
   VkCopyImageToBufferInfo2 copy = { VK_STRUCTURE_TYPE_COPY_IMAGE_TO_BUFFER_INFO_2 };
   copy.srcImage = vkImage.getHandle();
   copy.srcImageLayout = vkImage.pickLayout(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
   copy.dstBuffer = vkBuffer.getHandle();
-  copy.regionCount = 1;
-  copy.pRegions = &region;
+  copy.regionCount = regions.size();
+  copy.pRegions = regions.data();
 
   vk.vkCmdCopyImageToBuffer2(m_cmd, &copy);
 }
@@ -1409,6 +1395,54 @@ void GfxVulkanContext::allocateDescriptorSets(
     if (setLayouts[i])
       sets[i] = setHandles[setIndex++];
   }
+}
+
+
+small_vector<VkBufferImageCopy2, 16> GfxVulkanContext::getVkBufferImageCopyRegions(
+  const GfxImage&                     image,
+  const GfxImageSubresource&          imageSubresource,
+        Offset3D                      imageOffset,
+        Extent3D                      imageExtent,
+  const GfxBuffer&                    buffer,
+        uint64_t                      bufferOffset,
+        Extent2D                      bufferLayout) {
+  small_vector<VkBufferImageCopy2, 16> result;
+
+  auto& formatInfo = image->getFormatInfo();
+
+  for (uint32_t i = 0; i < imageSubresource.mipCount; i++) {
+    Offset3D mipOffset = imageOffset >> i;
+    Extent3D mipExtent = gfxComputeMipExtent(imageExtent, i);
+
+    // There are no subsampled block-compressed formats,
+    // so disregard any edge cases in that regard.
+    Extent2D srcExtent = gfxComputeMipExtent(bufferLayout, i);
+    Extent2D srcBlocks = (srcExtent + formatInfo.blockExtent - 1) >> formatInfo.blockExtentLog2;
+
+    // Realign source extent with block size for Vulkan
+    srcExtent = srcBlocks << formatInfo.blockExtentLog2;
+
+    for (auto aspect : imageSubresource.aspects) {
+      auto& aspectInfo = formatInfo.getAspectInfo(aspect);
+
+      Extent2D srcPlaneExtent = srcExtent >> aspectInfo.subsampleLog2;
+      Extent2D srcPlaneBlocks = srcBlocks >> aspectInfo.subsampleLog2;
+
+      VkBufferImageCopy2 region = { VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2 };
+      region.bufferOffset = bufferOffset;
+      region.bufferRowLength = srcPlaneExtent.at<0>();
+      region.bufferImageHeight = srcPlaneExtent.at<1>();
+      region.imageSubresource = getVkImageSubresourceLayers(imageSubresource.pickAspects(aspect).pickMip(i));
+      region.imageOffset = getVkOffset3D(mipOffset >> Offset3D(aspectInfo.subsampleLog2, 0));
+      region.imageExtent = getVkExtent3D(mipExtent >> Extent3D(aspectInfo.subsampleLog2, 0));
+      result.push_back(region);
+
+      bufferOffset += srcPlaneBlocks.at<0>() * srcPlaneBlocks.at<1>() *
+        mipExtent.at<2>() * imageSubresource.layerCount * aspectInfo.elementSize;
+    }
+  }
+
+  return result;
 }
 
 

@@ -176,7 +176,7 @@ struct GfxFormatInfo {
    * \param [in] aspect The aspect to query
    * \returns Reference to that aspect
    */
-  GfxFormatAspectInfo getAspectInfo(GfxImageAspect aspect) const {
+  const GfxFormatAspectInfo& getAspectInfo(GfxImageAspect aspect) const {
     return planes[computePlaneIndex(aspect)];
   }
 };
