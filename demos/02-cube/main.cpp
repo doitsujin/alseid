@@ -5,6 +5,7 @@
 #include <unordered_map>
 
 #include "../../src/gfx/gfx.h"
+#include "../../src/gfx/gfx_transfer.h"
 
 #include "../../src/io/io.h"
 #include "../../src/io/io_archive.h"
@@ -103,10 +104,6 @@ public:
     // Create device. Always pick the first available adapter for now.
     m_device = m_gfx->createDevice(m_gfx->enumAdapters(0));
 
-    // Check for GPU decompression support
-    m_hasGpuDecompression = m_device->getFeatures().gdeflateDecompression;
-    Log::info("Using ", (m_hasGpuDecompression ? "GPU" : "CPU"), " decompression.");
-
     // Create presenter for the given window. We'll
     // perform presentation on the compute queue.
     GfxPresenterDesc presenterDesc;
@@ -124,10 +121,14 @@ public:
 
     // Load shaders from archive file
     IoRequest shaderRequest = loadShaders();
-    IoRequest textureRequest = loadTexture();
 
     if (!shaderRequest || shaderRequest->wait() != IoStatus::eSuccess)
       throw Error("Failed to load shaders");
+
+    // Create transfer manager with a 4 MB staging buffer.
+    // This is tiny, but we only load one texture.
+    m_transfer = GfxTransferManager(m_io, m_device, 4ull << 20);
+    m_textureBatchId = loadTexture();
 
     // Create presentation pipeline
     GfxComputePipelineDesc computeDesc;
@@ -213,11 +214,6 @@ public:
     // Create timeline semaphores for GPU->CPU synchronization
     m_graphicsSemaphore = createSemaphore("Graphics timeline", m_graphicsTimeline);
     m_computeSemaphore = createSemaphore("Compute timeline", m_computeTimeline);
-
-    // Wait for texture loading to finish and create view so
-    // that the first frame can copy the uploaded data
-    if (!textureRequest || textureRequest->wait() != IoStatus::eSuccess)
-      throw Error("Failed to load texture");
   }
 
   ~CubeApp() {
@@ -257,6 +253,9 @@ public:
 
     // Now that it's safe to do so, reset the context so we can use it.
     context->reset();
+
+    // Initialize the texture once it has finished loading.
+    m_textureInitialized = initTexture(m_contexts[m_contextId]);
 
     // Compute view and projection matrixes and allocate constant buffer
     // data for them. This works because allocated scratch memory remains
@@ -309,9 +308,6 @@ public:
       // We actually need to make the geometry buffer available after
       // the initial upload since that happened on the transfer queue
       context->memoryBarrier(0, 0, GfxUsage::eVertexBuffer | GfxUsage::eIndexBuffer, 0);
-
-      // We also need to finally initialize our texture.
-      initTexture(context);
     }
 
     // Initialize depth image and clear to zero.
@@ -352,7 +348,9 @@ public:
 
     context->bindIndexBuffer(m_indexDescriptor, GfxFormat::eR16ui);
     context->bindVertexBuffer(0, m_vertexDescriptor, sizeof(Vertex));
-    context->drawIndexed(36, 1, 0, 0, 0);
+
+    if (m_textureInitialized)
+      context->drawIndexed(36, 1, 0, 0, 0);
 
     context->endRendering();
 
@@ -436,7 +434,8 @@ public:
 
     context->setShaderConstants(0, m_textureIndex);
 
-    context->drawIndexed(36, 1, 0, 0, 0);
+    if (m_textureInitialized)
+      context->drawIndexed(36, 1, 0, 0, 0);
 
     context->endRendering();
 
@@ -557,6 +556,7 @@ private:
   WsiWindow                 m_window;
   GfxDevice                 m_device;
   GfxPresenter              m_presenter;
+  GfxTransferManager        m_transfer;
 
   Extent2D                  m_renderTargetSize = Extent2D(1280, 720);
 
@@ -580,11 +580,9 @@ private:
   GfxImage                  m_colorImage;
 
   GfxImage                  m_texture;
-  GfxBuffer                 m_textureBuffer;
-  GfxBuffer                 m_textureBufferDecompressed;
   uint32_t                  m_textureIndex = 0;
-
-  std::vector<SubresourceInfo> m_textureMetadata;
+  uint64_t                  m_textureBatchId = 0;
+  bool                      m_textureInitialized = false;
 
   GfxSampler                m_samplerLinear;
   GfxSampler                m_samplerNearest;
@@ -597,7 +595,6 @@ private:
   uint32_t                  m_contextId = 0;
 
   bool                      m_isFirstFrame = true;
-  bool                      m_hasGpuDecompression = false;
 
   std::chrono::high_resolution_clock::time_point m_startTime = { };
 
@@ -614,6 +611,7 @@ private:
 
   std::mutex                                  m_shaderMutex;
   std::unordered_map<std::string, GfxShader>  m_shaders;
+
 
   IoRequest loadShaders() {
     GfxShaderFormatInfo format = m_device->getShaderInfo();
@@ -665,12 +663,13 @@ private:
     return request;
   }
 
-  IoRequest loadTexture() {
+
+  uint64_t loadTexture() {
     const IoArchiveFile* file = m_archive->findFile("texture");
 
     if (!file) {
       Log::err("File 'texture' not found in ", m_archivePath);
-      return IoRequest();
+      return 0;
     }
 
     // Read texture metadata and create texture
@@ -678,118 +677,50 @@ private:
 
     if (!textureDesc.deserialize(file->getInlineData())) {
       Log::err("Failed to read texture inline data");
-      return IoRequest();
+      return 0;
     }
 
-    GfxImageDesc imageDesc;
-    imageDesc.debugName = "Texture";
-    imageDesc.usage = GfxUsage::eShaderResource | GfxUsage::eTransferDst;
-    textureDesc.fillImageDesc(imageDesc);
+    if (!m_texture) {
+      GfxImageDesc imageDesc;
+      imageDesc.debugName = "Texture";
+      imageDesc.usage = GfxUsage::eShaderResource | GfxUsage::eTransferDst;
+      imageDesc.flags = GfxImageFlag::eSimultaneousAccess;
+      textureDesc.fillImageDesc(imageDesc);
 
-    m_texture = m_device->createImage(imageDesc, GfxMemoryType::eAny);
+      m_texture = m_device->createImage(imageDesc, GfxMemoryType::eAny);
+    }
 
     // Pick an arbitrary, non-zero descriptor index
     m_textureIndex = 10;
 
-    // Create appropriately sized upload buffer. We can just iterate
-    // over the sub files to compute the size and offsets.
-    bool hasUncompressed = false;
-
-    uint64_t encodedSize = 0;
-    uint64_t decodedSize = 0;
-
-    for (uint32_t i = 0; i < file->getSubFileCount(); i++) {
-      SubresourceInfo info = { };
-      info.srcOffset = encodedSize;
-      info.srcSize = file->getSubFile(i)->getCompressedSize();
-      info.dstOffset = decodedSize;
-      info.dstSize = file->getSubFile(i)->getSize();
-      info.mipIndex = i;
-      info.mipCount = i < textureDesc.mipTailStart ? 1 : textureDesc.mips - textureDesc.mipTailStart;
-      info.isCompressed = file->getSubFile(i)->getCompressionType() == IoArchiveCompression::eGDeflate;
-
-      hasUncompressed |= !info.isCompressed;
-
-      m_textureMetadata.push_back(info);
-
-      encodedSize += align<uint64_t>(info.srcSize, 64);
-      decodedSize += align<uint64_t>(info.dstSize, 64);
-    }
-
-    if (m_hasGpuDecompression) {
-      GfxBufferDesc bufferDesc;
-      bufferDesc.debugName = "Compressed buffer";
-      bufferDesc.usage = GfxUsage::eDecompressionSrc | GfxUsage::eCpuWrite;
-      bufferDesc.size = encodedSize;
-      m_textureBuffer = m_device->createBuffer(bufferDesc, GfxMemoryType::eSystemMemory);
-    }
-
-    GfxBufferDesc bufferDesc;
-    bufferDesc.debugName = "Decompressed buffer";
-    bufferDesc.usage = GfxUsage::eTransferSrc;
-    bufferDesc.size = decodedSize;
-
-    if (m_hasGpuDecompression)
-      bufferDesc.usage |= GfxUsage::eDecompressionDst;
-
-    if (!m_hasGpuDecompression || hasUncompressed)
-      bufferDesc.usage |= GfxUsage::eCpuWrite;
-
-    m_textureBufferDecompressed = m_device->createBuffer(bufferDesc, GfxMemoryType::eAny);
-
-    // Create I/O request to read all subresources into the mapped buffer
-    IoRequest request = m_io->createRequest();
-
+    // Assume that the texture only has one array layer for simplicity.
     for (uint32_t i = 0; i < file->getSubFileCount(); i++) {
       const IoArchiveSubFile* subFile = file->getSubFile(i);
 
-      if (m_hasGpuDecompression && m_textureMetadata[i].isCompressed) {
-        m_archive->readCompressed(request, subFile, m_textureBuffer->map(
-          GfxUsage::eCpuWrite, m_textureMetadata[i].srcOffset));
-      } else {
-        m_archive->read(request, subFile, m_textureBufferDecompressed->map(
-          GfxUsage::eCpuWrite, m_textureMetadata[i].dstOffset));
-      }
+      uint64_t mipCount = i < textureDesc.mipTailStart ? 1 : textureDesc.mips - i;
+
+      m_transfer->uploadImage(subFile, m_texture,
+        m_texture->getAvailableSubresources().pickMips(i, mipCount));
     }
 
-    m_io->submit(request);
-    return request;
+    return m_transfer->flush();
   }
 
-  void initTexture(
+
+  bool initTexture(
     const GfxContext&                   context) {
-    GfxImageSubresource allSubresources = m_texture->getAvailableSubresources();
+    if (m_textureInitialized)
+      return true;
 
-    context->imageBarrier(m_texture, allSubresources,
-      0, 0, GfxUsage::eTransferDst, 0, GfxBarrierFlag::eDiscard);
+    if (m_transfer->getCompletedBatchId() < m_textureBatchId)
+      return false;
 
-    if (m_hasGpuDecompression) {
-      for (const auto& metadata : m_textureMetadata) {
-        if (metadata.isCompressed) {
-          context->decompressBuffer(
-            m_textureBufferDecompressed, metadata.dstOffset, metadata.dstSize,
-            m_textureBuffer, metadata.srcOffset, metadata.srcSize);
-        }
-      }
-
-      context->memoryBarrier(
-        GfxUsage::eDecompressionDst, 0,
-        GfxUsage::eTransferSrc, 0);
-    }
-
-    for (const auto& metadata : m_textureMetadata) {
-      GfxImageSubresource subresource = allSubresources.pickMips(
-        metadata.mipIndex, metadata.mipCount);
-      Extent3D mipExtent = m_texture->computeMipExtent(subresource.mipIndex);
-
-      context->copyBufferToImage(m_texture, subresource,
-        Offset3D(0, 0, 0), mipExtent, m_textureBufferDecompressed,
-        metadata.dstOffset, Extent2D(mipExtent));
-    }
-
-    context->imageBarrier(m_texture, allSubresources,
+    // Issue a barrier so that we can use the image in the fragment shader
+    context->imageBarrier(m_texture, m_texture->getAvailableSubresources(),
       GfxUsage::eTransferDst, 0,
       GfxUsage::eShaderResource, GfxShaderStage::eFragment, 0);
+
+    return true;
   }
 
 
@@ -803,6 +734,7 @@ private:
     return GfxShader();
   }
 
+
   GfxFormat findFormat(
           GfxFormatFeatures             features,
     const std::initializer_list<GfxFormat>& formats) {
@@ -813,6 +745,7 @@ private:
 
     return GfxFormat::eUnknown;
   }
+
 
   void createRenderTargets() {
     // Free existing render targets first
@@ -853,6 +786,7 @@ private:
     m_colorImage = m_device->createImage(desc, GfxMemoryType::eAny);
   }
 
+
   GfxBuffer createGeometryBuffer() {
     GfxBufferDesc desc;
     desc.debugName = "Geometry buffer";
@@ -861,6 +795,7 @@ private:
 
     return m_device->createBuffer(desc, GfxMemoryType::eAny);
   }
+
 
   void uploadGeometryData() {
     // Just be lazy and create a temporary context
@@ -898,6 +833,7 @@ private:
     m_indexDescriptor = m_geometryBuffer->getDescriptor(GfxUsage::eVertexBuffer, sizeof(g_vertexData), sizeof(g_indexData));
   }
 
+
   GfxSampler createSampler(
     const char*                         debugName,
           GfxFilter                     filter) {
@@ -908,6 +844,7 @@ private:
 
     return m_device->createSampler(desc);
   }
+
 
   GfxSemaphore createSemaphore(
     const char*                         debugName,
