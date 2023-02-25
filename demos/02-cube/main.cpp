@@ -80,6 +80,7 @@ struct SubresourceInfo {
   uint64_t dstSize;
   uint32_t mipIndex;
   uint32_t mipCount;
+  bool isCompressed;
 };
 
 class CubeApp {
@@ -583,7 +584,7 @@ private:
   GfxBuffer                 m_textureBufferDecompressed;
   uint32_t                  m_textureIndex = 0;
 
-  std::vector<SubresourceInfo> m_textureMipOffsets;
+  std::vector<SubresourceInfo> m_textureMetadata;
 
   GfxSampler                m_samplerLinear;
   GfxSampler                m_samplerNearest;
@@ -692,6 +693,8 @@ private:
 
     // Create appropriately sized upload buffer. We can just iterate
     // over the sub files to compute the size and offsets.
+    bool hasUncompressed = false;
+
     uint64_t encodedSize = 0;
     uint64_t decodedSize = 0;
 
@@ -703,8 +706,11 @@ private:
       info.dstSize = file->getSubFile(i)->getSize();
       info.mipIndex = i;
       info.mipCount = i < textureDesc.mipTailStart ? 1 : textureDesc.mips - textureDesc.mipTailStart;
+      info.isCompressed = file->getSubFile(i)->getCompressionType() == IoArchiveCompression::eGDeflate;
 
-      m_textureMipOffsets.push_back(info);
+      hasUncompressed |= !info.isCompressed;
+
+      m_textureMetadata.push_back(info);
 
       encodedSize += align<uint64_t>(info.srcSize, 64);
       decodedSize += align<uint64_t>(info.dstSize, 64);
@@ -715,7 +721,7 @@ private:
       bufferDesc.debugName = "Compressed buffer";
       bufferDesc.usage = GfxUsage::eDecompressionSrc | GfxUsage::eCpuWrite;
       bufferDesc.size = encodedSize;
-      m_textureBuffer = m_device->createBuffer(bufferDesc, GfxMemoryType::eAny);
+      m_textureBuffer = m_device->createBuffer(bufferDesc, GfxMemoryType::eSystemMemory);
     }
 
     GfxBufferDesc bufferDesc;
@@ -723,9 +729,11 @@ private:
     bufferDesc.usage = GfxUsage::eTransferSrc;
     bufferDesc.size = decodedSize;
 
-    bufferDesc.usage |= m_hasGpuDecompression
-      ? GfxUsage::eDecompressionDst
-      : GfxUsage::eCpuWrite;
+    if (m_hasGpuDecompression)
+      bufferDesc.usage |= GfxUsage::eDecompressionDst;
+
+    if (!m_hasGpuDecompression || hasUncompressed)
+      bufferDesc.usage |= GfxUsage::eCpuWrite;
 
     m_textureBufferDecompressed = m_device->createBuffer(bufferDesc, GfxMemoryType::eAny);
 
@@ -735,12 +743,12 @@ private:
     for (uint32_t i = 0; i < file->getSubFileCount(); i++) {
       const IoArchiveSubFile* subFile = file->getSubFile(i);
 
-      if (m_hasGpuDecompression) {
+      if (m_hasGpuDecompression && m_textureMetadata[i].isCompressed) {
         m_archive->readCompressed(request, subFile, m_textureBuffer->map(
-          GfxUsage::eCpuWrite, m_textureMipOffsets[i].srcOffset));
+          GfxUsage::eCpuWrite, m_textureMetadata[i].srcOffset));
       } else {
         m_archive->read(request, subFile, m_textureBufferDecompressed->map(
-          GfxUsage::eCpuWrite, m_textureMipOffsets[i].dstOffset));
+          GfxUsage::eCpuWrite, m_textureMetadata[i].dstOffset));
       }
     }
 
@@ -756,13 +764,12 @@ private:
       0, 0, GfxUsage::eTransferDst, 0, GfxBarrierFlag::eDiscard);
 
     if (m_hasGpuDecompression) {
-      for (const auto& metadata : m_textureMipOffsets) {
-        GfxImageSubresource subresource = allSubresources.pickMips(
-          metadata.mipIndex, metadata.mipCount);
-
-        context->decompressBuffer(
-          m_textureBufferDecompressed, metadata.dstOffset, metadata.dstSize,
-          m_textureBuffer, metadata.srcOffset, metadata.srcSize);
+      for (const auto& metadata : m_textureMetadata) {
+        if (metadata.isCompressed) {
+          context->decompressBuffer(
+            m_textureBufferDecompressed, metadata.dstOffset, metadata.dstSize,
+            m_textureBuffer, metadata.srcOffset, metadata.srcSize);
+        }
       }
 
       context->memoryBarrier(
@@ -770,7 +777,7 @@ private:
         GfxUsage::eTransferSrc, 0);
     }
 
-    for (const auto& metadata : m_textureMipOffsets) {
+    for (const auto& metadata : m_textureMetadata) {
       GfxImageSubresource subresource = allSubresources.pickMips(
         metadata.mipIndex, metadata.mipCount);
       Extent3D mipExtent = m_texture->computeMipExtent(subresource.mipIndex);
@@ -870,7 +877,7 @@ private:
     bufferDesc.usage = GfxUsage::eTransferSrc | GfxUsage::eCpuWrite;
 
     // No need to explicitly unmap since only the CPU write bit is set on the buffer
-    GfxBuffer buffer = m_device->createBuffer(bufferDesc, GfxMemoryType::eAny);
+    GfxBuffer buffer = m_device->createBuffer(bufferDesc, GfxMemoryType::eSystemMemory);
     std::memcpy(buffer->map(GfxUsage::eCpuWrite, 0), g_vertexData.data(), sizeof(g_vertexData));
     std::memcpy(buffer->map(GfxUsage::eCpuWrite, sizeof(g_vertexData)), g_indexData.data(), sizeof(g_indexData));
 
