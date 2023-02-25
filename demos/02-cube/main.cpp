@@ -800,6 +800,12 @@ private:
     desc.debugName = debugName;
     desc.magFilter = filter;
     desc.minFilter = filter;
+    desc.addressModeU = GfxAddressMode::eClampToEdge;
+    desc.addressModeV = GfxAddressMode::eClampToEdge;
+    desc.addressModeW = GfxAddressMode::eClampToEdge;
+
+    if (filter == GfxFilter::eLinear)
+      desc.anisotropy = 16;
 
     return m_device->createSampler(desc);
   }
