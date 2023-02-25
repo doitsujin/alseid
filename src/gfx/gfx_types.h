@@ -208,6 +208,18 @@ struct GfxImageSubresource {
   }
 
   /**
+   * \brief Extracts a mip range
+   *
+   * \param [in] mip Mip level, relative to \c mipIndex
+   * \param [in] count Number of mip levels to pick
+   * \returns Subresources with only that mip level
+   */
+  GfxImageSubresource pickMips(uint32_t mip, uint32_t count) const {
+    return GfxImageSubresource(aspects,
+      mipIndex + mip, count, layerIndex, layerCount);
+  }
+
+  /**
    * \brief Extracts a single array layer
    *
    * \param [in] layer Array layer, relative to \c layerIndex
@@ -216,6 +228,18 @@ struct GfxImageSubresource {
   GfxImageSubresource pickLayer(uint32_t layer) const {
     return GfxImageSubresource(aspects,
       mipIndex, mipCount, layerIndex + layer, 1);
+  }
+
+  /**
+   * \brief Extracts a layer range
+   *
+   * \param [in] layer Array layer, relative to \c layerIndex
+   * \param [in] count Number of arry layers to pick
+   * \returns Subresources with only that array layer
+   */
+  GfxImageSubresource pickLayers(uint32_t layer, uint32_t count) const {
+    return GfxImageSubresource(aspects,
+      mipIndex, mipCount, layerIndex + layer, count);
   }
 
   /**

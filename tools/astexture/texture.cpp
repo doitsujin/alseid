@@ -166,6 +166,7 @@ bool Texture::process() {
   textureDesc.extent = Extent3D(m_images[0].w, m_images[0].h, 1);
   textureDesc.mips = m_mipCount;
   textureDesc.layers = m_arrayLayers;
+  textureDesc.mipTailStart = m_mipCount;
   textureDesc.flags = 0;
 
   if (m_args.enableCube)

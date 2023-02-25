@@ -73,7 +73,8 @@ bool GfxTextureDesc::serialize(
   for (uint32_t i = 0; i < gfxGetImageDimensions(type); i++)
     success &= writer.write(uint16_t(extent[i]));
 
-  success &= writer.write(uint16_t(mips))
+  success &= writer.write(uint8_t(mips))
+          && writer.write(uint8_t(mipTailStart))
           && writer.write(uint16_t(layers))
           && writer.write(uint32_t(flags));
 
@@ -99,7 +100,8 @@ bool GfxTextureDesc::deserialize(
     if (!reader.readAs<uint16_t>(extent[i]))
       return false;
   }
-  if (!reader.readAs<uint16_t>(mips)
+  if (!reader.readAs<uint8_t>(mips)
+   || !reader.readAs<uint8_t>(mipTailStart)
    || !reader.readAs<uint16_t>(layers)
    || !reader.readAs<uint32_t>(flags))
     return false;

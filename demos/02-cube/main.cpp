@@ -78,6 +78,8 @@ struct SubresourceInfo {
   uint64_t srcSize;
   uint64_t dstOffset;
   uint64_t dstSize;
+  uint32_t mipIndex;
+  uint32_t mipCount;
 };
 
 class CubeApp {
@@ -699,6 +701,8 @@ private:
       info.srcSize = file->getSubFile(i)->getCompressedSize();
       info.dstOffset = decodedSize;
       info.dstSize = file->getSubFile(i)->getSize();
+      info.mipIndex = i;
+      info.mipCount = i < textureDesc.mipTailStart ? 1 : textureDesc.mips - textureDesc.mipTailStart;
 
       m_textureMipOffsets.push_back(info);
 
@@ -752,17 +756,13 @@ private:
       0, 0, GfxUsage::eTransferDst, 0, GfxBarrierFlag::eDiscard);
 
     if (m_hasGpuDecompression) {
-      for (uint32_t i = 0; i < allSubresources.layerCount; i++) {
-        for (uint32_t j = 0; j < allSubresources.mipCount; j++) {
-          GfxImageSubresource subresource = allSubresources.pickLayer(i).pickMip(j);
-          uint32_t subresourceIndex = m_texture->computeSubresourceIndex(subresource);
+      for (const auto& metadata : m_textureMipOffsets) {
+        GfxImageSubresource subresource = allSubresources.pickMips(
+          metadata.mipIndex, metadata.mipCount);
 
-          auto metadata = m_textureMipOffsets[subresourceIndex];
-
-          context->decompressBuffer(
-            m_textureBufferDecompressed, metadata.dstOffset, metadata.dstSize,
-            m_textureBuffer, metadata.srcOffset, metadata.srcSize);
-        }
+        context->decompressBuffer(
+          m_textureBufferDecompressed, metadata.dstOffset, metadata.dstSize,
+          m_textureBuffer, metadata.srcOffset, metadata.srcSize);
       }
 
       context->memoryBarrier(
@@ -770,17 +770,14 @@ private:
         GfxUsage::eTransferSrc, 0);
     }
 
-    for (uint32_t i = 0; i < allSubresources.layerCount; i++) {
-      for (uint32_t j = 0; j < allSubresources.mipCount; j++) {
-        GfxImageSubresource subresource = allSubresources.pickLayer(i).pickMip(j);
-        uint32_t subresourceIndex = m_texture->computeSubresourceIndex(subresource);
-        Extent3D mipExtent = m_texture->computeMipExtent(j);
+    for (const auto& metadata : m_textureMipOffsets) {
+      GfxImageSubresource subresource = allSubresources.pickMips(
+        metadata.mipIndex, metadata.mipCount);
+      Extent3D mipExtent = m_texture->computeMipExtent(subresource.mipIndex);
 
-        context->copyBufferToImage(m_texture, subresource,
-          Offset3D(0, 0, 0), mipExtent, m_textureBufferDecompressed,
-          m_textureMipOffsets[subresourceIndex].dstOffset,
-          Extent2D(mipExtent));
-      }
+      context->copyBufferToImage(m_texture, subresource,
+        Offset3D(0, 0, 0), mipExtent, m_textureBufferDecompressed,
+        metadata.dstOffset, Extent2D(mipExtent));
     }
 
     context->imageBarrier(m_texture, allSubresources,

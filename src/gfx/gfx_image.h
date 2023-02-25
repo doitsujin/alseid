@@ -353,6 +353,9 @@ struct GfxTextureDesc {
   uint32_t mips = 0;
   /** Layer count */
   uint32_t layers = 0;
+  /** First mip level in the mip tail. Will have the
+   *  value of \c mips if there is no mip tail. */
+  uint32_t mipTailStart = 0;
   /** Texture flags. These may roughly correspond
    *  to certain image flags or properties. */
   GfxTextureFlags flags = 0;
