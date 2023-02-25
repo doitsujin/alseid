@@ -165,6 +165,7 @@ protected:
 
 };
 
+/** See GfxSamplerIface. */
 using GfxSampler = IfaceRef<GfxSamplerIface>;
 
 }

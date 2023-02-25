@@ -19,6 +19,7 @@ public:
 
 };
 
+/** See GfxCommandListIface. */
 using GfxCommandList = IfaceRef<GfxCommandListIface>;
 
 }

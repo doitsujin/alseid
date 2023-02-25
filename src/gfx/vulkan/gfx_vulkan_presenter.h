@@ -56,7 +56,7 @@ public:
   /**
    * \brief Checks whether the given color space and format are supported
    *
-   * \param [in] format Format to query. May be \ref GfxFormat::eUnknown.
+   * \param [in] format Format to query. May be \c GfxFormat::eUnknown.
    * \param [in] colorSpace Color space to query
    * \returns \c true if the given combination of format and color space
    *    are natively supported by the device, as described above.

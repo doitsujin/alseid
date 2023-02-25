@@ -136,7 +136,7 @@ public:
    * \brief Changes window to fullscreen mode
    *
    * \param [in] display Specifies the display to use.
-   *    Unlike in \ref setBorderless, this is not optional.
+   *    Unlike in \c setBorderless, this is not optional.
    * \param [in] displayMode Display mode to use
    * \returns \c true on success, \c false on error
    */
@@ -171,7 +171,7 @@ public:
 
 };
 
-
+/** See WsiWindowIface. */
 using WsiWindow = IfaceRef<WsiWindowIface>;
 
 }

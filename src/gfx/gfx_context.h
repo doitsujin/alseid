@@ -84,10 +84,10 @@ public:
    * well as small upload.
    *
    * A suitable memory type will be chosen based on usage and CPU access:
-   * - \ref GfxMemoryType::eVideoMemory if no CPU access is desired,
-   * - \ref GfxMemoryType::eBarMemory if only CPU write access is requested
+   * - \c GfxMemoryType::eVideoMemory if no CPU access is desired,
+   * - \c GfxMemoryType::eBarMemory if only CPU write access is requested
    *      and if the resource can be accessed by shaders in any way,
-   * - \ref GfxMemoryType::eSystemMemory otherwise.
+   * - \c GfxMemoryType::eSystemMemory otherwise.
    * \param [in] usage Desired usage of the memory slice. The returned
    *    slice will be aligned to match the requirements of this usage bit.
    * \param [in] size Number of bytes to allocate
@@ -101,7 +101,7 @@ public:
    * \brief Allocates and writes scratch memory
    *
    * Convenience method that allocates a scratch buffer and immediately
-   * writes data to it. See \ref allocScratchData for more details.
+   * writes data to it. See \c allocScratchData for more details.
    * \param [in] usage Scratch buffer usage for the resulting descriptor.
    *    The necessary CPU access bits are implied and need not be set.
    * \param [in] data Data to write to the allocated slice
@@ -165,8 +165,8 @@ public:
    * It will \e not perform any image transitions.
    *
    * If the \c srcUsage or \c dstUsage parameters do not contain any of
-   * \ref GfxUsage::eConstantBuffer, \ref GfxUsage::eShaderResource or
-   * \ref GfxUsage::eShaderStorage, the corresponding stage masks have
+   * \c GfxUsage::eConstantBuffer, \c GfxUsage::eShaderResource or
+   * \c GfxUsage::eShaderStorage, the corresponding stage masks have
    * no meaning and should be set to 0.
    * \param [in] srcUsage Source commands to wait for
    * \param [in] srcStages Shader stages used in source commands
@@ -182,11 +182,11 @@ public:
   /**
    * \brief Emits an image memory barrier
    *
-   * Synchronizes commands as a call to \ref memoryBarrier would, and
+   * Synchronizes commands as a call to \c memoryBarrier would, and
    * transitions the internal image layout in such a way that the image
    * will be compatible with all accesses specified in \c dstUsage.
    *
-   * If \c flags contains \ref GfxBarrierFlag::eDiscard, the image
+   * If \c flags contains \c GfxBarrierFlag::eDiscard, the image
    * will be re-initialized and all previous contents will be discarded.
    * Images \e must be initialized in this way on first use, and \e may
    * be re-initialized any time its contents are no longer needed.
@@ -198,7 +198,7 @@ public:
    * When an image is initialized, it will only be compatible with the
    * queue that the context was created for. In order to use an image
    * that was created without \c GfxImageFlag::eSimultaneousAccess on
-   * different queues, use \ref releaseImage and \ref acquireImage.
+   * different queues, use \c releaseImage and \c acquireImage.
    *
    * In general, \c dstUsage must only have one bit set. The only
    * exception is for depth-stencil images that are to be bound for
@@ -207,7 +207,7 @@ public:
    * flags can be set.
    *
    * If \c srcUsage and \c dstUsage are identical and \c flags is 0,
-   * this command behaves the same as a call to \ref memoryBarrier.
+   * this command behaves the same as a call to \c memoryBarrier.
    *
    * \note Overlapping access to images on different queues \e must
    *    be synchronized properly with semaphores, even if the image
@@ -237,7 +237,7 @@ public:
    * \brief Acquires image from another queue
    *
    * The \c srcUsage, \c dstUsage and \c dstStages parameters behave
-   * the same as they do in a call to \ref imageBarrier.
+   * the same as they do in a call to \c imageBarrier.
    * \param [in] image Image to acquire
    * \param [in] subresource Subresources to acquire
    * \param [in] srcQueue Queue that the image was released from
@@ -257,7 +257,7 @@ public:
    * \brief Releases image so it can be used on another queue
    *
    * The \c srcUsage, \c srcStages and \c dstUsage parameters behave
-   * the same as they do in a call to \ref imageBarrier.
+   * the same as they do in a call to \c imageBarrier.
    * \param [in] image Image to acquire
    * \param [in] subresource Subresources to acquire
    * \param [in] srcUsage Current image usage and source commands
@@ -478,8 +478,8 @@ public:
    * \brief Decompresses a buffer
    *
    * Decodes a GDeflate-encoded buffer. The buffer \e must
-   * begin with a \ref GDeflateHeader struct, immediately
-   * followed by a packed \ref GDeflatePage array.
+   * begin with a \c GDeflateHeader struct, immediately
+   * followed by a packed \c GDeflatePage array.
    * 
    * Decompression commands must be synchronized using
    * the corresponding GPU decompression usage flags.
@@ -758,6 +758,7 @@ public:
 
 };
 
+/** See GfxContextIface. */
 using GfxContext = IfaceRef<GfxContextIface>;
 
 }

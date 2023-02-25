@@ -112,6 +112,7 @@ private:
 
 };
 
+/** See JobIface. */
 using Job = IfaceRef<JobIface>;
 
 
@@ -336,6 +337,8 @@ private:
 
 /**
  * \brief Job manager
+ *
+ * See JobsIface.
  */
 class Jobs : public IfaceRef<JobsIface> {
 

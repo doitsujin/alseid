@@ -122,6 +122,7 @@ protected:
 
 };
 
+/** See GfxVertexInputStateIface. */
 using GfxVertexInputState = PtrRef<GfxVertexInputStateIface>;
 
 
@@ -201,6 +202,7 @@ protected:
 
 };
 
+/** See GfxRasterizerStateIface. */
 using GfxRasterizerState = PtrRef<GfxRasterizerStateIface>;
 
 
@@ -352,6 +354,7 @@ protected:
 
 };
 
+/** See GfxDepthStencilStateIface. */
 using GfxDepthStencilState = PtrRef<GfxDepthStencilStateIface>;
 
 
@@ -539,6 +542,7 @@ protected:
 
 };
 
+/** See GfxColorBlendStateIface. */
 using GfxColorBlendState = PtrRef<GfxColorBlendStateIface>;
 
 
@@ -591,6 +595,7 @@ protected:
 
 };
 
+/** See GfxMultisampleStateIface. */
 using GfxMultisampleState = PtrRef<GfxMultisampleStateIface>;
 
 
@@ -648,6 +653,7 @@ protected:
 
 };
 
+/** See GfxRenderTargetStateIface. */
 using GfxRenderTargetState = PtrRef<GfxRenderTargetStateIface>;
 
 
@@ -798,6 +804,7 @@ protected:
 
 };
 
+/** See GfxGraphicsPipelineIface. */
 using GfxGraphicsPipeline = PtrRef<GfxGraphicsPipelineIface>;
 
 
@@ -852,6 +859,7 @@ protected:
 
 };
 
+/** See GfxComputePipelineIface. */
 using GfxComputePipeline = PtrRef<GfxComputePipelineIface>;
 
 }

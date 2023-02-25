@@ -134,6 +134,7 @@ protected:
 
 };
 
+/** See IoFileIface. */
 using IoFile = IfaceRef<IoFileIface>;
 
 }

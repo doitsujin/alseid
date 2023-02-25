@@ -80,6 +80,7 @@ public:
 
 };
 
+/** See GfxSemaphoreIface. */
 using GfxSemaphore = IfaceRef<GfxSemaphoreIface>;
 
 }

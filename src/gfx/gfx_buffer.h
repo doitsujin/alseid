@@ -256,6 +256,7 @@ protected:
 
 };
 
+/** See GfxBufferIface. */
 using GfxBuffer = IfaceRef<GfxBufferIface>;
 
 }

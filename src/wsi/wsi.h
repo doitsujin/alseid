@@ -105,7 +105,7 @@ public:
 /**
  * \brief WSI instance
  *
- * Manages the WSI backend.
+ * See WsiIface.
  */
 class Wsi : public IfaceRef<WsiIface> {
 

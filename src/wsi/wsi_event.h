@@ -165,7 +165,7 @@ using WsiModifierKeys = Flags<WsiModifierKey>;
  * \brief Window size event data
  *
  * Stores data for events of the type
- * \ref WsiEvent::eWindowResize.
+ * \c WsiEvent::eWindowResize.
  */
 struct WsiWindowResizeEvent {
   /** New window size, in desktop coordinates */
@@ -177,7 +177,7 @@ struct WsiWindowResizeEvent {
  * \brief Window focus event data
  *
  * Stores data for events of the type
- * \ref WsiEvent::eWindowFocus.
+ * \c WsiEvent::eWindowFocus.
  */
 struct WsiWindowFocusEvent {
   /** Whether or not the window has focus */
@@ -189,7 +189,7 @@ struct WsiWindowFocusEvent {
  * \brief Window state event data
  *
  * Stores data for events of the type
- * \ref WsiEvent::eWindowState.
+ * \c WsiEvent::eWindowState.
  */
 struct WsiWindowStateEvent {
   /** Whether or not the window is minimized */
@@ -201,7 +201,7 @@ struct WsiWindowStateEvent {
  * \brief Mouse button event data
  *
  * Stores data for events of the type
- * \ref WsiEvent::eMouseButton.
+ * \c WsiEvent::eMouseButton.
  */
 struct WsiMouseButtonEvent {
   /** Mouse button that was pressed or released */
@@ -227,7 +227,7 @@ struct WsiMouseWheelEvent {
  * \brief Mouse motion event data
  *
  * Stores data for events of the type
- * \ref WsiEvent::eMouseMove.
+ * \c WsiEvent::eMouseMove.
  */
 struct WsiMouseMoveEvent {
   /** Cursor position, relative to the top-left corner
@@ -244,7 +244,7 @@ struct WsiMouseMoveEvent {
  * \brief Keyboard event data
  *
  * Stores data for events of the type
- * \ref WsiEvent::eKeyPress.
+ * \c WsiEvent::eKeyPress.
  */
 struct WsiKeyEvent {
   /** Key scancode */

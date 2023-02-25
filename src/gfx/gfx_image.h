@@ -234,6 +234,7 @@ protected:
 
 };
 
+/** See GfxImageViewIface. */
 using GfxImageView = PtrRef<GfxImageViewIface>;
 
 
@@ -321,6 +322,7 @@ protected:
 
 };
 
+/** See GfxImageIface. */
 using GfxImage = IfaceRef<GfxImageIface>;
 
 

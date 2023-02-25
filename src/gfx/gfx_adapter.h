@@ -46,6 +46,7 @@ public:
 
 };
 
+/** See GfxAdapterIface. */
 using GfxAdapter = IfaceRef<GfxAdapterIface>;
 
 }

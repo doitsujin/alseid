@@ -73,7 +73,7 @@ public:
 
 };
 
-
+/** See WsiDisplayIface. */
 using WsiDisplay = IfaceRef<WsiDisplayIface>;
 
 }

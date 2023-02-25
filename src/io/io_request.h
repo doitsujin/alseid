@@ -269,6 +269,7 @@ protected:
 
 };
 
+/** See IoRequestIface. */
 using IoRequest = IfaceRef<IoRequestIface>;
 
 }

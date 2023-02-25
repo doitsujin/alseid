@@ -73,6 +73,8 @@ public:
 
 /**
  * \brief Graphics system
+ *
+ * See GfxIface.
  */
 class Gfx : public IfaceRef<GfxIface> {
 

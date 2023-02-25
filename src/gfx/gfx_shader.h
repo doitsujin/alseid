@@ -298,6 +298,8 @@ private:
 
 /**
  * \brief Shader object
+ *
+ * See GfxShaderIface.
  */
 class GfxShader : public IfaceRef<GfxShaderIface> {
 

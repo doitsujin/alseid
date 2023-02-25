@@ -93,6 +93,7 @@ private:
 
 };
 
+/** See GfxDescriptorArrayIface. */
 using GfxDescriptorArray = IfaceRef<GfxDescriptorArrayIface>;
 
 }

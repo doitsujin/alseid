@@ -75,7 +75,7 @@ struct IoArchiveSubFileMetadata {
    *  as sub-files can be accessed by their index as well. */
   FourCC identifier;
   /** Compression type. Can be one of the values specified
-   *  in the \ref IoArchiveCompression enum, or custom. */
+   *  in the \c IoArchiveCompression enum, or custom. */
   IoArchiveCompression compression;
   /** Currently unused field, always 0 */
   uint16_t reserved;
@@ -264,7 +264,7 @@ private:
  * one file system file. The layout of these files enables both
  * efficient compression and fast access to stored data.
  *
- * On the top level, there a named files (see \ref IoArchiveFile)
+ * On the top level, there a named files (see \c IoArchiveFile)
  * which can contain multiple sub-files as well as inline data.
  * For example, a texture could be stored entirely as one file,
  * with inline data being used to describe texture metadata, and

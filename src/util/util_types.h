@@ -450,7 +450,7 @@ private:
 /**
  * \brief Matrix
  *
- * Simple matrix type. Much like the \ref Vector class, this is
+ * Simple matrix type. Much like the \c Vector class, this is
  * \e not aimed to provide high performance, and only provides
  * very basic functionality. The data layout is column-major to
  * match graphics APIs.

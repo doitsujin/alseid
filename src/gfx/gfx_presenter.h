@@ -193,7 +193,7 @@ public:
    * If the given color space is not supported by the implementation with
    * any format, this method will return \c false.
    *
-   * As for the format parameter, if the format is \ref GfxFormat::eUnknown,
+   * As for the format parameter, if the format is \c GfxFormat::eUnknown,
    * this funtion will check whether the given color space is supported for
    * any format. Otherwise, it will only return \c true if the combination
    * of format and color space are natively supported without conversion.
@@ -201,7 +201,7 @@ public:
    * Note that any format can be used with any supported color space, but
    * if the combination of format and color space is not natively supported,
    * a blit will take place at present time, which may incur a performance hit.
-   * \param [in] format Format to query. May be \ref GfxFormat::eUnknown.
+   * \param [in] format Format to query. May be \c GfxFormat::eUnknown.
    * \param [in] colorSpace Color space to query
    * \returns \c true if the given combination of format and color space
    *    are natively supported by the device, as described above.
@@ -224,7 +224,7 @@ public:
   /**
    * \brief Sets swap chain format and color space
    *
-   * \param [in] format Image format. If set to \ref GfxFormat::eUnknown,
+   * \param [in] format Image format. If set to \c GfxFormat::eUnknown,
    *    a format that is natively supported for the given color space
    *    will be selected for optimal performance.
    * \param [in] colorSpace Color space. If the given color space is
@@ -262,6 +262,7 @@ public:
 
 };
 
+/** See GfxPresenterIface. */
 using GfxPresenter = IfaceRef<GfxPresenterIface>;
 
 }

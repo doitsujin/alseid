@@ -68,6 +68,8 @@ public:
 
 /**
  * \brief I/O system
+ *
+ * See Ioiface.
  */
 class Io : public IfaceRef<IoIface> {
 

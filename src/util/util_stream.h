@@ -337,7 +337,7 @@ private:
 /**
  * \brief Writable memory view
  *
- * Much like \ref RdMemoryView, escept
+ * Much like \c RdMemoryView, escept
  * this one supports write operations.
  */
 class WrMemoryView {

@@ -347,6 +347,7 @@ public:
 
 };
 
+/** See GfxDeviceIface. */
 using GfxDevice = IfaceRef<GfxDeviceIface>;
 
 }
