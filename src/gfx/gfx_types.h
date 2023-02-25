@@ -133,15 +133,14 @@ enum class GfxQueue : uint32_t {
    *  If possible, this will be be mapped to a low-priority
    *  device queue, otherwise uses the regular compute queue. */
   eComputeBackground = 2,
-  /** Transfer queue used for asynchronous data uploads. This
-   *  queue may be mapped to a dedicated compute queue on devices
-   *  that do not have dedicated transfer queues. */
-  eTransferUpload   = 3,
-  /** Transfer queue used for asynchronous data readbacks. This
-   *  queue may be mapped to the graphics queue if not enough
-   *  dedicated transfer or compute queues are present on the
-   *  device. */
-  eTransferReadback = 4,
+  /** Compute queue used for asynchronous data uploads. This is
+   *  a compute queue in order to allow decompression and further
+   *  processing of the data while writing it to a GPU resource. */
+  eComputeTransfer  = 3,
+  /** Transfer queue. If available, this is a pure DMA queue
+   *  on the device, otherwise it will be mapped to the compute
+   *  upload qeueue. */
+  eTransfer         = 4,
   /** Sparse binding queue. This may be mapped to the graphics
    *  queue on some devices, or be a dedicated queue. Commands
    *  must not be directly submitted to this queue. */

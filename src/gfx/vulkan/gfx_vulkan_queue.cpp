@@ -50,8 +50,8 @@ GfxVulkanQueueMapping::GfxVulkanQueueMapping(
 
   mapQueue(GfxQueue::eComputeBackground, computeBackgroundQueue);
 
-  // Reserve a high-priority synchronous compute queue. We do this after
-  // reserving the background queue since the background queue being truly
+  // Reserve a high-priority compute queue. We do this after reserving
+  // the background queue since the background queue being truly
   // asynchronous is more important than the regular compute queue.
   uint32_t computeQueue = reserveQueue(1.0f,
     VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT,
@@ -62,42 +62,27 @@ GfxVulkanQueueMapping::GfxVulkanQueueMapping(
 
   mapQueue(GfxQueue::eCompute, computeQueue);
 
-  // Reserve asynchronous transfer queue and fall back to the
-  // asynchronous compute if we can't find a dedicated queue.
-  uint32_t uploadQueue = reserveQueue(0.0f,
-    VK_QUEUE_TRANSFER_BIT,
+  // Reserve compute transfer queue and fall back to the
+  // background compute if we can't find a dedicated queue.
+  uint32_t computeTransferQueue = reserveQueue(0.0f,
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT,
+    VK_QUEUE_COMPUTE_BIT);
+
+  if (computeTransferQueue == VK_QUEUE_FAMILY_IGNORED)
+    computeTransferQueue = computeBackgroundQueue;
+
+  mapQueue(GfxQueue::eComputeTransfer, computeTransferQueue);
+
+  // Reserve transfer queue and fall back to the compute
+  // transfer queue if we can't find a dedicated queue.
+  uint32_t transferQueue = reserveQueue(1.0f,
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT,
     VK_QUEUE_TRANSFER_BIT);
 
-  if (uploadQueue == VK_QUEUE_FAMILY_IGNORED) {
-    uploadQueue = reserveQueue(0.0f,
-      VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT,
-      VK_QUEUE_COMPUTE_BIT);
-  }
+  if (transferQueue == VK_QUEUE_FAMILY_IGNORED)
+    transferQueue = computeTransferQueue;
 
-  if (uploadQueue == VK_QUEUE_FAMILY_IGNORED) {
-    uploadQueue = computeBackgroundQueue != VK_QUEUE_FAMILY_IGNORED
-      ? computeBackgroundQueue
-      : graphicsQueue;
-  }
-
-  mapQueue(GfxQueue::eTransferUpload, uploadQueue);
-
-  // Reserve readback queue and fall back to the graphics
-  // queue if we can't find a dedicated queue.
-  uint32_t readbackQueue = reserveQueue(1.0f,
-    VK_QUEUE_TRANSFER_BIT,
-    VK_QUEUE_TRANSFER_BIT);
-
-  if (readbackQueue == VK_QUEUE_FAMILY_IGNORED) {
-    readbackQueue = reserveQueue(0.0f,
-      VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT,
-      VK_QUEUE_COMPUTE_BIT);
-  }
-
-  if (readbackQueue == VK_QUEUE_FAMILY_IGNORED)
-    readbackQueue = graphicsQueue;
-
-  mapQueue(GfxQueue::eTransferReadback, readbackQueue);
+  mapQueue(GfxQueue::eTransfer, transferQueue);
 
   // Reserve a dedicated sparse binding queue on the device.
   // If no such queue exists, try to find an existing one.
@@ -205,8 +190,8 @@ void GfxVulkanQueueMapping::mapQueue(
     "eGraphics:          ",
     "eCompute:           ",
     "eComputeBackground: ",
-    "eTransferUpload:    ",
-    "eTransferReadback:  ",
+    "eComputeTransfer:   ",
+    "eTransfer:          ",
     "eSparseBinding:     ",
     "ePresent:           ",
   }};

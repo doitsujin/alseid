@@ -881,7 +881,7 @@ private:
     std::memcpy(buffer->map(GfxUsage::eCpuWrite, 0), g_vertexData.data(), sizeof(g_vertexData));
     std::memcpy(buffer->map(GfxUsage::eCpuWrite, sizeof(g_vertexData)), g_indexData.data(), sizeof(g_indexData));
 
-    GfxContext context = m_device->createContext(GfxQueue::eTransferUpload);
+    GfxContext context = m_device->createContext(GfxQueue::eTransfer);
     context->copyBuffer(m_geometryBuffer, 0, buffer, 0, bufferDesc.size);
     context->memoryBarrier(GfxUsage::eTransferDst, 0, 0, 0);
 
@@ -889,7 +889,7 @@ private:
     GfxCommandSubmission submission;
     submission.addCommandList(context->endCommandList());
     submission.addSignalSemaphore(semaphore, 1);
-    m_device->submit(GfxQueue::eTransferUpload, std::move(submission));
+    m_device->submit(GfxQueue::eTransfer, std::move(submission));
 
     semaphore->wait(1);
 
