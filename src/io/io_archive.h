@@ -15,6 +15,8 @@
 
 namespace as {
 
+class IoArchive;
+
 /**
  * \brief Archive header
  */
@@ -99,10 +101,20 @@ class IoArchiveSubFile {
 public:
 
   explicit IoArchiveSubFile(
+          IoArchive&                    archive,
     const IoArchiveSubFileMetadata&     metadata,
           uint64_t                      extraOffset)
-  : m_metadata(metadata) {
+  : m_archive       (archive)
+  , m_metadata      (metadata) {
     m_metadata.offset += extraOffset;
+  }
+
+  /**
+   * \brief Retrieves archive
+   * \returns Parent archive
+   */
+  const IoArchive& getArchive() const {
+    return m_archive;
   }
 
   /**
@@ -155,7 +167,9 @@ public:
 
 private:
 
-  IoArchiveSubFileMetadata m_metadata;
+  IoArchive&                m_archive;
+
+  IoArchiveSubFileMetadata  m_metadata;
 
 };
 
@@ -168,16 +182,26 @@ class IoArchiveFile {
 public:
 
   explicit IoArchiveFile(
+          IoArchive&                    archive,
     const IoArchiveFileMetadata&        metadata,
     const char*                         name,
     const IoArchiveSubFile*             subFiles,
     const void*                         inlineData)
-  : m_name          (metadata.nameLength ? name : nullptr)
+  : m_archive       (archive)
+  , m_name          (metadata.nameLength ? name : nullptr)
   , m_type          (metadata.type)
   , m_subFileCount  (metadata.subFileCount)
   , m_subFiles      (metadata.subFileCount ? subFiles : nullptr)
   , m_inlineSize    (metadata.inlineDataSize)
   , m_inlineData    (metadata.inlineDataSize ? inlineData : nullptr) { }
+
+  /**
+   * \brief Retrieves archive
+   * \returns Parent archive
+   */
+  const IoArchive& getArchive() const {
+    return m_archive;
+  }
 
   /**
    * \brief Retrieves file name
@@ -244,6 +268,8 @@ public:
   }
 
 private:
+
+  IoArchive&              m_archive;
 
   const char*             m_name = nullptr;
   FourCC                  m_type = FourCC();

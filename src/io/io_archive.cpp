@@ -187,7 +187,7 @@ bool IoArchive::parseMetadata() {
   m_subFiles.reserve(totalSubFileCount);
 
   for (size_t i = 0; i < totalSubFileCount; i++) {
-    auto& subFile = m_subFiles.emplace_back(subFiles[i], fileHeader.fileOffset);
+    auto& subFile = m_subFiles.emplace_back(*this, subFiles[i], fileHeader.fileOffset);
 
     if (subFile.getOffsetInArchive() + subFile.getCompressedSize() > fileStream->getSize()) {
       Log::err("Archive: Sub-file out of bounds:"
@@ -223,7 +223,7 @@ bool IoArchive::parseMetadata() {
     }
 
     auto index = m_files.size();
-    m_files.emplace_back(files[i], name, subFiles, inlineData);
+    m_files.emplace_back(*this, files[i], name, subFiles, inlineData);
 
     if (name && !m_lookupTable.insert({ name, index }).second) {
       Log::err("Archive: Duplicate file name: ", name);
