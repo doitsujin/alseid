@@ -20,7 +20,9 @@ VkBool32 VKAPI_PTR gfxVulkanDebugCallback(
   if (messageSeverity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
     severity = LogSeverity::eError;
 
-  Log::message(severity, pCallbackData->pMessage);
+  if (messageTypes != VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
+    Log::message(severity, pCallbackData->pMessage);
+
   return VK_FALSE;
 }
 
