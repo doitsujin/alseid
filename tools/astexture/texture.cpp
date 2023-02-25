@@ -159,6 +159,22 @@ bool Texture::process() {
     }
   }
 
+  // Find a mip level that's smaller than 64k and mark it as the start of
+  // the mip tail. There is no point in splitting up mips even further.
+  m_mipTail = m_mipCount;
+
+  for (uint32_t i = 0; i < m_mipCount; i++) {
+    Extent2D mipExtent = gfxComputeMipExtent(m_extent, i);
+    Extent2D blockCount = (mipExtent + m_formatInfo.blockExtent - 1) >> m_formatInfo.blockExtentLog2;
+
+    uint32_t mipSize = m_formatInfo.planes[0].elementSize * blockCount.at<0>() * blockCount.at<1>();
+
+    if (mipSize < (1u << 16)) {
+      m_mipTail = std::min(m_mipTail, i);
+      m_mipTailSize += mipSize;
+    }
+  }
+
   // Generate inline blob for the texture
   GfxTextureDesc textureDesc;
   textureDesc.type = GfxImageType::e2D;
@@ -166,7 +182,7 @@ bool Texture::process() {
   textureDesc.extent = Extent3D(m_images[0].w, m_images[0].h, 1);
   textureDesc.mips = m_mipCount;
   textureDesc.layers = m_arrayLayers;
-  textureDesc.mipTailStart = m_mipCount;
+  textureDesc.mipTailStart = m_mipTail;
   textureDesc.flags = 0;
 
   if (m_args.enableCube)
@@ -192,16 +208,35 @@ IoArchiveFileDesc Texture::getFileDesc() {
 
   // Order subresources in such a way that mip levels
   // of a single array layer are kept together.
-  desc.subFiles.reserve(m_arrayLayers * m_mipCount);
+  desc.subFiles.reserve(m_arrayLayers * std::min(m_mipCount, m_mipTail + 1));
+  m_mipTailData.resize(m_mipTailSize * m_arrayLayers);
 
   for (uint32_t i = 0; i < m_arrayLayers; i++) {
-    for (uint32_t j = 0; j < m_mipCount; j++) {
+    for (uint32_t j = 0; j < m_mipTail; j++) {
       auto& image = m_images[i + m_arrayLayers * j];
 
       auto& subFile = desc.subFiles.emplace_back();
       subFile.dataSource.memory = image.encodedData.data();
       subFile.dataSource.size = image.encodedData.size();
-      subFile.identifier = FourCC();
+      subFile.identifier = FourCC(strcat(std::setw(3), std::setfill('0'), std::hex, i, j));
+      subFile.compression = IoArchiveCompression::eGDeflate;
+    }
+
+    if (m_mipTail < m_mipCount) {
+      size_t offset = 0;
+
+      for (uint32_t j = m_mipTail; j < m_mipCount; j++) {
+        auto& image = m_images[i + m_arrayLayers * j];
+
+        std::memcpy(&m_mipTailData[m_mipTailSize * i + offset],
+          image.encodedData.data(), image.encodedData.size());
+        offset += image.encodedData.size();
+      }
+
+      auto& subFile = desc.subFiles.emplace_back();
+      subFile.dataSource.memory = &m_mipTailData[m_mipTailSize * i];
+      subFile.dataSource.size = m_mipTailSize;
+      subFile.identifier = FourCC(strcat(std::setw(3), std::setfill('0'), std::hex, i, 'T'));
       subFile.compression = IoArchiveCompression::eGDeflate;
     }
   }

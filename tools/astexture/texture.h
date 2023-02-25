@@ -121,6 +121,7 @@ private:
 
   std::vector<TextureImage> m_images;
   std::vector<char> m_inlineBlob;
+  std::vector<char> m_mipTailData;
 
   GfxFormat     m_format      = GfxFormat::eUnknown;
   GfxFormatInfo m_formatInfo  = GfxFormatInfo();
@@ -128,6 +129,8 @@ private:
 
   uint32_t      m_arrayLayers = 0;
   uint32_t      m_mipCount    = 0;
+  uint32_t      m_mipTail     = 0;
+  uint32_t      m_mipTailSize = 0;
 
   bool readImage(
     const std::filesystem::path&        path,

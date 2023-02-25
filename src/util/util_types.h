@@ -719,6 +719,11 @@ struct FourCC {
     c[3] = c3;
   }
 
+  explicit FourCC(const std::string& str) {
+    for (uint32_t i = 0; i < 4; i++)
+      c[i] = i < str.size() ? str[i] : ' ';
+  }
+
   char c[4];
 
   bool operator == (const FourCC&) const = default;
