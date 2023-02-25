@@ -13,10 +13,24 @@ GfxVulkanGDeflatePipeline::GfxVulkanGDeflatePipeline(
         GfxVulkanDevice&              device)
 : m_device(device) {
   auto& vk = m_device.vk();
-  auto& vk13 = device.getVkProperties().vk13;
+  auto& properties = device.getVkProperties();
+  auto& features = device.getVkFeatures();
+
+  VkSubgroupFeatureFlags subgroupOps =
+    VK_SUBGROUP_FEATURE_BASIC_BIT |
+    VK_SUBGROUP_FEATURE_VOTE_BIT |
+    VK_SUBGROUP_FEATURE_ARITHMETIC_BIT |
+    VK_SUBGROUP_FEATURE_BALLOT_BIT |
+    VK_SUBGROUP_FEATURE_SHUFFLE_BIT;
+
+  if (!features.core.features.shaderInt64 || !features.vk12.storageBuffer8BitAccess
+   || (properties.vk11.subgroupSupportedOperations & subgroupOps) != subgroupOps) {
+    Log::warn("Vulkan: Disabling GDeflate support, required features not supported.");
+    return;
+  }
 
   // TODO make the shader work with smaller subgroups
-  if (vk13.minSubgroupSize > 32 && vk13.maxSubgroupSize < 32) {
+  if (properties.vk13.minSubgroupSize > 32 || properties.vk13.maxSubgroupSize < 32) {
     Log::warn("Vulkan: Disabling GDeflate support, cannot enforce subgroup size.");
     return;
   }

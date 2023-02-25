@@ -190,7 +190,7 @@ private:
     bool required;
   };
 
-  std::array<Feature, 74> m_features = {{
+  std::array<Feature, 75> m_features = {{
     { &core.features.depthBiasClamp,                                        true  },
     { &core.features.depthBounds,                                           false },
     { &core.features.drawIndirectFirstInstance,                             true  },
@@ -244,6 +244,7 @@ private:
     { &vk12.shaderStorageTexelBufferArrayNonUniformIndexing,                false },
     { &vk12.shaderUniformTexelBufferArrayDynamicIndexing,                   true  },
     { &vk12.shaderUniformTexelBufferArrayNonUniformIndexing,                false },
+    { &vk12.storageBuffer8BitAccess,                                        false },
     { &vk12.subgroupBroadcastDynamicId,                                     true  },
     { &vk12.timelineSemaphore,                                              true  },
     { &vk12.uniformBufferStandardLayout,                                    true  },
