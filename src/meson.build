@@ -9,6 +9,7 @@ as_files = files([
   'gfx/gfx_shader.cpp',
   'gfx/gfx_spirv.cpp',
   'gfx/gfx_submission.cpp',
+  'gfx/gfx_transfer.cpp',
 
   'gfx/debug/gfx_debug_device.cpp',
 
