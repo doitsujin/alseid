@@ -14,14 +14,14 @@ enum class GfxMemoryType : uint32_t {
   /** Video memory. Preferred for all resources that are not mapped
    *  into CPU address space and are frequently used by the GPU. */
   eVideoMemory  = (1u << 0),
-  /** System memory. Preferred for resources that are mapped into CPU
-   *  address space and are only used for copies, but also used as a
-   *  fallback when exceeding the allocator's video memory budget. */
-  eSystemMemory = (1u << 1),
   /** BAR memory. Preferred for resources that are mapped into the
    *  CPU address space and are used as shader resources. Resources
    *  that are not CPU-mapped cannot be allocated on this type. */
-  eBarMemory    = (1u << 2),
+  eBarMemory    = (1u << 1),
+  /** System memory. Preferred for resources that are mapped into CPU
+   *  address space and are only used for copies, but also used as a
+   *  fallback when exceeding the allocator's video memory budget. */
+  eSystemMemory = (1u << 2),
   /** Convenience value to allow all memory types compatible with
    *  the resource's CPU usage flags. */
   eAny          = eVideoMemory | eSystemMemory | eBarMemory,
