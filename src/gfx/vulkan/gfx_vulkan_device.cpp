@@ -123,6 +123,7 @@ GfxDeviceFeatures GfxVulkanDevice::getFeatures() const {
   result.dualSourceBlending = m_features.core.features.dualSrcBlend;
   result.fastLinkGraphicsPipelines = m_features.extGraphicsPipelineLibrary.graphicsPipelineLibrary;
   result.fragmentShaderStencilExport = m_extensions.extShaderStencilExport;
+  result.gdeflateDecompression = m_gdeflatePipeline->getPipeline() != VK_NULL_HANDLE;
 
   result.rayTracing =
     m_features.khrRayQuery.rayQuery &&

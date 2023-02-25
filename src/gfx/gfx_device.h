@@ -35,6 +35,9 @@ struct GfxDeviceFeatures {
   /** Indicates whether the fragment shader can export
    *  a per-pixel stencil reference. */
   uint32_t fragmentShaderStencilExport : 1;
+  /** Indicates support for decoding gdeflate-encoded buffers
+   *  directly on the GPU. */
+  uint32_t gdeflateDecompression : 1;
   /** Indicates support for ray tracing using ray queries. */
   uint32_t rayTracing : 1;
   /** Indicates support for 16-bit float
