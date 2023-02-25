@@ -230,7 +230,7 @@ uint32_t GfxVulkanPresenter::pickImageCount(
   uint32_t count = caps.minImageCount + 1;
 
   if (caps.maxImageCount)
-    count = std::max(count, caps.maxImageCount);
+    count = std::min(count, caps.maxImageCount);
 
   return count;
 }
