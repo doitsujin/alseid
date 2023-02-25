@@ -30,7 +30,8 @@ GfxVulkanGDeflatePipeline::GfxVulkanGDeflatePipeline(
   }
 
   // TODO make the shader work with smaller subgroups
-  if (properties.vk13.minSubgroupSize > 32 || properties.vk13.maxSubgroupSize < 32) {
+  if (properties.vk13.minSubgroupSize > 32 || properties.vk13.maxSubgroupSize < 32
+   || !(properties.vk13.requiredSubgroupSizeStages & VK_SHADER_STAGE_COMPUTE_BIT)) {
     Log::warn("Vulkan: Disabling GDeflate support, cannot enforce subgroup size.");
     return;
   }
