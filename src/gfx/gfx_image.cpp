@@ -97,9 +97,14 @@ bool GfxTextureDesc::deserialize(
   extent = Extent3D(1, 1, 1);
 
   for (uint32_t i = 0; i < gfxGetImageDimensions(type); i++) {
-    if (!reader.readAs<uint16_t>(extent[i]))
+    uint32_t raw;
+
+    if (!reader.readAs<uint16_t>(raw))
       return false;
+
+    extent.set(i, raw);
   }
+
   if (!reader.readAs<uint8_t>(mips)
    || !reader.readAs<uint8_t>(mipTailStart)
    || !reader.readAs<uint16_t>(layers)

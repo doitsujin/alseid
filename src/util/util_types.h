@@ -9,6 +9,49 @@
 
 namespace as {
 
+template<typename T, size_t N>
+class Vector;
+
+
+/**
+ * \brief Helpers to scalarize vector constructor arguments
+ *
+ * Vector arguments need to be broken down into scalars so that they
+ * can be trivially used to initialize the underlying array. These
+ * functions will create a tuple of appropriately typed scalars.
+ */
+template<typename T, typename T_, std::enable_if_t<std::is_convertible_v<T_, T>, bool> = true>
+auto makeVectorTuple(T_ arg) {
+  return std::make_tuple(T(arg));
+}
+
+template<typename T, typename T_, size_t N_, size_t... Indices>
+auto makeVectorTuple(std::integer_sequence<size_t, Indices...>, const Vector<T_, N_>& arg) {
+  return std::make_tuple(T(arg.template at<Indices>())...);
+}
+
+template<typename T, typename T_, size_t N_>
+auto makeVectorTuple(const Vector<T_, N_>& arg) {
+  return makeVectorTuple<T>(std::make_index_sequence<N_>(), arg);
+}
+
+
+/**
+ * \brief Computes vector type alignment
+ *
+ * Ensures that vectors with a power-of-two component
+ * count are strongly aligned, i.e. the alignment will
+ * be the same as the vector's size.
+ * \tparam T Scalar type
+ * \tparam N Component count
+ * \returns Vector type alignment
+ */
+template<typename T, size_t N>
+constexpr size_t getVectorAlign() {
+  return sizeof(T) * (N & -N);
+}
+
+
 /**
  * \brief Vector
  *
@@ -19,7 +62,7 @@ namespace as {
  * \tparam N Component count
  */
 template<typename T, size_t N>
-class Vector {
+class alignas(getVectorAlign<T, N>()) Vector {
 
 public:
 
@@ -34,22 +77,20 @@ public:
    *
    * Arguments can be scalars of the given type, as well
    * as vectors, provided that the number of components
-   * matches \c N.
+   * is at least \c N.
    * \param [in] args Arguments
    */
   template<typename... Tx>
-  explicit Vector(const Tx&... args) {
-    init(std::integral_constant<size_t, 0>(), args...);
-  }
+  explicit Vector(const Tx&... args)
+  : Vector(std::tuple_cat(makeVectorTuple<T>(args)...)) { }
 
   /**
-   * \brief Initializes vector from a larger vector
-   * \param [in] vector Vector to initialize 
+   * \brief Initializes vector from scalar tuple
+   * \param [in] args Tuple of scalars
    */
-  template<size_t M, std::enable_if_t<(M > N), bool> = true>
-  explicit Vector(const Vector<T, M>& vector) {
-    insert<0>(std::make_integer_sequence<size_t, N>(), vector);
-  }
+  template<typename... Tx>
+  explicit Vector(const std::tuple<Tx...>& args)
+  : Vector(std::make_index_sequence<N>(), args) { }
 
   /**
    * \brief Component-wise addition
@@ -368,17 +409,7 @@ public:
    * \param [in] idx Element index
    * \returns Reference to given element
    */
-  const T& operator [] (uint32_t idx) const {
-    return m_data[idx];
-  }
-
-  /**
-   * \brief Retrieves given vector element for writing
-   *
-   * \param [in] idx Element index
-   * \returns Reference to given element
-   */
-  T& operator [] (uint32_t idx) {
+  T operator [] (uint32_t idx) const {
     return m_data[idx];
   }
 
@@ -388,19 +419,8 @@ public:
    * \tparam I Element index
    * \returns Reference to given element
    */
-  template<size_t I, std::enable_if_t<I < N, bool> = true>
-  const T& at() const {
-    return m_data[I];
-  }
-
-  /**
-   * \brief Retrieves element with compile-time index for writing
-   *
-   * \tparam I Element index
-   * \returns Reference to given element
-   */
-  template<size_t I, std::enable_if_t<I < N, bool> = true>
-  T& at() {
+  template<size_t I, std::enable_if_t<(I < N), bool> = true>
+  T at() const {
     return m_data[I];
   }
 
@@ -418,29 +438,24 @@ public:
     return Vector<T, sizeof...(Indices)>(at<Indices>()...);
   }
 
+  /**
+   * \brief Sets element
+   *
+   * \param [in] idx Element index
+   * \param [in] value New value
+   */
+  void set(uint32_t idx, T value) {
+    m_data[idx] = value;
+  }
+
   bool operator == (const Vector& vector) const = default;
   bool operator != (const Vector& vector) const = default;
 
 private:
 
-  template<size_t I, typename... Tx>
-  void init(std::integral_constant<size_t, I>, T arg, const Tx&... args) {
-    at<I>() = arg;
-    init(std::integral_constant<size_t, I + 1>(), args...);
-  }
-
-  template<size_t I, typename T_, size_t N_, typename... Tx>
-  void init(std::integral_constant<size_t, I>, const Vector<T_, N_>& arg, const Tx&... args) {
-    insert<I>(std::make_index_sequence<N_>(), arg);
-    init(std::integral_constant<size_t, I + N_>(), args...);
-  }
-
-  void init(std::integral_constant<size_t, N>) { }
-
-  template<size_t I, typename T_, size_t N_, size_t... Indices>
-  void insert(std::integer_sequence<size_t, Indices...>, const Vector<T_, N_>& arg) {
-    std::tie(at<I + Indices>()...) = std::make_tuple(arg.template at<Indices>()...);
-  }
+  template<size_t... Indices, typename... Tx>
+  explicit Vector(std::integer_sequence<size_t, Indices...>, const std::tuple<Tx...>& args)
+  : m_data { T(std::get<Indices>(args))... } { }
 
   T m_data[N];
 
@@ -467,21 +482,32 @@ public:
   static constexpr size_t Cols = M;
 
   using ScalarType = T;
-  using VectorType = Vector<T, N>;
+  using VectorType = Vector<T, Rows>;
 
   Matrix() = default;
 
   /**
    * \brief Initializes matrix
    *
-   * Initializes matrix with the given
-   * vector arguments.
+   * Initializes matrix with the given vector arguments.
    * \param [in] args Arguments
    */
-  template<typename... Tx>
-  explicit Matrix(const Tx&... args) {
-    init(std::integral_constant<size_t, 0>(), args...);
-  }
+  template<typename... Tx, std::enable_if_t<sizeof...(Tx) == Cols, bool> = true>
+  explicit Matrix(const Tx&... args)
+  : m_cols { args... } { }
+
+  /**
+   * \brief Initializes matrix from another one
+   *
+   * The other matrix type must use a compatible scalar
+   * type and be larger or the same size as the matrix
+   * being initialized.
+   * \param [in] matrix The other matrix
+   */
+  template<typename T_, size_t Rows_, size_t Cols_, std::enable_if_t<
+    (std::is_convertible_v<T_, T> && Rows_ >= Rows && Cols_ >= Cols), bool> = true>
+  explicit Matrix(const Matrix<T_, Rows_, Cols_>& matrix)
+  : Matrix(std::make_index_sequence<Cols>(), matrix) { }
 
   /**
    * \brief Matrix scaling
@@ -490,10 +516,8 @@ public:
    * \returns Reference to self
    */
   Matrix& operator *= (T factor) {
-    for (size_t c = 0; c < Cols; c++) {
-      for (size_t r = 0; r < Rows; r++)
-        m_cols[c][r] *= factor;
-    }
+    for (size_t c = 0; c < Cols; c++)
+      m_cols[c] *= factor;
 
     return *this;
   }
@@ -506,7 +530,6 @@ public:
    * \param [in] matrix Source operand
    * \returns Reference to self
    */
-  template<std::enable_if_t<Rows == Cols, bool> = true>
   Matrix& operator *= (const Matrix& matrix) {
     return (*this = ((*this) * matrix));
   }
@@ -520,10 +543,8 @@ public:
   Matrix operator * (T factor) {
     Matrix result;
 
-    for (size_t c = 0; c < Cols; c++) {
-      for (size_t r = 0; r < Rows; r++)
-        result.m_cols[c][r] = m_cols[c][r] * factor;
-    }
+    for (size_t c = 0; c < Cols; c++)
+      result.m_cols[c] = m_cols[c] * factor;
 
     return result;
   }
@@ -534,19 +555,17 @@ public:
    * \param [in] matrix Source operand
    * \returns Resulting matrix
    */
-  template<size_t M_>
-  Matrix<T, N, M_> operator * (const Matrix<T, M, M_>& matrix) const {
-    Matrix<T, N, M_> result;
+  template<size_t Cols_>
+  Matrix<T, Rows, Cols_> operator * (const Matrix<T, Cols, Cols_>& matrix) const {
+    Matrix<T, Rows, Cols_> result;
 
-    for (size_t c = 0; c < M_; c++) {
-      for (size_t r = 0; r < N; r++) {
-        T sum = T(0);
+    for (size_t c = 0; c < Cols_; c++) {
+      VectorType sum = m_cols[0] * matrix.m_cols[c][0];
 
-        for (size_t v = 0; v < Cols; v++)
-          sum += m_cols[v][r] * matrix.m_cols[c][v];
+      for (size_t v = 1; v < Cols; v++)
+        sum += m_cols[v] * matrix.m_cols[c][v];
 
-        result.m_cols[c][r] = sum;
-      }
+      result.m_cols[c] = sum;
     }
 
     return result;
@@ -558,7 +577,7 @@ public:
    * \param [in] idx Column index
    * \returns Reference to given column vector
    */
-  const Vector<T, N>& operator [] (uint32_t idx) const {
+  const VectorType& col(uint32_t idx) const {
     return m_cols[idx];
   }
 
@@ -568,8 +587,18 @@ public:
    * \param [in] idx Column index
    * \returns Reference to given column vector
    */
-  Vector<T, N>& operator [] (uint32_t idx) {
+  VectorType& col(uint32_t idx) {
     return m_cols[idx];
+  }
+
+  /**
+   * \brief Retrieves row vector
+   *
+   * \param [in] idx Row index
+   * \returns Row vector
+   */
+  Vector<T, Cols>& row(uint32_t idx) {
+    return getRow(std::make_index_sequence<Cols>(), idx);
   }
 
   /**
@@ -579,72 +608,105 @@ public:
    * \tparam I Column index
    * \returns Reference to given column vector
    */
-  template<size_t I, std::enable_if_t<I < Cols, bool> = true>
-  const VectorType& at() const {
-    return m_cols[I];
+  template<size_t Col, std::enable_if_t<(Col < Cols), bool> = true>
+  const VectorType& col() const {
+    return m_cols[Col];
   }
 
   /**
    * \brief Retrieves column with compile-time index for writing
    *
-   * \tparam I Column index
+   * \tparam Col Column index
    * \returns Reference to given column vector
    */
-  template<size_t I, std::enable_if_t<I < Cols, bool> = true>
-  VectorType& at() {
-    return m_cols[I];
+  template<size_t Col, std::enable_if_t<(Col < Cols), bool> = true>
+  VectorType& col() {
+    return m_cols[Col];
+  }
+
+  /**
+   * \brief Retrieves row vector with compile-time index
+   *
+   * \tparam Row Row index
+   * \returns Row vector
+   */
+  template<size_t Row, std::enable_if_t<(Row < Rows), bool> = true>
+  Vector<T, Cols> row() const {
+    return getRow<Row>(std::make_index_sequence<Cols>());
+  }
+
+  /**
+   * \brief Retrieves element
+   *
+   * \param [in] index Pair of row and column indices, row first
+   * \returns Reference to the given element
+   */
+  T operator [] (std::pair<uint32_t, uint32_t> index) const {
+    return m_cols[index.first][index.second];
   }
 
   /**
    * \brief Retrieves element with compile-time index
    *
-   * \tparam J Row index
-   * \tparam I Column index
-   * \returns Reference to given element
+   * \tparam Row Row index
+   * \tparam Col Column index
+   * \returns Requested element
    */
-  template<size_t J, size_t I, std::enable_if_t<J < Rows && I < Cols, bool> = true>
-  const T& at() const {
-    return m_cols[I].template at<J>();
-  }
-
-  /**
-   * \brief Retrieves element with compile-time index for writing
-   *
-   * \tparam J Row index
-   * \tparam I Column index
-   * \returns Reference to given element
-   */
-  template<size_t J, size_t I, std::enable_if_t<J < Rows && I < Cols, bool> = true>
-  T& at() {
-    return m_cols[I].template at<J>();
+  template<size_t Row, size_t Col, std::enable_if_t<(Row < Rows && Col < Cols), bool> = true>
+  T at() const {
+    return m_cols[Col].template at<Row>();
   }
 
   bool operator == (const Matrix& matrix) const = default;
   bool operator != (const Matrix& matrix) const = default;
 
   /**
+   * \brief Transposes the matrix
+   *
+   * Flips rows and columns.
+   * \returns Transposed matrix
+   */
+  Matrix<T, Cols, Rows> transpose() const {
+    return transposeMatrix(std::make_index_sequence<Cols>(), std::make_index_sequence<Rows>());
+  }
+
+  /**
    * \brief Creates identity matrix
    * \returns Matrix with diagonal set to 1
    */
   static Matrix identity() {
-    Matrix result;
-
-    for (size_t c = 0; c < Cols; c++) {
-      for (size_t r = 0; r < Rows; r++)
-        result[c][r] = c == r ? T(1) : T(0);
-    }
-
-    return result;
+    return makeIdentityMatrix(std::make_index_sequence<Cols>(), std::make_index_sequence<Rows>());
   }
 
 private:
 
-  void init(std::integral_constant<size_t, M>) { }
+  template<typename T_, size_t Rows_, size_t Cols_, size_t... Indices>
+  explicit Matrix(std::integer_sequence<size_t, Indices...>, const Matrix<T_, Rows_, Cols_>& matrix)
+  : Matrix(VectorType(matrix.template col<Indices>())...) { }
 
-  template<size_t I, typename... Tx>
-  void init(std::integral_constant<size_t, I>, Vector<T, N> arg, const Tx&... args) {
-    at<I>() = arg;
-    init(std::integral_constant<size_t, I + 1>(), args...);
+  template<size_t Row, size_t... ColIdx>
+  Vector<T, Cols> getRow(std::integer_sequence<size_t, ColIdx...>) const {
+    return Vector<T, Cols>(at<Row, ColIdx>()...);
+  }
+
+  template<size_t... ColIdx>
+  Vector<T, Cols> getRow(std::integer_sequence<size_t, ColIdx...>, uint32_t idx) const {
+    return Vector<T, Cols>((col<ColIdx>()[idx])...);
+  }
+
+  template<size_t... ColIdx, size_t... RowIdx>
+  Matrix<T, Cols, Rows> transposeMatrix(std::integer_sequence<size_t, ColIdx...> cols, std::integer_sequence<size_t, RowIdx...> rows) const {
+    return Matrix<T, Cols, Rows>(getRow<RowIdx>(cols)...);
+  }
+
+  template<size_t Col, size_t... RowIdx>
+  static VectorType makeIdentityColumn(std::integer_sequence<size_t, RowIdx...>) {
+    return VectorType((Col == RowIdx ? T(1) : T(0))...);
+  }
+
+  template<size_t... ColIdx, size_t... RowIdx>
+  static Matrix makeIdentityMatrix(std::integer_sequence<size_t, ColIdx...>, std::integer_sequence<size_t, RowIdx...> rows) {
+    return Matrix(makeIdentityColumn<ColIdx>(rows)...);
   }
 
   VectorType m_cols[M];
@@ -665,6 +727,9 @@ using Vector4D = Vector<float, 4>;
 using Matrix2x2 = Matrix<float, 2, 2>;
 using Matrix3x3 = Matrix<float, 3, 3>;
 using Matrix4x4 = Matrix<float, 4, 4>;
+
+using Matrix4x3 = Matrix<float, 4, 3>;
+using Matrix3x4 = Matrix<float, 3, 4>;
 
 /**
  * \brief Rectangle

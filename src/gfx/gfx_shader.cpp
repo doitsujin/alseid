@@ -63,10 +63,14 @@ bool GfxShaderDesc::deserialize(
 
   // Decode workgroup size if necessary for the given stage
   if (gfxShaderStageHasWorkgroupSize(stage)) {
-    if (!stream.readAs<uint16_t>(workgroupSize.at<0>())
-     || !stream.readAs<uint16_t>(workgroupSize.at<1>())
-     || !stream.readAs<uint16_t>(workgroupSize.at<2>()))
+    uint32_t x, y, z;
+
+    if (!stream.readAs<uint16_t>(x)
+     || !stream.readAs<uint16_t>(y)
+     || !stream.readAs<uint16_t>(z))
       return false;
+
+    workgroupSize = Extent3D(x, y, z);
   }
 
   // Decode binding infos
