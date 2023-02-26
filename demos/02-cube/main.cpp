@@ -270,12 +270,13 @@ public:
     float zNear = 0.001f;
 
     float th = 3.141592654f / 6.0f;
+    SinCos sc = approx_sincos(th);
 
     Matrix4x4 cameraRotation(
-      Vector4D(1.0f,          0.0f,          0.0f, 0.0f),
-      Vector4D(0.0f, std::cos( th), std::sin( th), 0.0f),
-      Vector4D(0.0f, std::sin(-th), std::cos( th), 0.0f),
-      Vector4D(0.0f,          0.0f,          0.0f, 1.0f));
+      Vector4D(1.0f,    0.0f,   0.0f, 0.0f),
+      Vector4D(0.0f,  sc.cos, sc.sin, 0.0f),
+      Vector4D(0.0f, -sc.sin, sc.cos, 0.0f),
+      Vector4D(0.0f,    0.0f,   0.0f, 1.0f));
 
     Matrix4x4 cameraTranslation(
       Vector4D( 1.0f,  0.0f,  0.0f,  0.0f),
@@ -296,12 +297,13 @@ public:
     // Compute model matrix. We'll allocate UBO data inside
     // the render functions for demonstration purposes.
     th = elapsed * 3.141592654f / 2.0f;
+    sc = approx_sincos(th);
 
     m_modelMatrix = Matrix4x4(
-      Vector4D(std::cos( th), 0.0f, std::sin( th), 0.0f),
-      Vector4D(         0.0f, 1.0f,          0.0f, 0.0f),
-      Vector4D(std::sin(-th), 0.0f, std::cos( th), 0.0f),
-      Vector4D(         0.0f, 0.0f,          0.0f, 1.0f));
+      Vector4D( sc.cos, 0.0f, sc.sin, 0.0f),
+      Vector4D( 0.0f,   1.0f,   0.0f, 0.0f),
+      Vector4D(-sc.sin, 0.0f, sc.cos, 0.0f),
+      Vector4D( 0.0f,   0.0f,   0.0f, 1.0f));
   }
 
   void renderDepthPass() {

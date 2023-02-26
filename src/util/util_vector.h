@@ -509,142 +509,36 @@ private:
 };
 
 
+template<typename T, size_t N, typename Fn, size_t... Idx>
+auto apply(std::integer_sequence<size_t, Idx...>, const Vector<T, N>& v, const Fn& fn) {
+  return Vector<decltype(fn.operator () (T())), N>(fn(v.template at<Idx>())...);
+}
+
+
+/**
+ * \brief Applies a function to all vector elements
+ *
+ * \param [in] vector Input vector
+ * \param [in] fn Function
+ * \returns Vector of transformed elements
+ */
+template<typename T, size_t N, typename Fn>
+auto apply(Vector<T, N> v, const Fn& fn) {
+  return apply(std::make_index_sequence<N>(), v, fn);
+}
+
+
+/**
+ * \brief Computes absolute value of vector
+ * \returns Component-wise absolute value
+ */
+template<typename T, size_t N>
+Vector<T, N> abs(Vector<T, N> v) {
+  return apply(v, [] (T x) { return T(std::abs(x)); });
+}
+
+
 #ifdef AS_HAS_X86_INTRINSICS
-
-/**
- * \brief Computes fast multiply-add
- *
- * \param [in] a First factor
- * \param [in] b Second factor
- * \param [in] c Addend
- * \returns Resulting vector
- */
-inline __m128 fastFmadd(__m128 a, __m128 b, __m128 c) {
-  #ifdef __FMA__
-  return _mm_fmadd_ps(a, b, c);
-  #else
-  return _mm_add_ps(_mm_mul_ps(a, b), c);
-  #endif
-}
-
-
-/**
- * \brief Computes fast negative multiply-add
- *
- * \param [in] a First factor
- * \param [in] b Second factor
- * \param [in] c Addend
- * \returns Resulting vector
- */
-inline __m128 fastFnmadd(__m128 a, __m128 b, __m128 c) {
-  #ifdef __FMA__
-  return _mm_fnmadd_ps(a, b, c);
-  #else
-  return _mm_sub_ps(c, _mm_mul_ps(a, b));
-  #endif
-}
-
-
-/**
- * \brief Computes fast multiply-subtract
- *
- * \param [in] a First factor
- * \param [in] b Second factor
- * \param [in] c Vector to subtract
- * \returns Resulting vector
- */
-inline __m128 fastFmsub(__m128 a, __m128 b, __m128 c) {
-  #ifdef __FMA__
-  return _mm_fmsub_ps(a, b, c);
-  #else
-  return _mm_sub_ps(_mm_mul_ps(a, b), c);
-  #endif
-}
-
-
-/**
- * \brief Computes fast negative multiply-subtract
- *
- * \param [in] a First factor
- * \param [in] b Second factor
- * \param [in] c Vector to subtract
- * \returns Resulting vector
- */
-inline __m128 fastFnmsub(__m128 a, __m128 b, __m128 c) {
-  #ifdef __FMA__
-  return _mm_fnmsub_ps(a, b, c);
-  #else
-  return _mm_sub_ps(_mm_sub_ps(_mm_setzero_ps(), _mm_mul_ps(a, b)), c);
-  #endif
-}
-
-
-/**
- * \brief Computes fast approximate inverse square root
- *
- * \param [in] a Vector
- * \returns Resulting vector
- */
-inline __m128 fastRsqrt(__m128 a) {
-  __m128 half = _mm_set1_ps(0.5f);
-  __m128 three = _mm_set1_ps(3.0f);
-  __m128 x = _mm_rsqrt_ps(a);
-  __m128 ax = _mm_mul_ps(a, x);
-
-  return _mm_mul_ps(
-    _mm_mul_ps(half, x),
-    fastFnmsub(x, ax, three));
-}
-
-
-/**
- * \brief Computes fast approximate square root
- *
- * \param [in] a Vector
- * \returns Resulting vector
- */
-inline __m128 fastSqrt(__m128 a) {
-  __m128 half = _mm_set1_ps(0.5f);
-  __m128 three = _mm_set1_ps(3.0f);
-  __m128 x = _mm_rsqrt_ps(a);
-  __m128 ax = _mm_mul_ps(a, x);
-
-  return _mm_mul_ps(
-    _mm_mul_ps(half, ax),
-    fastFnmsub(x, ax, three));
-}
-
-
-/**
- * \brief Computes fast approximate reciprocal
- *
- * \param [in] a Vector
- * \returns Resulting vector
- */
-inline __m128 fastRcp(__m128 a) {
-  __m128 two = _mm_set1_ps(2.0f);
-  __m128 x = _mm_rcp_ps(a);
-
-  return _mm_mul_ps(x,
-    fastFnmsub(a, x, two));
-}
-
-
-/**
- * \brief Computes fast approximate division
- *
- * \param [in] a Divisor
- * \param [in] b Divident
- * \returns Resulting vector
- */
-inline __m128 fastDiv(__m128 a, __m128 b) {
-  __m128 two = _mm_set1_ps(2.0f);
-  __m128 x = _mm_rcp_ps(b);
-
-  return _mm_mul_ps(_mm_mul_ps(a, x),
-    fastFnmsub(b, x, two));
-}
-
 
 /**
  * \brief Four-component float vector
@@ -690,7 +584,7 @@ public:
   }
 
   Vector& operator /= (Vector vector) {
-    m_data = fastDiv(m_data, vector.m_data);
+    m_data = _mm_div_ps(m_data, vector.m_data);
     return *this;
   }
 
@@ -710,7 +604,7 @@ public:
   }
 
   Vector& operator /= (ScalarType scalar) {
-    m_data = fastDiv(m_data, _mm_set1_ps(scalar));
+    m_data = _mm_div_ps(m_data, _mm_set1_ps(scalar));
     return *this;
   }
 
@@ -727,7 +621,7 @@ public:
   }
 
   Vector operator / (Vector vector) const {
-    return Vector(fastDiv(m_data, vector.m_data));
+    return Vector(_mm_div_ps(m_data, vector.m_data));
   }
 
   Vector operator + (ScalarType scalar) const {
@@ -743,11 +637,11 @@ public:
   }
 
   Vector operator / (ScalarType scalar) const {
-    return Vector(fastDiv(m_data, _mm_set1_ps(scalar)));
+    return Vector(_mm_div_ps(m_data, _mm_set1_ps(scalar)));
   }
 
   Vector operator - () const {
-    return Vector(_mm_sub_ps(_mm_setzero_ps(), m_data));
+    return Vector(neg_packed(m_data));
   }
 
   ScalarType operator [] (uint32_t idx) const {
@@ -808,35 +702,48 @@ private:
 
 
 inline Vector<float, 4> fmadd(Vector<float, 4> a, Vector<float, 4> b, Vector<float, 4> c) {
-  return Vector<float, 4>(fastFmadd(__m128(a), __m128(b), __m128(c)));
+  return Vector<float, 4>(fmadd_packed(__m128(a), __m128(b), __m128(c)));
 }
 
 inline Vector<float, 4> fnmadd(Vector<float, 4> a, Vector<float, 4> b, Vector<float, 4> c) {
-  return Vector<float, 4>(fastFnmadd(__m128(a), __m128(b), __m128(c)));
+  return Vector<float, 4>(fnmadd_packed(__m128(a), __m128(b), __m128(c)));
 }
 
 inline Vector<float, 4> fmsub(Vector<float, 4> a, Vector<float, 4> b, Vector<float, 4> c) {
-  return Vector<float, 4>(fastFmsub(__m128(a), __m128(b), __m128(c)));
+  return Vector<float, 4>(fmsub_packed(__m128(a), __m128(b), __m128(c)));
 }
 
 inline Vector<float, 4> fnmsub(Vector<float, 4> a, Vector<float, 4> b, Vector<float, 4> c) {
-  return Vector<float, 4>(fastFnmsub(__m128(a), __m128(b), __m128(c)));
+  return Vector<float, 4>(fnmsub_packed(__m128(a), __m128(b), __m128(c)));
 }
 
-inline Vector<float, 4> rcp(Vector<float, 4> a) {
-  return Vector<float, 4>(fastRcp(__m128(a)));
+inline Vector<float, 4> abs(Vector<float, 4> a) {
+  return Vector<float, 4>(abs_packed(__m128(a)));
 }
 
-inline Vector<float, 4> div(Vector<float, 4> a, Vector<float, 4> b) {
-  return Vector<float, 4>(fastDiv(__m128(a), __m128(b)));
+inline Vector<float, 4> approx_rcp(Vector<float, 4> a) {
+  return Vector<float, 4>(approx_rcp_packed(__m128(a)));
 }
 
-inline Vector<float, 4> sqrt(Vector<float, 4> a) {
-  return Vector<float, 4>(fastSqrt(__m128(a)));
+inline Vector<float, 4> approx_div(Vector<float, 4> a, Vector<float, 4> b) {
+  return Vector<float, 4>(approx_div_packed(__m128(a), __m128(b)));
 }
 
-inline Vector<float, 4> rsqrt(Vector<float, 4> a) {
-  return Vector<float, 4>(fastRsqrt(__m128(a)));
+inline Vector<float, 4> approx_sqrt(Vector<float, 4> a) {
+  return Vector<float, 4>(approx_sqrt_packed(__m128(a)));
+}
+
+inline Vector<float, 4> approx_rsqrt(Vector<float, 4> a) {
+  return Vector<float, 4>(approx_rsqrt_packed(__m128(a)));
+}
+
+inline Vector<float, 4> approx_sin(Vector<float, 4> a) {
+  return Vector<float, 4>(approx_sin_packed(__m128(a)));
+}
+
+inline Vector<float, 4> approx_cos(Vector<float, 4> a) {
+  return Vector<float, 4>(approx_sin_packed(
+    _mm_add_ps(__m128(a), _mm_set1_ps(float(pi / 2)))));
 }
 
 #endif

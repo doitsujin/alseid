@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <cmath>
 
 #ifndef _MSC_VER
@@ -20,6 +21,8 @@
 #endif
 
 namespace as {
+
+constexpr double pi = 3.14159265359;
 
 /**
  * \brief Aligns integer offset
@@ -47,12 +50,16 @@ inline uint32_t popcntStep(uint32_t n, uint32_t mask, uint32_t shift) {
  * \returns Number of bits set to 1
  */
 inline uint32_t popcnt(uint32_t n) {
+#ifdef __POPCNT__
+  return _mm_popcnt_u32(n);
+#else
   n = popcntStep(n, 0x55555555, 1);
   n = popcntStep(n, 0x33333333, 2);
   n = popcntStep(n, 0x0F0F0F0F, 4);
   n = popcntStep(n, 0x00FF00FF, 8);
   n = popcntStep(n, 0x0000FFFF, 16);
   return n;
+#endif
 }
 
 
@@ -270,44 +277,194 @@ T fnmsub(T a, T b, T c) {
 
 
 /**
+ * \brief Computes absolute value
+ * \returns |a|
+ */
+template<typename T>
+T abs(T a) {
+  return std::abs(a);
+}
+
+
+#ifdef AS_HAS_X86_INTRINSICS
+
+/**
+ * \brief Computes packed absolute value
+ * \returns |a|
+ */
+inline __m128 abs_packed(__m128 a) {
+  return _mm_and_ps(a, _mm_castsi128_ps(_mm_set1_epi32(0x7fffffff)));
+}
+
+
+/**
+ * \brief Computes packed negation
+ * \returns -a
+ */
+inline __m128 neg_packed(__m128 a) {
+  return _mm_xor_ps(a, _mm_castsi128_ps(_mm_set1_epi32(0x80000000)));
+}
+
+
+/**
+ * \brief Computes packed multiply-add
+ * \returns a + b * c
+ */
+inline __m128 fmadd_packed(__m128 a, __m128 b, __m128 c) {
+  #ifdef __FMA__
+  return _mm_fmadd_ps(a, b, c);
+  #else
+  return _mm_add_ps(_mm_mul_ps(a, b), c);
+  #endif
+}
+
+
+/**
+ * \brief Computes packed negative multiply-add
+ * \returns c - a * b
+ */
+inline __m128 fnmadd_packed(__m128 a, __m128 b, __m128 c) {
+  #ifdef __FMA__
+  return _mm_fnmadd_ps(a, b, c);
+  #else
+  return _mm_sub_ps(c, _mm_mul_ps(a, b));
+  #endif
+}
+
+
+/**
+ * \brief Computes packed multiply-subtract
+ * \returns a * b - c
+ */
+inline __m128 fmsub_packed(__m128 a, __m128 b, __m128 c) {
+  #ifdef __FMA__
+  return _mm_fmsub_ps(a, b, c);
+  #else
+  return _mm_sub_ps(_mm_mul_ps(a, b), c);
+  #endif
+}
+
+
+/**
+ * \brief Computes packed negative multiply-subtract
+ * \returns -(a * b) - c
+ */
+inline __m128 fnmsub_packed(__m128 a, __m128 b, __m128 c) {
+  #ifdef __FMA__
+  return _mm_fnmsub_ps(a, b, c);
+  #else
+  return _mm_sub_ps(_mm_sub_ps(_mm_setzero_ps(), _mm_mul_ps(a, b)), c);
+  #endif
+}
+
+
+/**
+ * \brief Computes packed approximate reciprocal
+ * \returns 1 / a (approx)
+ */
+inline __m128 approx_rcp_packed(__m128 a) {
+  __m128 two = _mm_set1_ps(2.0f);
+  __m128 x = _mm_rcp_ps(a);
+
+  return _mm_mul_ps(x, fnmadd_packed(a, x, two));
+}
+
+
+/**
+ * \brief Computes packed approximate division
+ * \returns a / b (approx)
+ */
+inline __m128 approx_div_packed(__m128 a, __m128 b) {
+  __m128 two = _mm_set1_ps(2.0f);
+  __m128 x = _mm_rcp_ps(b);
+
+  return _mm_mul_ps(_mm_mul_ps(a, x), fnmadd_packed(b, x, two));
+}
+
+
+/**
+ * \brief Computes packed approximate inverse square root
+ * \returns 1 / sqrt(a) (approx)
+ */
+inline __m128 approx_rsqrt_packed(__m128 a) {
+  __m128 half = _mm_set1_ps(0.5f);
+  __m128 three = _mm_set1_ps(3.0f);
+  __m128 x = _mm_rsqrt_ps(a);
+  __m128 ax = _mm_mul_ps(a, x);
+
+  return _mm_mul_ps(_mm_mul_ps(half, x),
+    fnmadd_packed(x, ax, three));
+}
+
+
+/**
+ * \brief Computes packed approximate square root
+ * \returns sqrt(a) (approx)
+ */
+inline __m128 approx_sqrt_packed(__m128 a) {
+  __m128 half = _mm_set1_ps(0.5f);
+  __m128 three = _mm_set1_ps(3.0f);
+  __m128 x = _mm_rsqrt_ps(a);
+  __m128 ax = _mm_mul_ps(a, x);
+
+  return _mm_mul_ps(_mm_mul_ps(half, ax),
+    fnmadd_packed(x, ax, three));
+}
+
+
+/**
+ * \brief Computes packed approximate sin
+ * \returns sin(x) (approx.)
+ */
+#ifdef __SSE4_1__
+inline __m128 approx_sin_packed(__m128 x) {
+  __m128 rcppi = _mm_set1_ps(float(1.0 / pi));
+  __m128 sgn = _mm_and_ps(x, _mm_castsi128_ps(_mm_set1_epi32(0x80000000)));
+
+  x = _mm_xor_ps(x, sgn);
+  x = _mm_mul_ps(x, rcppi);
+
+  __m128 t = _mm_round_ps(x, _MM_FROUND_TRUNC);
+  __m128i i = _mm_cvtps_epi32(t);
+
+  x = _mm_sub_ps(x, t);
+
+  sgn = _mm_xor_ps(sgn, _mm_castsi128_ps(_mm_slli_epi32(i, 31)));
+
+  __m128 r = fnmadd_packed(x, x, x);
+  __m128 p = approx_div_packed(
+    _mm_mul_ps(r, _mm_set1_ps(16.0f)),
+    fnmadd_packed(r, _mm_set1_ps(4.0f), _mm_set1_ps(5.0f)));
+
+  return _mm_xor_ps(p, sgn);
+}
+#endif
+
+#endif
+
+
+/**
  * \brief Computes approximate reciprocal
  * \returns 1 / a (approx.)
  */
-inline float rcp(float a_) {
+inline float approx_rcp(float a) {
 #ifdef AS_HAS_X86_INTRINSICS
-  __m128 two = _mm_set_ss(2.0f);
-  __m128 a = _mm_set_ss(a_);
-  __m128 x = _mm_rcp_ss(a);
-
-  #ifdef __FMA__
-  __m128 p = _mm_fnmadd_ss(a, x, two);
-  #else
-  __m128 p = _mm_sub_ss(two, _mm_mul_ss(a, x));
-  #endif
-
-  return _mm_cvtss_f32(_mm_mul_ss(x, p));
+  return _mm_cvtss_f32(approx_rcp_packed(_mm_set_ss(a)));
 #else
-  return 1.0f / a_;
+  return 1.0f / a;
 #endif
 }
 
 
-inline float div(float a_, float b_) {
+/**
+ * \brief Computes approximate quotient
+ * \returns a / b (approx.)
+ */
+inline float approx_div(float a, float b) {
 #ifdef AS_HAS_X86_INTRINSICS
-  __m128 two = _mm_set_ss(2.0f);
-  __m128 a = _mm_set_ss(a_);
-  __m128 b = _mm_set_ss(b_);
-  __m128 x = _mm_rcp_ss(b);
-
-  #ifdef __FMA__
-  __m128 p = _mm_fnmadd_ss(b, x, two);
-  #else
-  __m128 p = _mm_sub_ss(two, _mm_mul_ss(b, x));
-  #endif
-
-  return _mm_cvtss_f32(_mm_mul_ss(_mm_mul_ss(a, x), p));
+  return _mm_cvtss_f32(approx_div_packed(_mm_set_ss(a), _mm_set_ss(b)));
 #else
-  return a_ / b_;
+  return a / b;
 #endif
 }
 
@@ -317,23 +474,11 @@ inline float div(float a_, float b_) {
  * \brief Computes approximate square root
  * \returns sqrt(n) (approx.)
  */
-inline float sqrt(float n) {
+inline float approx_sqrt(float n) {
 #ifdef AS_HAS_X86_INTRINSICS
-  __m128 half = _mm_set_ss(0.5f);
-  __m128 three = _mm_set_ss(3.0f);
-
-  __m128 a = _mm_set_ss(n);
-  __m128 x = _mm_rsqrt_ss(a);
-  __m128 ax = _mm_mul_ss(a, x);
-
-  #ifdef __FMA__
-  __m128 p = _mm_fnmadd_ss(x, ax, three);
-  #else
-  __m128 p = _mm_sub_ss(three, _mm_mul_ss(x, ax));
-  #endif
-  return _mm_cvtss_f32(_mm_mul_ss(_mm_mul_ss(half, ax), p));
+  return _mm_cvtss_f32(approx_sqrt_packed(_mm_set_ss(n)));
 #else
-  return std::sqrt(n);
+  return std::sqrt(x);
 #endif
 }
 
@@ -342,24 +487,83 @@ inline float sqrt(float n) {
  * \brief Computes approximate inverse square root
  * \returns sqrt(n) (approx.)
  */
-inline float rsqrt(float n) {
+inline float approx_rsqrt(float n) {
 #ifdef AS_HAS_X86_INTRINSICS
-  __m128 half = _mm_set_ss(0.5f);
-  __m128 three = _mm_set_ss(3.0f);
-
-  __m128 a = _mm_set_ss(n);
-  __m128 x = _mm_rsqrt_ss(a);
-  __m128 ax = _mm_mul_ss(a, x);
-
-  #ifdef __FMA__
-  __m128 p = _mm_fnmadd_ss(x, ax, three);
-  #else
-  __m128 p = _mm_sub_ss(three, _mm_mul_ss(x, ax));
-  #endif
-  return _mm_cvtss_f32(_mm_mul_ss(_mm_mul_ss(half, x), p));
+  return _mm_cvtss_f32(approx_rsqrt_packed(_mm_set_ss(n)));
 #else
-  return 1.0f / std::sqrt(n);
+  return 1.0f / std::sqrt(x);
 #endif
+}
+
+
+/**
+ * \brief Computes approximate sine
+ * \returns sin(x) (approx.)
+ */
+inline float approx_sin(float x) {
+#if defined(AS_HAS_X86_INTRINSICS) && defined(__SSE4_1__)
+  return _mm_cvtss_f32(approx_sin_packed(_mm_set_ss(x)));
+#else
+  const float rpi = float(1.0 / pi);
+
+  float sgn = x < 0.0f ? -1.0f : 1.0f;
+
+  x *= sgn;
+  x *= rpi;
+
+  float t = std::trunc(x);
+  x = x - t;
+
+  if (int32_t(t) & 1)
+    sgn = -sgn;
+
+  float r = x - x * x;
+  return sgn * approx_div(16.0f * r, 5.0f - 4.0f * r);
+#endif
+}
+
+
+/**
+ * \brief Computes approximate cosine
+ * \returns cos(x) (approx.)
+ */
+inline float approx_cos(float x) {
+  return approx_sin(x + float(pi * 0.5));
+}
+
+
+/**
+ * \brief Sine and cosine
+ */
+struct SinCos {
+  float sin;
+  float cos;
+};
+
+
+/**
+ * \brief Computes approximate sine and cosine
+ *
+ * If possible, this leverages vectorization so that
+ * computing the cosine comes at no additional cost.
+ * \returns sin(x) and cos(x) (approx)
+ */
+inline SinCos approx_sincos(float x) {
+  SinCos result;
+#if defined(AS_HAS_X86_INTRINSICS) && defined(__SSE4_1__)
+  __m128 xsin = _mm_set_ss(x);
+  __m128 xcos = _mm_add_ss(xsin, _mm_set_ss(float(pi * 0.5)));
+  __m128 packed = approx_sin_packed(_mm_unpacklo_ps(xsin, xcos));
+
+  // This is all sorts of wonky, but appears to
+  // be the best way to extract the lower 64 bits
+  uint64_t tmp = _mm_cvtsi128_si64(_mm_castps_si128(packed));
+  std::memcpy(&result, &tmp, sizeof(result));
+#else
+  result.sin = approx_sin(x);
+  result.cos = approx_cos(x);
+#endif
+  return result;
 }
 
 }
