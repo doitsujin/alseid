@@ -228,4 +228,138 @@ T bextract(T op, uint32_t first, uint32_t count) {
 }
 
 
+
+/**
+ * \brief Computes multiply-add
+ * \returns a * b + c
+ */
+template<typename T>
+T fmadd(T a, T b, T c) {
+  return a * b + c;
+}
+
+
+/**
+ * \brief Computes negative multiply-add
+ * \returns c - a * b
+ */
+template<typename T>
+T fnmadd(T a, T b, T c) {
+  return c - a * b;
+}
+
+
+/**
+ * \brief Computes multiply-subtract
+ * \returns a * b - c
+ */
+template<typename T>
+T fmsub(T a, T b, T c) {
+  return a * b - c;
+}
+
+
+/**
+ * \brief Computes negative multiply-subtract
+ * \returns -(a * b) - c
+ */
+template<typename T>
+T fnmsub(T a, T b, T c) {
+  return -(a * b) - c;
+}
+
+
+/**
+ * \brief Computes approximate reciprocal
+ * \returns 1 / a (approx.)
+ */
+inline float rcp(float a_) {
+#ifdef AS_HAS_X86_INTRINSICS
+  __m128 two = _mm_set_ss(2.0f);
+  __m128 a = _mm_set_ss(a_);
+  __m128 x = _mm_rcp_ss(a);
+
+  #ifdef __FMA__
+  __m128 p = _mm_fnmadd_ss(a, x, two);
+  #else
+  __m128 p = _mm_sub_ss(two, _mm_mul_ss(a, x));
+  #endif
+
+  return _mm_cvtss_f32(_mm_mul_ss(x, p));
+#else
+  return 1.0f / a_;
+#endif
+}
+
+
+inline float div(float a_, float b_) {
+#ifdef AS_HAS_X86_INTRINSICS
+  __m128 two = _mm_set_ss(2.0f);
+  __m128 a = _mm_set_ss(a_);
+  __m128 b = _mm_set_ss(b_);
+  __m128 x = _mm_rcp_ss(b);
+
+  #ifdef __FMA__
+  __m128 p = _mm_fnmadd_ss(b, x, two);
+  #else
+  __m128 p = _mm_sub_ss(two, _mm_mul_ss(b, x));
+  #endif
+
+  return _mm_cvtss_f32(_mm_mul_ss(_mm_mul_ss(a, x), p));
+#else
+  return a_ / b_;
+#endif
+}
+
+
+
+/**
+ * \brief Computes approximate square root
+ * \returns sqrt(n) (approx.)
+ */
+inline float sqrt(float n) {
+#ifdef AS_HAS_X86_INTRINSICS
+  __m128 half = _mm_set_ss(0.5f);
+  __m128 three = _mm_set_ss(3.0f);
+
+  __m128 a = _mm_set_ss(n);
+  __m128 x = _mm_rsqrt_ss(a);
+  __m128 ax = _mm_mul_ss(a, x);
+
+  #ifdef __FMA__
+  __m128 p = _mm_fnmadd_ss(x, ax, three);
+  #else
+  __m128 p = _mm_sub_ss(three, _mm_mul_ss(x, ax));
+  #endif
+  return _mm_cvtss_f32(_mm_mul_ss(_mm_mul_ss(half, ax), p));
+#else
+  return std::sqrt(n);
+#endif
+}
+
+
+/**
+ * \brief Computes approximate inverse square root
+ * \returns sqrt(n) (approx.)
+ */
+inline float rsqrt(float n) {
+#ifdef AS_HAS_X86_INTRINSICS
+  __m128 half = _mm_set_ss(0.5f);
+  __m128 three = _mm_set_ss(3.0f);
+
+  __m128 a = _mm_set_ss(n);
+  __m128 x = _mm_rsqrt_ss(a);
+  __m128 ax = _mm_mul_ss(a, x);
+
+  #ifdef __FMA__
+  __m128 p = _mm_fnmadd_ss(x, ax, three);
+  #else
+  __m128 p = _mm_sub_ss(three, _mm_mul_ss(x, ax));
+  #endif
+  return _mm_cvtss_f32(_mm_mul_ss(_mm_mul_ss(half, x), p));
+#else
+  return 1.0f / std::sqrt(n);
+#endif
+}
+
 }

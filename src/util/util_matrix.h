@@ -99,18 +99,7 @@ public:
    */
   template<size_t Cols_>
   Matrix<T, Rows, Cols_> operator * (const Matrix<T, Cols, Cols_>& matrix) const {
-    Matrix<T, Rows, Cols_> result;
-
-    for (size_t c = 0; c < Cols_; c++) {
-      VectorType sum = m_cols[0] * matrix.m_cols[c][0];
-
-      for (size_t v = 1; v < Cols; v++)
-        sum += m_cols[v] * matrix.m_cols[c][v];
-
-      result.m_cols[c] = sum;
-    }
-
-    return result;
+    return multiplyMatrix(std::make_index_sequence<Cols_>(), std::make_index_sequence<Cols>(), matrix);
   }
 
   /**
@@ -239,6 +228,39 @@ private:
   template<size_t... ColIdx, size_t... RowIdx>
   Matrix<T, Cols, Rows> transposeMatrix(std::integer_sequence<size_t, ColIdx...> cols, std::integer_sequence<size_t, RowIdx...> rows) const {
     return Matrix<T, Cols, Rows>(getRow<RowIdx>(cols)...);
+  }
+
+  template<size_t Col, size_t Cols_>
+  VectorType multiplyMatrixFmaChain(
+      std::integer_sequence<size_t>,
+      const Matrix<T, Cols, Cols_>&     matrix,
+            VectorType                  accum) const {
+    return accum;
+  }
+
+  template<size_t Col, size_t Cols_, size_t I, size_t... Idx>
+  VectorType multiplyMatrixFmaChain(
+      std::integer_sequence<size_t, I, Idx...>,
+      const Matrix<T, Cols, Cols_>&     matrix,
+            VectorType                  accum) const {
+    accum = multiplyMatrixFmaChain<Col>(std::integer_sequence<size_t, Idx...>(), matrix, accum);
+    return fmadd(col<I>(), VectorType(matrix.template at<I, Col>()), accum);
+  }
+
+  template<size_t Col, size_t Cols_, size_t... Idx>
+  VectorType multiplyMatrixColumn(
+      std::integer_sequence<size_t, 0, Idx...> inner,
+      const Matrix<T, Cols, Cols_>&     matrix) const {
+    VectorType accum = col<0>() * VectorType(matrix.template at<0, Col>());
+    return multiplyMatrixFmaChain<Col>(std::integer_sequence<size_t, Idx...>(), matrix, accum);
+  }
+
+  template<size_t Cols_, size_t... OuterIdx, size_t... InnerIdx>
+  Matrix<T, Rows, Cols_> multiplyMatrix(
+      std::integer_sequence<size_t, OuterIdx...>,
+      std::integer_sequence<size_t, InnerIdx...> inner,
+      const Matrix<T, Cols, Cols_>&     matrix) const {
+    return Matrix<T, Rows, Cols_>(multiplyMatrixColumn<OuterIdx>(inner, matrix)...);
   }
 
   template<size_t Col, size_t... RowIdx>
