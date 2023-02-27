@@ -92,6 +92,16 @@ public:
   }
 
   /**
+   * \brief Matrix-vector product
+   *
+   * \param [in] vector Vector
+   * \returns Resulting vector
+   */
+  VectorType operator * (const Vector<T, Cols>& vector) const {
+    return multiplyVector(std::make_index_sequence<Cols>(), vector);
+  }
+
+  /**
    * \brief Matrix product
    *
    * \param [in] matrix Source operand
@@ -108,17 +118,7 @@ public:
    * \param [in] idx Column index
    * \returns Reference to given column vector
    */
-  const VectorType& col(uint32_t idx) const {
-    return m_cols[idx];
-  }
-
-  /**
-   * \brief Retrieves given column for writing
-   *
-   * \param [in] idx Column index
-   * \returns Reference to given column vector
-   */
-  VectorType& col(uint32_t idx) {
+  VectorType col(uint32_t idx) const {
     return m_cols[idx];
   }
 
@@ -128,7 +128,7 @@ public:
    * \param [in] idx Row index
    * \returns Row vector
    */
-  Vector<T, Cols>& row(uint32_t idx) {
+  Vector<T, Cols> row(uint32_t idx) {
     return getRow(std::make_index_sequence<Cols>(), idx);
   }
 
@@ -140,18 +140,7 @@ public:
    * \returns Reference to given column vector
    */
   template<size_t Col, std::enable_if_t<(Col < Cols), bool> = true>
-  const VectorType& col() const {
-    return m_cols[Col];
-  }
-
-  /**
-   * \brief Retrieves column with compile-time index for writing
-   *
-   * \tparam Col Column index
-   * \returns Reference to given column vector
-   */
-  template<size_t Col, std::enable_if_t<(Col < Cols), bool> = true>
-  VectorType& col() {
+  VectorType col() const {
     return m_cols[Col];
   }
 
@@ -164,6 +153,17 @@ public:
   template<size_t Row, std::enable_if_t<(Row < Rows), bool> = true>
   Vector<T, Cols> row() const {
     return getRow<Row>(std::make_index_sequence<Cols>());
+  }
+
+  /**
+   * \brief Sets column vector
+   *
+   * \tparam Col Colmn index
+   * \param [in] v Column vector
+   */
+  template<size_t Col>
+  void set(VectorType v) {
+    m_cols[Col] = v;
   }
 
   /**
@@ -232,26 +232,26 @@ private:
 
   template<size_t Col, size_t Cols_>
   VectorType multiplyMatrixFmaChain(
-      std::integer_sequence<size_t>,
-      const Matrix<T, Cols, Cols_>&     matrix,
-            VectorType                  accum) const {
+          std::integer_sequence<size_t>,
+    const Matrix<T, Cols, Cols_>&       matrix,
+          VectorType                    accum) const {
     return accum;
   }
 
   template<size_t Col, size_t Cols_, size_t I, size_t... Idx>
   VectorType multiplyMatrixFmaChain(
-      std::integer_sequence<size_t, I, Idx...>,
-      const Matrix<T, Cols, Cols_>&     matrix,
-            VectorType                  accum) const {
+          std::integer_sequence<size_t, I, Idx...>,
+    const Matrix<T, Cols, Cols_>&       matrix,
+          VectorType                    accum) const {
     accum = multiplyMatrixFmaChain<Col>(std::integer_sequence<size_t, Idx...>(), matrix, accum);
-    return fmadd(col<I>(), VectorType(matrix.template at<I, Col>()), accum);
+    return fmadd(col<I>(), matrix.template col<Col>().template broadcast<I>(), accum);
   }
 
   template<size_t Col, size_t Cols_, size_t... Idx>
   VectorType multiplyMatrixColumn(
-      std::integer_sequence<size_t, 0, Idx...> inner,
-      const Matrix<T, Cols, Cols_>&     matrix) const {
-    VectorType accum = col<0>() * VectorType(matrix.template at<0, Col>());
+          std::integer_sequence<size_t, 0, Idx...> inner,
+    const Matrix<T, Cols, Cols_>&       matrix) const {
+    VectorType accum = col<0>() * matrix.template Col<Col>().template broadcast<0>();
     return multiplyMatrixFmaChain<Col>(std::integer_sequence<size_t, Idx...>(), matrix, accum);
   }
 
@@ -261,6 +261,30 @@ private:
       std::integer_sequence<size_t, InnerIdx...> inner,
       const Matrix<T, Cols, Cols_>&     matrix) const {
     return Matrix<T, Rows, Cols_>(multiplyMatrixColumn<OuterIdx>(inner, matrix)...);
+  }
+
+  VectorType multiplyVectorFmaChain(
+          std::integer_sequence<size_t>,
+    const Vector<T, Cols>&              vector,
+          VectorType                    accum) const {
+    return accum;
+  }
+
+  template<size_t I, size_t... Idx>
+  VectorType multiplyVectorFmaChain(
+          std::integer_sequence<size_t, I, Idx...>,
+    const Vector<T, Cols>&              vector,
+          VectorType                    accum) const {
+    accum = multiplyVectorFmaChain(std::integer_sequence<size_t, Idx...>(), vector, accum);
+    return fmadd(col<I>(), vector.template broadcast<I>(), accum);
+  }
+
+  template<size_t... Idx>
+  VectorType multiplyVector(
+          std::integer_sequence<size_t, 0, Idx...>,
+    const Vector<T, Cols>&              vector) const {
+    VectorType accum = col<0>() * vector.template at<0>();
+    return multiplyVectorFmaChain(std::integer_sequence<size_t, Idx...>(), vector, accum);
   }
 
   template<size_t Col, size_t... RowIdx>
@@ -284,5 +308,113 @@ using Matrix4x4 = Matrix<float, 4, 4>;
 
 using Matrix4x3 = Matrix<float, 4, 3>;
 using Matrix3x4 = Matrix<float, 3, 4>;
+
+/**
+ * \brief Computes a projection matrix
+ *
+ * The resulting matrix will use reverse Z
+ * and have an infinite far plane.
+ * \param [in] viewport Viewport size
+ * \param [in] f Vertical field of view
+ * \param [in] zNear Near plane
+ */
+inline Matrix4x4 computeProjectionMatrix(Vector2D viewport, float f, float zNear) {
+  float a = approx_div(viewport.at<1>(), viewport.at<0>());
+
+  return Matrix4x4(
+    Vector4D(f * a, 0.0f,  0.0f,  0.0f),
+    Vector4D( 0.0f,    f,  0.0f,  0.0f),
+    Vector4D( 0.0f, 0.0f,  0.0f, -1.0f),
+    Vector4D( 0.0f, 0.0f, zNear,  0.0f));
+}
+
+
+/**
+ * \brief Computes a transformation matrix
+ *
+ * Equivalent to multiplying a translation matrix on the
+ * left side with a rotation matrix on the right side.
+ * \param [in] u Normalized axis to rotate around. Last component must be 0.
+ * \param [in] th Rotation angle
+ * \param [in] v Translation vector. Last component must be 1.
+ * \returns Resulting matrix
+ */
+inline Matrix4x4 computeTransformMatrix(Vector4D u, float th, Vector4D v) {
+  SinCos sincos = approx_sincos(th);
+
+  Vector4D usin = u * sincos.sin;
+  Vector4D ucos = u * (1.0f - sincos.cos);
+
+  Vector4D c1(   sincos.cos,  usin.at<2>(), -usin.at<1>(), 0.0f);
+  Vector4D c2(-usin.at<2>(),    sincos.cos,  usin.at<0>(), 0.0f);
+  Vector4D c3( usin.at<1>(), -usin.at<0>(),    sincos.cos, 0.0f);
+
+  c1 = fmadd(u, Vector4D(ucos.at<0>()), c1);
+  c2 = fmadd(u, Vector4D(ucos.at<1>()), c2);
+  c3 = fmadd(u, Vector4D(ucos.at<2>()), c3);
+
+  return Matrix4x4(c1, c2, c3, v);
+}
+
+inline Matrix4x4 computeTransformMatrix(Vector3D u, float th, Vector3D v) {
+  return computeTransformMatrix(Vector4D(u, 0.0f), th, Vector4D(v, 1.0f));
+}
+
+
+/**
+ * \brief Computes camera matrix
+ *
+ * Much like \c computeTransformMatrix, but as if the
+ * multiplication is performed in reverse order.
+ * \param [in] u Normalized axis to rotate around. Last component must be 0.
+ * \param [in] th Rotation angle
+ * \param [in] v Translation vector. Last component must be 1.
+ * \returns Resulting matrix
+ */
+inline Matrix4x4 computeViewMatrix(Vector4D u, float th, Vector4D v) {
+  Matrix4x4 matrix = computeTransformMatrix(u, th, Vector4D(0.0f, 0.0f, 0.0f, 1.0f));
+  matrix.set<3>(matrix * v);
+  return matrix;
+}
+
+inline Matrix4x4 computeViewMatrix(Vector3D u, float th, Vector3D v) {
+  return computeViewMatrix(Vector4D(u, 0.0f), th, Vector4D(v, 1.0f));
+}
+
+
+/**
+ * \brief Computes a rotation matrix
+ *
+ * \param [in] u Normalized axis to rotate around. Last component must be 0.
+ * \param [in] th Rotation angle
+ * \returns Resulting rotation matrix
+ */
+inline Matrix4x4 computeRotationMatrix(Vector4D u, float th) {
+  return computeTransformMatrix(u, th, Vector4D(0.0f, 0.0f, 0.0f, 1.0f));
+}
+
+inline Matrix4x4 computeRotationMatrix(Vector3D u, float th) {
+  return computeRotationMatrix(Vector4D(u, 0.0f), th);
+}
+
+
+/**
+ * \brief Computes a translation matrix
+ *
+ * \param [in] v Translation vector. Last component must be 1.
+ * \returns Resulting translation matrix
+ */
+inline Matrix4x4 computeTranslationMatrix(Vector4D v) {
+  return Matrix4x4(
+    Vector4D(1.0f, 0.0f, 0.0f, 0.0f),
+    Vector4D(0.0f, 1.0f, 0.0f, 0.0f),
+    Vector4D(0.0f, 0.0f, 1.0f, 0.0f),
+    v);
+}
+
+inline Matrix4x4 computeTranslationMatrix(Vector3D v) {
+  return computeTranslationMatrix(Vector4D(v, 1.0f));
+}
+
 
 }

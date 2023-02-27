@@ -264,46 +264,25 @@ public:
     // Compute view and projection matrixes and allocate constant buffer
     // data for them. This works because allocated scratch memory remains
     // valid until the context gets reset.
-    float w = float(m_renderTargetSize.at<0>());
-    float h = float(m_renderTargetSize.at<1>());
     float f = 5.0f / 3.141592654f;
     float zNear = 0.001f;
 
     float th = 3.141592654f / 6.0f;
-    SinCos sc = approx_sincos(th);
-
-    Matrix4x4 cameraRotation(
-      Vector4D(1.0f,    0.0f,   0.0f, 0.0f),
-      Vector4D(0.0f,  sc.cos, sc.sin, 0.0f),
-      Vector4D(0.0f, -sc.sin, sc.cos, 0.0f),
-      Vector4D(0.0f,    0.0f,   0.0f, 1.0f));
-
-    Matrix4x4 cameraTranslation(
-      Vector4D( 1.0f,  0.0f,  0.0f,  0.0f),
-      Vector4D( 0.0f,  1.0f,  0.0f,  0.0f),
-      Vector4D( 0.0f,  0.0f,  1.0f,  0.0f),
-      Vector4D( 0.0f, -2.0f, -3.0f,  1.0f));
 
     VertexGlobalConstants constants = { };
-    constants.projMatrix = Matrix4x4(
-      Vector4D(f * h / w,  0.0f,  0.0f,  0.0f),
-      Vector4D( 0.0f,         f,  0.0f,  0.0f),
-      Vector4D( 0.0f,      0.0f,  0.0f, -1.0f),
-      Vector4D( 0.0f,      0.0f, zNear,  0.0f));
-    constants.viewMatrix = cameraRotation * cameraTranslation;
+    constants.projMatrix = computeProjectionMatrix(
+      Vector2D(m_renderTargetSize), f, zNear);
+    constants.viewMatrix = computeViewMatrix(
+      Vector3D(1.0f,  0.0f,  0.0f), th,
+      Vector3D(0.0f, -2.0f, -3.0f));
 
     m_vertexGlobalConstants = context->writeScratch(GfxUsage::eConstantBuffer, constants);
 
     // Compute model matrix. We'll allocate UBO data inside
     // the render functions for demonstration purposes.
     th = elapsed * 3.141592654f / 2.0f;
-    sc = approx_sincos(th);
 
-    m_modelMatrix = Matrix4x4(
-      Vector4D( sc.cos, 0.0f, sc.sin, 0.0f),
-      Vector4D( 0.0f,   1.0f,   0.0f, 0.0f),
-      Vector4D(-sc.sin, 0.0f, sc.cos, 0.0f),
-      Vector4D( 0.0f,   0.0f,   0.0f, 1.0f));
+    m_modelMatrix = computeRotationMatrix(normalize(Vector3D(0.5f, 1.0f, 0.2f)), th);
   }
 
   void renderDepthPass() {

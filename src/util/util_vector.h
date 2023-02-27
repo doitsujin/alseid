@@ -473,6 +473,19 @@ public:
   }
 
   /**
+   * \brief Broadcasts a single component
+   *
+   * Equivalent to creatng a new vector from a given
+   * scalar, but potentially more efficient.
+   * \tparam I Element index
+   * \returns Vector with the given element in all component
+   */
+  template<size_t I>
+  Vector broadcast() const {
+    return Vector(at<I>());
+  }
+
+  /**
    * \brief Sets element with compile-time index
    *
    * \tparam I Element index
@@ -571,7 +584,7 @@ Vector<T, N> abs(Vector<T, N> v) {
  * \returns Dot product
  */
 template<typename T, size_t N>
-T dotp(Vector<T, N> a, Vector<T, N> b) {
+T dot(Vector<T, N> a, Vector<T, N> b) {
   return foldr(a * b, [] (T a, T b) { return a + b; }, 0.0f);
 }
 
@@ -768,6 +781,11 @@ public:
   template<size_t... Indices>
   auto get() const {
     return Vector<ScalarType, sizeof...(Indices)>(at<Indices>()...);
+  }
+
+  template<size_t I>
+  Vector broadcast() const {
+    return Vector(_mm_shuffle_ps(m_data, m_data, I * 0x55));
   }
 
   template<size_t I, std::enable_if_t<(I < Components), bool> = true>
