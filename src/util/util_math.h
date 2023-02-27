@@ -22,7 +22,7 @@
 
 namespace as {
 
-constexpr double pi = 3.14159265359;
+constexpr double pi = 3.141592653589793;
 
 /**
  * \brief Aligns integer offset
@@ -423,29 +423,31 @@ inline __m128 approx_sqrt_packed(__m128 a) {
 
 /**
  * \brief Computes packed approximate sin
+ *
+ * Exact in 0, pi/2 and pi. The maximum absolute error is roughly
+ * 0.00109, the relative error is below 1.5% across the [0,pi/2]
+ * range, except when close to zero. Derivatives around zero are
+ * not exact as a result.
  * \returns sin(x) (approx.)
  */
 #ifdef __SSE4_1__
 inline __m128 approx_sin_packed(__m128 x) {
   __m128 rcppi = _mm_set1_ps(float(1.0 / pi));
-  __m128 sgn = _mm_and_ps(x, _mm_castsi128_ps(_mm_set1_epi32(0x80000000)));
 
-  x = _mm_xor_ps(x, sgn);
-  x = _mm_mul_ps(x, rcppi);
+  __m128 a = _mm_set1_ps(4.0f);
+  __m128 b = _mm_set1_ps(0.225);
 
-  __m128 t = _mm_round_ps(x, _MM_FROUND_TRUNC);
-  __m128i i = _mm_cvtps_epi32(t);
+  __m128 absmask = _mm_castsi128_ps(_mm_set1_epi32(0x7fffffff));
 
-  x = _mm_sub_ps(x, t);
+  __m128 y = _mm_mul_ps(x, rcppi);
+  __m128 t = _mm_round_ps(y, _MM_FROUND_TRUNC);
+  __m128i i = _mm_slli_epi32(_mm_cvtps_epi32(t), 31);
 
-  sgn = _mm_xor_ps(sgn, _mm_castsi128_ps(_mm_slli_epi32(i, 31)));
+  y = _mm_sub_ps(y, t);
 
-  __m128 r = fnmadd_packed(x, x, x);
-  __m128 p = approx_div_packed(
-    _mm_mul_ps(r, _mm_set1_ps(16.0f)),
-    fnmadd_packed(r, _mm_set1_ps(4.0f), _mm_set1_ps(5.0f)));
-
-  return _mm_xor_ps(p, sgn);
+  __m128 s = _mm_mul_ps(y, fnmadd_packed(_mm_and_ps(y, absmask), a, a));
+  s = fmadd_packed(fmsub_packed(s, _mm_and_ps(s, absmask), s), b, s);
+  return _mm_xor_ps(s, _mm_castsi128_ps(i));
 }
 #endif
 
@@ -592,21 +594,16 @@ inline float approx_sin(float x) {
 #if defined(AS_HAS_X86_INTRINSICS) && defined(__SSE4_1__)
   return _mm_cvtss_f32(approx_sin_packed(_mm_set_ss(x)));
 #else
-  const float rpi = float(1.0 / pi);
+  constexpr float rpi = float(1.0 / pi);
 
-  float sgn = x < 0.0f ? -1.0f : 1.0f;
+  float y = x * rpi;
+  float t = std::trunc(y);
+  y -= t;
 
-  x *= sgn;
-  x *= rpi;
+  float s = y * (4.0f - 4.0f * std::abs(y));
+  s += 0.225f * (s * std::abs(s) - s);
 
-  float t = std::trunc(x);
-  x = x - t;
-
-  if (int32_t(t) & 1)
-    sgn = -sgn;
-
-  float r = x - x * x;
-  return sgn * approx_div(16.0f * r, 5.0f - 4.0f * r);
+  return (uint32_t(t) & 1) ? -s : s;
 #endif
 }
 
@@ -646,12 +643,38 @@ inline SinCos approx_sincos(float x) {
   // This is all sorts of wonky, but appears to
   // be the best way to extract the lower 64 bits
   uint64_t tmp = _mm_cvtsi128_si64(_mm_castps_si128(packed));
-  std::memcpy(&result, &tmp, sizeof(result));
+  std::memcpy(&result, &tmp, sizeof(tmp));
 #else
   result.sin = approx_sin(x);
   result.cos = approx_cos(x);
 #endif
   return result;
+}
+
+
+/**
+ * \brief Computes two approximate sine and cosine pairs
+ *
+ * If possible, this leverages vectorization so that the cost
+ * is roughly the same as it one \c approx_sincos call.
+ * \returns sincos(x) and sincos(y)
+ */
+inline std::pair<SinCos, SinCos> approx_sincos(float x, float y) {
+#if defined(AS_HAS_X86_INTRINSICS) && defined(__SSE4_1__)
+  std::pair<SinCos, SinCos> result;
+  __m128 xysin = _mm_set_ps(0.0f, 0.0f, y, x);
+  __m128 xycos = _mm_add_ps(xysin, _mm_set1_ps(float(pi * 0.5)));
+  __m128 packed = approx_sin_packed(_mm_unpacklo_ps(xysin, xycos));
+
+  uint64_t tmp0 = _mm_cvtsi128_si64(_mm_castps_si128(packed));
+  uint64_t tmp1 = _mm_cvtsi128_si64(_mm_castps_si128(_mm_movehl_ps(packed, packed)));
+
+  std::memcpy(&result.first, &tmp0, sizeof(tmp0));
+  std::memcpy(&result.second, &tmp1, sizeof(tmp1));
+  return result;
+#else
+  return std::make_pair(approx_sincos(x), approx_sincos(y));
+#endif
 }
 
 }
