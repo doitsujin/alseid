@@ -611,6 +611,40 @@ Vector<T, 4> cross(Vector<T, 4> a, Vector<T, 4> b) {
 }
 
 
+/**
+ * \brief Computes length of a vector
+ *
+ * \param [in] a Vector
+ * \returns Vector length
+ */
+template<size_t N>
+float length(Vector<float, N> a) {
+  return approx_sqrt(dot(a, a));
+}
+
+template<size_t N>
+double length(Vector<double, N> a) {
+  return std::sqrt(dot(a, a));
+}
+
+
+/**
+ * \brief Normalizes a vector
+ *
+ * \param [in] a Vector
+ * \returns Normalized vector
+ */
+template<size_t N>
+Vector<float, N> normalize(Vector<float, N> a) {
+  return a * approx_rcp(length(a));
+}
+
+template<size_t N>
+Vector<double, N> normalize(Vector<double, N> a) {
+  return a / length(a);
+}
+
+
 #ifdef AS_HAS_X86_INTRINSICS
 
 /**
@@ -820,11 +854,20 @@ inline Vector<float, 4> approx_cos(Vector<float, 4> a) {
 }
 
 inline float dot(Vector<float, 4> a, Vector<float, 4> b) {
-  return _mm_cvtss_f32(dot_packed(__m128(a), __m128(b)));
+  return _mm_cvtss_f32(dot_packed_one(__m128(a), __m128(b)));
 }
 
 inline Vector<float, 4> cross(Vector<float, 4> a, Vector<float, 4> b) {
   return Vector<float, 4>(cross_packed(__m128(a), __m128(b)));
+}
+
+inline float length(Vector<float, 4> a) {
+  return _mm_cvtss_f32(approx_sqrt_packed(dot_packed_one(__m128(a), __m128(a))));
+}
+
+inline Vector<float, 4> normalize(Vector<float, 4> a) {
+  return Vector<float, 4>(_mm_mul_ps(__m128(a),
+    approx_rsqrt_packed(dot_packed(__m128(a), __m128(a)))));
 }
 
 #endif

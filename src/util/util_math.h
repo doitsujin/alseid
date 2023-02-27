@@ -452,13 +452,30 @@ inline __m128 approx_sin_packed(__m128 x) {
 
 /**
  * \brief Computes vector dot product
+ *
+ * Only the first component will be valid.
+ * \returns dot(a, b)
+ */
+inline __m128 dot_packed_one(__m128 a, __m128 b) {
+  __m128 r = _mm_mul_ps(a, b);
+  __m128 s = _mm_shuffle_ps(r, r, _MM_SHUFFLE(2, 3, 0, 1));
+  r = _mm_add_ps(r, s);
+  s = _mm_movehl_ps(r, r);
+  return _mm_add_ss(r, s);
+}
+
+
+/**
+ * \brief Computes full vector dot product
+ *
+ * All components will contain the correct value.
  * \returns dot(a, b)
  */
 inline __m128 dot_packed(__m128 a, __m128 b) {
   __m128 r = _mm_mul_ps(a, b);
   __m128 s = _mm_shuffle_ps(r, r, _MM_SHUFFLE(2, 3, 0, 1));
   r = _mm_add_ps(r, s);
-  s = _mm_movehl_ps(r, r);
+  s = _mm_shuffle_ps(r, r, _MM_SHUFFLE(1, 0, 3, 2));
   return _mm_add_ps(r, s);
 }
 
