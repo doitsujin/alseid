@@ -515,6 +515,18 @@ auto apply(std::integer_sequence<size_t, Idx...>, const Vector<T, N>& v, const F
 }
 
 
+template<typename T, size_t N, typename V, typename Fn>
+V foldr(std::integer_sequence<size_t>, const Vector<T, N>& v, const Fn& fn, V init) {
+  return init;
+}
+
+
+template<typename T, size_t N, typename V, typename Fn, size_t I, size_t... Idx>
+V foldr(std::integer_sequence<size_t, I, Idx...>, const Vector<T, N>& v, const Fn& fn, V init) {
+  return fn(v.template at<I>(), foldr(std::integer_sequence<size_t, Idx...>(), v, fn, init));
+}
+
+
 /**
  * \brief Applies a function to all vector elements
  *
@@ -529,12 +541,73 @@ auto apply(Vector<T, N> v, const Fn& fn) {
 
 
 /**
+ * \brief Performs right-fold over vector elements
+ *
+ * \param [in] vector Input vector
+ * \param [in] fn Function
+ * \returns Function result
+ */
+template<typename T, size_t N, typename V, typename Fn>
+V foldr(Vector<T, N> v, const Fn& fn, V init) {
+  return foldr(std::make_index_sequence<N>(), v, fn, init);
+}
+
+
+/**
  * \brief Computes absolute value of vector
  * \returns Component-wise absolute value
  */
 template<typename T, size_t N>
 Vector<T, N> abs(Vector<T, N> v) {
   return apply(v, [] (T x) { return T(std::abs(x)); });
+}
+
+
+/**
+ * \brief Computes vector dot product
+ *
+ * \param [in] a First vector
+ * \param [in] b Second vector
+ * \returns Dot product
+ */
+template<typename T, size_t N>
+T dotp(Vector<T, N> a, Vector<T, N> b) {
+  return foldr(a * b, [] (T a, T b) { return a + b; }, 0.0f);
+}
+
+
+/**
+ * \brief Computes cross product
+ *
+ * \param [in] a First vector
+ * \param [in] b Second vector
+ * \returns Cross product
+ */
+template<typename T>
+Vector<T, 3> cross(Vector<T, 3> a, Vector<T, 3> b) {
+  return Vector<T, 3>(
+    a.template at<1>() * b.template at<2>() - a.template at<2>() * b.template at<1>(),
+    a.template at<2>() * b.template at<0>() - a.template at<0>() * b.template at<2>(),
+    a.template at<0>() * b.template at<1>() - a.template at<1>() * b.template at<0>());
+}
+
+
+/**
+ * \brief Computes cross product with 4D vectors
+ *
+ * Since the cross product is only defined in 3D space, the
+ * 4th component will just contain the component product.
+ * \param [in] a First vector
+ * \param [in] b Second vector
+ * \returns Cross product
+ */
+template<typename T>
+Vector<T, 4> cross(Vector<T, 4> a, Vector<T, 4> b) {
+  return Vector<T, 4>(
+    a.template at<1>() * b.template at<2>() - a.template at<2>() * b.template at<1>(),
+    a.template at<2>() * b.template at<0>() - a.template at<0>() * b.template at<2>(),
+    a.template at<0>() * b.template at<1>() - a.template at<1>() * b.template at<0>(),
+    a.template at<3>() * b.template at<3>());
 }
 
 
@@ -744,6 +817,14 @@ inline Vector<float, 4> approx_sin(Vector<float, 4> a) {
 inline Vector<float, 4> approx_cos(Vector<float, 4> a) {
   return Vector<float, 4>(approx_sin_packed(
     _mm_add_ps(__m128(a), _mm_set1_ps(float(pi / 2)))));
+}
+
+inline float dot(Vector<float, 4> a, Vector<float, 4> b) {
+  return _mm_cvtss_f32(dot_packed(__m128(a), __m128(b)));
+}
+
+inline Vector<float, 4> cross(Vector<float, 4> a, Vector<float, 4> b) {
+  return Vector<float, 4>(cross_packed(__m128(a), __m128(b)));
 }
 
 #endif

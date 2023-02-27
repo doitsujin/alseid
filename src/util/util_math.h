@@ -358,6 +358,15 @@ inline __m128 fnmsub_packed(__m128 a, __m128 b, __m128 c) {
 }
 
 
+// GCC generates garbage code for these even when used
+// in longer functions, so just don't use these
+#if defined(__FMA__) && defined(__clang__)
+inline float fmadd(float a, float b, float c) { return _mm_cvtss_f32(_mm_fmadd_ss(_mm_set_ss(a), _mm_set_ss(b), _mm_set_ss(c))); }
+inline float fmsub(float a, float b, float c) { return _mm_cvtss_f32(_mm_fmsub_ss(_mm_set_ss(a), _mm_set_ss(b), _mm_set_ss(c))); }
+inline float fnmadd(float a, float b, float c) { return _mm_cvtss_f32(_mm_fnmadd_ss(_mm_set_ss(a), _mm_set_ss(b), _mm_set_ss(c))); }
+inline float fnmsub(float a, float b, float c) { return _mm_cvtss_f32(_mm_fnmsub_ss(_mm_set_ss(a), _mm_set_ss(b), _mm_set_ss(c))); }
+#endif
+
 /**
  * \brief Computes packed approximate reciprocal
  * \returns 1 / a (approx)
@@ -439,6 +448,67 @@ inline __m128 approx_sin_packed(__m128 x) {
   return _mm_xor_ps(p, sgn);
 }
 #endif
+
+
+/**
+ * \brief Computes vector dot product
+ * \returns dot(a, b)
+ */
+inline __m128 dot_packed(__m128 a, __m128 b) {
+  __m128 r = _mm_mul_ps(a, b);
+  __m128 s = _mm_shuffle_ps(r, r, _MM_SHUFFLE(2, 3, 0, 1));
+  r = _mm_add_ps(r, s);
+  s = _mm_movehl_ps(r, r);
+  return _mm_add_ps(r, s);
+}
+
+
+/**
+ * \brief Blends vectors
+ * \returns blendps result
+ */
+inline __m128 blend_packed(__m128 a, __m128 b, uint8_t imm) {
+  #ifdef __SSE4_1__
+  return _mm_blend_ps(a, b, imm);
+  #else
+  __m128 mask = _mm_cvtps_epi32(_mm_set_epi32(
+    imm & 0x8 ? ~0u : 0, imm & 0x4 ? ~0u : 0,
+    imm & 0x2 ? ~0u : 0, imm & 0x1 ? ~0u : 0));
+
+  return _mm_or_ps(
+    _mm_andnot_ps(mask, a),
+    _mm_and_ps(mask, b));
+  #endif
+}
+
+
+/**
+ * \brief Computes cross product
+ *
+ * The last component will be the product of the
+ * last components of both vectors.
+ * \returns a × b
+ */
+inline __m128 cross_packed(__m128 a, __m128 b) {
+  uint8_t s = _MM_SHUFFLE(3, 0, 2, 1);
+
+  __m128 as = _mm_shuffle_ps(a, a, s);
+  __m128 bs = _mm_shuffle_ps(b, b, s);
+  __m128 p = _mm_mul_ps(a, bs);
+  __m128 r = fnmadd(as, b, p);
+
+  #ifdef __SSE4_1__
+  r = _mm_shuffle_ps(r, r, s);
+  r = _mm_blend_ps(p, r, 0x7);
+  #else
+  r = _mm_shuffle_ps(r, r, _MM_SHUFFLE(0, 3, 2, 1));
+  p = _mm_unpackhi_ps(r, p);
+  r = _mm_shuffle_ps(r, p, _MM_SHUFFLE(3, 2, 1, 0));
+  #endif
+
+  return r;
+}
+
 
 #endif
 
