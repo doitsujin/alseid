@@ -192,16 +192,6 @@ public:
   bool operator != (const Matrix& matrix) const = default;
 
   /**
-   * \brief Transposes the matrix
-   *
-   * Flips rows and columns.
-   * \returns Transposed matrix
-   */
-  Matrix<T, Cols, Rows> transpose() const {
-    return transposeMatrix(std::make_index_sequence<Cols>(), std::make_index_sequence<Rows>());
-  }
-
-  /**
    * \brief Creates identity matrix
    * \returns Matrix with diagonal set to 1
    */
@@ -223,11 +213,6 @@ private:
   template<size_t... ColIdx>
   Vector<T, Cols> getRow(std::integer_sequence<size_t, ColIdx...>, uint32_t idx) const {
     return Vector<T, Cols>((col<ColIdx>()[idx])...);
-  }
-
-  template<size_t... ColIdx, size_t... RowIdx>
-  Matrix<T, Cols, Rows> transposeMatrix(std::integer_sequence<size_t, ColIdx...> cols, std::integer_sequence<size_t, RowIdx...> rows) const {
-    return Matrix<T, Cols, Rows>(getRow<RowIdx>(cols)...);
   }
 
   template<size_t Col, size_t Cols_>
@@ -302,12 +287,57 @@ private:
 };
 
 
+template<typename T, size_t Rows, size_t Cols, size_t... ColIdx, size_t... RowIdx>
+Matrix<T, Cols, Rows> transpose(
+        std::integer_sequence<size_t, RowIdx...>,
+  const Matrix<T, Rows, Cols>&          m) {
+  return Matrix<T, Cols, Rows>(m.template row<RowIdx>()...);
+}
+
+/**
+ * \brief Transposes a matrix
+ *
+ * Flips rows and columns.
+ * \param [in] m Matrix to transpose
+ * \returns Transposed matrix
+ */
+template<typename T, size_t Rows, size_t Cols>
+Matrix<T, Cols, Rows> transpose(const Matrix<T, Rows, Cols>& m) {
+  return transpose(std::make_index_sequence<Rows>(), m);
+}
+
+
+#ifdef AS_HAS_X86_INTRINSICS
+inline Matrix<float, 4, 4> transpose(const Matrix<float, 4, 4>& m) {
+  using V = Vector<float, 4>;
+
+  __m128 r0 = __m128(m.col<0>());
+  __m128 r1 = __m128(m.col<1>());
+  __m128 r2 = __m128(m.col<2>());
+  __m128 r3 = __m128(m.col<3>());
+
+  __m128 t0 = _mm_unpacklo_ps(r0, r1);
+  __m128 t1 = _mm_unpackhi_ps(r0, r1);
+  __m128 t2 = _mm_unpacklo_ps(r2, r3);
+  __m128 t3 = _mm_unpackhi_ps(r2, r3);
+
+  __m128 c0 = _mm_movelh_ps(t0, t2);
+  __m128 c1 = _mm_movehl_ps(t2, t0);
+  __m128 c2 = _mm_movelh_ps(t1, t3);
+  __m128 c3 = _mm_movehl_ps(t3, t1);
+
+  return Matrix<float, 4, 4>(V(c0), V(c1), V(c2), V(c3));
+}
+#endif
+
+
 using Matrix2x2 = Matrix<float, 2, 2>;
 using Matrix3x3 = Matrix<float, 3, 3>;
 using Matrix4x4 = Matrix<float, 4, 4>;
 
 using Matrix4x3 = Matrix<float, 4, 3>;
 using Matrix3x4 = Matrix<float, 3, 4>;
+
 
 /**
  * \brief Computes a projection matrix

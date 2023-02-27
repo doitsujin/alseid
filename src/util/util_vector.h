@@ -765,9 +765,13 @@ public:
   }
 
   ScalarType operator [] (uint32_t idx) const {
+    #ifdef __AVX__
+    return _mm_cvtss_f32(_mm_permutevar_ps(m_data, _mm_cvtsi32_si128(idx)));
+    #else
     alignas(16) float data[4];
     _mm_store_ps(data, m_data);
     return data[idx];
+    #endif
   }
 
   template<size_t I, std::enable_if_t<(I < Components), bool> = true>
@@ -778,9 +782,15 @@ public:
       return _mm_cvtss_f32(_mm_shuffle_ps(m_data, m_data, I));
   }
 
-  template<size_t... Indices>
+  template<size_t... Indices, std::enable_if_t<sizeof...(Indices) != 4, bool> = true>
   auto get() const {
     return Vector<ScalarType, sizeof...(Indices)>(at<Indices>()...);
+  }
+
+  template<size_t I0, size_t I1, size_t I2, size_t I3>
+  auto get() const {
+    return Vector(_mm_shuffle_ps(m_data, m_data,
+      _MM_SHUFFLE(I3, I2, I1, I0)));
   }
 
   template<size_t I>
@@ -791,18 +801,35 @@ public:
   template<size_t I, std::enable_if_t<(I < Components), bool> = true>
   Vector& set(ScalarType value) {
 #ifdef __SSE4_1__
-    m_data = _mm_insert_ps(m_data, _mm_load_ss(&value), I << 4);
-    return *this;
+    m_data = _mm_insert_ps(m_data, _mm_set_ss(value), I << 4);
 #else
-    return set(I, value);
+    constexpr uint8_t mask = _MM_SHUFFLE(
+      I == 3 ? 0 : 3, I == 2 ? 0 : 2, I == 1 ? 0 : 1, I);
+    if constexpr (I)
+      m_data = _mm_shuffle_ps(m_data, m_data, mask);
+    m_data = _mm_move_ss(m_data, _mm_set_ss(value));
+    if constexpr (I)
+      m_data = _mm_shuffle_ps(m_data, m_data, mask);
 #endif
+
+    return *this;
   }
 
   Vector& set(uint32_t idx, ScalarType value) {
-    alignas(16) float data[4];
-    _mm_store_ps(data, m_data);
-    data[idx] = value;
-    m_data = _mm_load_ps(data);
+    __m128 mask = _mm_castsi128_ps(_mm_cmpeq_epi32(
+      _mm_set1_epi32(idx),
+      _mm_set_epi32(3, 2, 1, 0)));
+
+    __m128 val = _mm_set1_ps(value);
+
+    #ifdef __SSE4_1__
+    m_data = _mm_blendv_ps(m_data, val, mask);
+    #else
+    m_data = _mm_or_ps(
+      _mm_andnot_ps(mask, m_data),
+      _mm_and_ps(mask, val));
+    #endif
+
     return *this;
   }
 

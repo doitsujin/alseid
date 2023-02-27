@@ -481,16 +481,17 @@ inline __m128 dot_packed(__m128 a, __m128 b) {
 
 
 /**
- * \brief Blends vectors
- * \returns blendps result
+ * \brief Blends vectors with variable mask
+ * \returns blendvps result
  */
-inline __m128 blend_packed(__m128 a, __m128 b, uint8_t imm) {
+template<uint8_t Imm>
+inline __m128 blend_packed(__m128 a, __m128 b) {
   #ifdef __SSE4_1__
-  return _mm_blend_ps(a, b, imm);
+  return _mm_blend_ps(a, b, Imm);
   #else
   __m128 mask = _mm_cvtps_epi32(_mm_set_epi32(
-    imm & 0x8 ? ~0u : 0, imm & 0x4 ? ~0u : 0,
-    imm & 0x2 ? ~0u : 0, imm & 0x1 ? ~0u : 0));
+    Imm & 0x8 ? ~0u : 0, Imm & 0x4 ? ~0u : 0,
+    Imm & 0x2 ? ~0u : 0, Imm & 0x1 ? ~0u : 0));
 
   return _mm_or_ps(
     _mm_andnot_ps(mask, a),
