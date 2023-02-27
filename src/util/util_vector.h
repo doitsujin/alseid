@@ -45,19 +45,14 @@ auto makeVectorTuple(const Vector<T_, N_>& arg) {
  * Essentially creates a tuple that contains
  * the given scalar N times.
  */
-template<typename... Tx>
-auto makeScalarTuple(std::integral_constant<size_t, 0>(), Tx... args) {
-  return std::make_tuple(args...);
-}
-
-template<size_t N, typename T, typename... Tx>
-auto makeScalarTuple(T arg, Tx... args) {
-  return makeScalarTuple(std::integral_constant<size_t, N - 1>(), arg, args..., arg);
-}
-
-template<typename T, size_t N>
+template<size_t N, typename T>
 auto makeScalarTuple(T arg) {
-  return makeScalarTuple(std::integral_constant<size_t, N - 1>(), arg);
+  if constexpr (N == 1) {
+    return std::make_tuple(arg);
+  } else {
+    return std::tuple_cat(std::make_tuple(arg),
+      makeScalarTuple<N - 1>(arg));
+  }
 }
 
 
@@ -104,7 +99,7 @@ public:
    * \param [in] arg Scalar
    */
   explicit Vector(T arg)
-  : Vector(makeScalarTuple<T, N>(arg)) { }
+  : Vector(makeScalarTuple<N, T>(arg)) { }
 
   /**
    * \brief Initializes vector

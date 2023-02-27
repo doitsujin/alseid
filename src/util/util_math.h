@@ -5,6 +5,8 @@
 #include <cstring>
 #include <cmath>
 
+#include "util_likely.h"
+
 #ifndef _MSC_VER
   #define AS_HAS_X86_INTRINSICS 1
   #if defined(__WINE__) && defined(__clang__)
@@ -292,7 +294,7 @@ T abs(T a) {
  * \brief Computes packed absolute value
  * \returns |a|
  */
-inline __m128 abs_packed(__m128 a) {
+force_inline __m128 abs_packed(__m128 a) {
   return _mm_and_ps(a, _mm_castsi128_ps(_mm_set1_epi32(0x7fffffff)));
 }
 
@@ -301,7 +303,7 @@ inline __m128 abs_packed(__m128 a) {
  * \brief Computes packed negation
  * \returns -a
  */
-inline __m128 neg_packed(__m128 a) {
+force_inline __m128 neg_packed(__m128 a) {
   return _mm_xor_ps(a, _mm_castsi128_ps(_mm_set1_epi32(0x80000000)));
 }
 
@@ -310,7 +312,7 @@ inline __m128 neg_packed(__m128 a) {
  * \brief Computes packed multiply-add
  * \returns a + b * c
  */
-inline __m128 fmadd_packed(__m128 a, __m128 b, __m128 c) {
+force_inline __m128 fmadd_packed(__m128 a, __m128 b, __m128 c) {
   #ifdef __FMA__
   return _mm_fmadd_ps(a, b, c);
   #else
@@ -323,7 +325,7 @@ inline __m128 fmadd_packed(__m128 a, __m128 b, __m128 c) {
  * \brief Computes packed negative multiply-add
  * \returns c - a * b
  */
-inline __m128 fnmadd_packed(__m128 a, __m128 b, __m128 c) {
+force_inline __m128 fnmadd_packed(__m128 a, __m128 b, __m128 c) {
   #ifdef __FMA__
   return _mm_fnmadd_ps(a, b, c);
   #else
@@ -336,7 +338,7 @@ inline __m128 fnmadd_packed(__m128 a, __m128 b, __m128 c) {
  * \brief Computes packed multiply-subtract
  * \returns a * b - c
  */
-inline __m128 fmsub_packed(__m128 a, __m128 b, __m128 c) {
+force_inline __m128 fmsub_packed(__m128 a, __m128 b, __m128 c) {
   #ifdef __FMA__
   return _mm_fmsub_ps(a, b, c);
   #else
@@ -349,7 +351,7 @@ inline __m128 fmsub_packed(__m128 a, __m128 b, __m128 c) {
  * \brief Computes packed negative multiply-subtract
  * \returns -(a * b) - c
  */
-inline __m128 fnmsub_packed(__m128 a, __m128 b, __m128 c) {
+force_inline __m128 fnmsub_packed(__m128 a, __m128 b, __m128 c) {
   #ifdef __FMA__
   return _mm_fnmsub_ps(a, b, c);
   #else
@@ -361,17 +363,17 @@ inline __m128 fnmsub_packed(__m128 a, __m128 b, __m128 c) {
 // GCC generates garbage code for these even when used
 // in longer functions, so just don't use these
 #if defined(__FMA__) && defined(__clang__)
-inline float fmadd(float a, float b, float c) { return _mm_cvtss_f32(_mm_fmadd_ss(_mm_set_ss(a), _mm_set_ss(b), _mm_set_ss(c))); }
-inline float fmsub(float a, float b, float c) { return _mm_cvtss_f32(_mm_fmsub_ss(_mm_set_ss(a), _mm_set_ss(b), _mm_set_ss(c))); }
-inline float fnmadd(float a, float b, float c) { return _mm_cvtss_f32(_mm_fnmadd_ss(_mm_set_ss(a), _mm_set_ss(b), _mm_set_ss(c))); }
-inline float fnmsub(float a, float b, float c) { return _mm_cvtss_f32(_mm_fnmsub_ss(_mm_set_ss(a), _mm_set_ss(b), _mm_set_ss(c))); }
+force_inline float fmadd(float a, float b, float c) { return _mm_cvtss_f32(_mm_fmadd_ss(_mm_set_ss(a), _mm_set_ss(b), _mm_set_ss(c))); }
+force_inline float fmsub(float a, float b, float c) { return _mm_cvtss_f32(_mm_fmsub_ss(_mm_set_ss(a), _mm_set_ss(b), _mm_set_ss(c))); }
+force_inline float fnmadd(float a, float b, float c) { return _mm_cvtss_f32(_mm_fnmadd_ss(_mm_set_ss(a), _mm_set_ss(b), _mm_set_ss(c))); }
+force_inline float fnmsub(float a, float b, float c) { return _mm_cvtss_f32(_mm_fnmsub_ss(_mm_set_ss(a), _mm_set_ss(b), _mm_set_ss(c))); }
 #endif
 
 /**
  * \brief Computes packed approximate reciprocal
  * \returns 1 / a (approx)
  */
-inline __m128 approx_rcp_packed(__m128 a) {
+force_inline __m128 approx_rcp_packed(__m128 a) {
   __m128 two = _mm_set1_ps(2.0f);
   __m128 x = _mm_rcp_ps(a);
 
@@ -383,7 +385,7 @@ inline __m128 approx_rcp_packed(__m128 a) {
  * \brief Computes packed approximate division
  * \returns a / b (approx)
  */
-inline __m128 approx_div_packed(__m128 a, __m128 b) {
+force_inline __m128 approx_div_packed(__m128 a, __m128 b) {
   __m128 two = _mm_set1_ps(2.0f);
   __m128 x = _mm_rcp_ps(b);
 
@@ -395,7 +397,7 @@ inline __m128 approx_div_packed(__m128 a, __m128 b) {
  * \brief Computes packed approximate inverse square root
  * \returns 1 / sqrt(a) (approx)
  */
-inline __m128 approx_rsqrt_packed(__m128 a) {
+force_inline __m128 approx_rsqrt_packed(__m128 a) {
   __m128 half = _mm_set1_ps(0.5f);
   __m128 three = _mm_set1_ps(3.0f);
   __m128 x = _mm_rsqrt_ps(a);
@@ -410,7 +412,7 @@ inline __m128 approx_rsqrt_packed(__m128 a) {
  * \brief Computes packed approximate square root
  * \returns sqrt(a) (approx)
  */
-inline __m128 approx_sqrt_packed(__m128 a) {
+force_inline __m128 approx_sqrt_packed(__m128 a) {
   __m128 half = _mm_set1_ps(0.5f);
   __m128 three = _mm_set1_ps(3.0f);
   __m128 x = _mm_rsqrt_ps(a);
@@ -458,7 +460,7 @@ inline __m128 approx_sin_packed(__m128 x) {
  * Only the first component will be valid.
  * \returns dot(a, b)
  */
-inline __m128 dot_packed_one(__m128 a, __m128 b) {
+force_inline __m128 dot_packed_one(__m128 a, __m128 b) {
   __m128 r = _mm_mul_ps(a, b);
   __m128 s = _mm_shuffle_ps(r, r, _MM_SHUFFLE(2, 3, 0, 1));
   r = _mm_add_ps(r, s);
@@ -473,7 +475,7 @@ inline __m128 dot_packed_one(__m128 a, __m128 b) {
  * All components will contain the correct value.
  * \returns dot(a, b)
  */
-inline __m128 dot_packed(__m128 a, __m128 b) {
+force_inline __m128 dot_packed(__m128 a, __m128 b) {
   __m128 r = _mm_mul_ps(a, b);
   __m128 s = _mm_shuffle_ps(r, r, _MM_SHUFFLE(2, 3, 0, 1));
   r = _mm_add_ps(r, s);
@@ -487,7 +489,7 @@ inline __m128 dot_packed(__m128 a, __m128 b) {
  * \returns blendvps result
  */
 template<uint8_t Imm>
-inline __m128 blend_packed(__m128 a, __m128 b) {
+force_inline __m128 blend_packed(__m128 a, __m128 b) {
   #ifdef __SSE4_1__
   return _mm_blend_ps(a, b, Imm);
   #else
@@ -509,7 +511,7 @@ inline __m128 blend_packed(__m128 a, __m128 b) {
  * last components of both vectors.
  * \returns a × b
  */
-inline __m128 cross_packed(__m128 a, __m128 b) {
+force_inline __m128 cross_packed(__m128 a, __m128 b) {
   uint8_t s = _MM_SHUFFLE(3, 0, 2, 1);
 
   __m128 as = _mm_shuffle_ps(a, a, s);
@@ -537,7 +539,7 @@ inline __m128 cross_packed(__m128 a, __m128 b) {
  * \brief Computes approximate reciprocal
  * \returns 1 / a (approx.)
  */
-inline float approx_rcp(float a) {
+force_inline float approx_rcp(float a) {
 #ifdef AS_HAS_X86_INTRINSICS
   return _mm_cvtss_f32(approx_rcp_packed(_mm_set_ss(a)));
 #else
@@ -550,7 +552,7 @@ inline float approx_rcp(float a) {
  * \brief Computes approximate quotient
  * \returns a / b (approx.)
  */
-inline float approx_div(float a, float b) {
+force_inline float approx_div(float a, float b) {
 #ifdef AS_HAS_X86_INTRINSICS
   return _mm_cvtss_f32(approx_div_packed(_mm_set_ss(a), _mm_set_ss(b)));
 #else
@@ -564,11 +566,11 @@ inline float approx_div(float a, float b) {
  * \brief Computes approximate square root
  * \returns sqrt(n) (approx.)
  */
-inline float approx_sqrt(float n) {
+force_inline float approx_sqrt(float n) {
 #ifdef AS_HAS_X86_INTRINSICS
   return _mm_cvtss_f32(approx_sqrt_packed(_mm_set_ss(n)));
 #else
-  return std::sqrt(x);
+  return std::sqrt(n);
 #endif
 }
 
@@ -577,11 +579,11 @@ inline float approx_sqrt(float n) {
  * \brief Computes approximate inverse square root
  * \returns sqrt(n) (approx.)
  */
-inline float approx_rsqrt(float n) {
+force_inline float approx_rsqrt(float n) {
 #ifdef AS_HAS_X86_INTRINSICS
   return _mm_cvtss_f32(approx_rsqrt_packed(_mm_set_ss(n)));
 #else
-  return 1.0f / std::sqrt(x);
+  return 1.0f / std::sqrt(n);
 #endif
 }
 
@@ -676,5 +678,102 @@ inline std::pair<SinCos, SinCos> approx_sincos(float x, float y) {
   return std::make_pair(approx_sincos(x), approx_sincos(y));
 #endif
 }
+
+
+/**
+ * \brief Computes approximate tangent
+ * \returns tan(x)
+ */
+inline float approx_tan(float x) {
+  SinCos sincos = approx_sincos(x);
+  return approx_div(sincos.sin, sincos.cos);
+}
+
+
+/**
+ * \brief Computes approximate cotangent
+ * \returns tan(x)
+ */
+inline float approx_cot(float x) {
+  SinCos sincos = approx_sincos(x);
+  return approx_div(sincos.cos, sincos.sin);
+}
+
+
+/**
+ * \brief Tangent and cotangent
+ */
+struct TanCot {
+  float tan;
+  float cot;
+};
+
+
+/**
+ * \brief Computes approximate tangent and cotangent
+ *
+ * Leverages vectorization so that this has no additional
+ * cost over computing only one of the values.
+ * \returns tan(x) and cot(x) (approx)
+ */
+inline TanCot approx_tancot(float x) {
+  TanCot result;
+#ifdef AS_HAS_X86_INTRINSICS
+  #ifdef __SSE4_1__
+  __m128 xsin = _mm_set_ss(x);
+  __m128 xcos = _mm_add_ss(xsin, _mm_set_ss(float(pi * 0.5)));
+  __m128 num = approx_sin_packed(_mm_unpacklo_ps(xsin, xcos));
+  #else
+  SinCos sincos = approx_sincos(x);
+  __m128 num = _mm_set_ps(0.0f, 0.0f, sincos.cos, sincos.sin);
+  #endif
+  __m128 den = _mm_shuffle_ps(num, num, _MM_SHUFFLE(2, 3, 0, 1));
+  __m128 quot = approx_div_packed(num, den);
+
+  uint64_t tmp = _mm_cvtsi128_si64(_mm_castps_si128(quot));
+  std::memcpy(&result, &tmp, sizeof(tmp));
+#else
+  SinCos sincos = approx_sincos(x);
+  result.tan = approx_div(sincos.sin, sincos.cos);
+  result.cot = approx_div(sincos.cos, sincos.sin);
+#endif
+  return result;
+}
+
+
+/**
+ * \brief Computes two approximate tangent and cotangent pairs
+ *
+ * If possible, this leverages vectorization so that the cost
+ * is roughly the same as it one \c approx_tancot call.
+ * \returns tancot(x) and tancot(y) (approx)
+ */
+inline std::pair<TanCot, TanCot> approx_tancot(float x, float y) {
+#ifdef AS_HAS_X86_INTRINSICS
+  std::pair<TanCot, TanCot> result;
+  #ifdef __SSE4_1__
+  __m128 xysin = _mm_set_ps(0.0f, 0.0f, y, x);
+  __m128 xycos = _mm_add_ps(xysin, _mm_set1_ps(float(pi * 0.5)));
+  __m128 num = approx_sin_packed(_mm_unpacklo_ps(xysin, xycos));
+  #else
+  auto sincos = approx_sincos(x, y);
+  __m128 num = _mm_set_ps(
+    sincos.second.cos, sincos.second.sin,
+    sincos.first.cos, sincos.first.sin);
+  #endif
+  __m128 den = _mm_shuffle_ps(num, num, _MM_SHUFFLE(2, 3, 0, 1));
+  __m128 quot = approx_div_packed(num, den);
+
+  uint64_t tmp0 = _mm_cvtsi128_si64(_mm_castps_si128(quot));
+  uint64_t tmp1 = _mm_cvtsi128_si64(_mm_castps_si128(_mm_movehl_ps(quot, quot)));
+
+  std::memcpy(&result.first, &tmp0, sizeof(tmp0));
+  std::memcpy(&result.second, &tmp1, sizeof(tmp1));
+  return result;
+#else
+  return std::make_pair(approx_tancot(x), approx_tancot(y));
+#endif
+}
+
 
 }
