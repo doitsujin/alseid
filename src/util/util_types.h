@@ -85,4 +85,33 @@ struct FourCC {
   }
 };
 
+
+/**
+ * \brief 24-bit integer
+ *
+ * Provides 24-bit storage, but no arithmetic operations.
+ * Explicitly cast to 32-bit integers to do math on this.
+ */
+struct uint24_t {
+  uint24_t() = default;
+
+  explicit uint24_t(uint32_t value)
+  : data { uint8_t(value >>  0),
+           uint8_t(value >>  8),
+           uint8_t(value >> 16) } { }
+
+  explicit operator uint32_t () const {
+    return uint32_t(data[0])
+         | uint32_t(data[1]) << 8
+         | uint32_t(data[2]) << 16;
+  }
+
+  bool operator == (const uint24_t& other) const = default;
+  bool operator != (const uint24_t& other) const = default;
+
+  uint8_t data[3];
+};
+
+static_assert(sizeof(uint24_t) == 3 && alignof(uint24_t) == 1);
+
 }
