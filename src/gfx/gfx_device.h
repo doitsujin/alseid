@@ -10,6 +10,7 @@
 #include "gfx_memory.h"
 #include "gfx_pipeline.h"
 #include "gfx_presenter.h"
+#include "gfx_ray_tracing.h"
 #include "gfx_sampler.h"
 #include "gfx_semaphore.h"
 #include "gfx_shader.h"
@@ -153,12 +154,30 @@ public:
           GfxFormat                     format) const = 0;
 
   /**
+   * \brief Computes allocation size of geometry BVH
+   *
+   * \param [in] desc Geometry description
+   * \returns Required size for the BVH
+   */
+  virtual uint64_t computeRayTracingBvhSize(
+    const GfxRayTracingGeometryDesc&    desc) const = 0;
+
+  /**
+   * \brief Computes allocation size of instance BVH
+   *
+   * \param [in] desc Instance description
+   * \returns Required size for the BVH
+   */
+  virtual uint64_t computeRayTracingBvhSize(
+    const GfxRayTracingInstanceDesc&    desc) const = 0;
+
+  /**
    * \brief Creates buffer
    *
    * If memory for the resource cannot be allocated from
    * the given allocator on the desired memory types, this
    * method will return a \c nullptr buffer.
-   * \param [in] desc Image properties
+   * \param [in] desc Buffer properties
    * \param [in] memoryTypes Allowed memory types
    * \returns Buffer object
    */
@@ -278,6 +297,28 @@ public:
    */
   virtual GfxRasterizerState createRasterizerState(
     const GfxRasterizerStateDesc&       desc) = 0;
+
+  /**
+   * \brief Creates geometry BVH
+   *
+   * BVHs will always be allocated in device memory. The size is
+   * not known up-front and memory will be allocated dynamically.
+   * If the exact size needs to be known beforehand, use the
+   * \c computeRayTracingBvhSize method.
+   * \param [in] desc Geometry description
+   * \returns Newly created ray tracing BVH
+   */
+  virtual GfxRayTracingBvh createRayTracingBvh(
+    const GfxRayTracingGeometryDesc&    desc) = 0;
+
+  /**
+   * \brief Creates instance BVH
+   *
+   * \param [in] desc Instance description
+   * \returns Newly created ray tracing BVH
+   */
+  virtual GfxRayTracingBvh createRayTracingBvh(
+    const GfxRayTracingInstanceDesc&    desc) = 0;
 
   /**
    * \brief Creates a render target state object

@@ -16,6 +16,7 @@ as_files += files([
   'gfx_vulkan_pipeline.cpp',
   'gfx_vulkan_presenter.cpp',
   'gfx_vulkan_queue.cpp',
+  'gfx_vulkan_ray_tracing.cpp',
   'gfx_vulkan_sampler.cpp',
   'gfx_vulkan_semaphore.cpp',
   'gfx_vulkan_utils.cpp',

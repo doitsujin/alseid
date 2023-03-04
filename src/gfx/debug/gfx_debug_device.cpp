@@ -32,6 +32,20 @@ GfxFormatFeatures GfxDebugDevice::getFormatFeatures(
 }
 
 
+uint64_t GfxDebugDevice::computeRayTracingBvhSize(
+  const GfxRayTracingGeometryDesc&    desc) const {
+  // TODO validate desc
+  return m_device->computeRayTracingBvhSize(desc);
+}
+
+
+uint64_t GfxDebugDevice::computeRayTracingBvhSize(
+  const GfxRayTracingInstanceDesc&    desc) const {
+  // TODO validate desc
+  return m_device->computeRayTracingBvhSize(desc);
+}
+
+
 GfxBuffer GfxDebugDevice::createBuffer(
   const GfxBufferDesc&                desc,
         GfxMemoryTypes                memoryTypes) {
@@ -138,6 +152,20 @@ GfxRasterizerState GfxDebugDevice::createRasterizerState(
   const GfxRasterizerStateDesc&       desc) {
   // TODO validate state
   return m_device->createRasterizerState(desc);
+}
+
+
+GfxRayTracingBvh GfxDebugDevice::createRayTracingBvh(
+  const GfxRayTracingGeometryDesc&    desc) {
+  // TODO validate desc and wrap BVH
+  return m_device->createRayTracingBvh(desc);
+}
+
+
+GfxRayTracingBvh GfxDebugDevice::createRayTracingBvh(
+  const GfxRayTracingInstanceDesc&    desc) {
+  // TODO validate desc and wrap BVH
+  return m_device->createRayTracingBvh(desc);
 }
 
 

@@ -16,6 +16,7 @@
 #include "gfx_vulkan_memory.h"
 #include "gfx_vulkan_pipeline.h"
 #include "gfx_vulkan_queue.h"
+#include "gfx_vulkan_ray_tracing.h"
 
 namespace as {
 
@@ -198,6 +199,24 @@ public:
           GfxFormat                     format) const override;
 
   /**
+   * \brief Computes allocation size of geometry BVH
+   *
+   * \param [in] desc Geometry description
+   * \returns Required size for the BVH
+   */
+  uint64_t computeRayTracingBvhSize(
+    const GfxRayTracingGeometryDesc&    desc) const override;
+
+  /**
+   * \brief Computes allocation size of instance BVH
+   *
+   * \param [in] desc Instance description
+   * \returns Required size for the BVH
+   */
+  uint64_t computeRayTracingBvhSize(
+    const GfxRayTracingInstanceDesc&    desc) const override;
+
+  /**
    * \brief Creates buffer
    *
    * \param [in] desc Buffer properties
@@ -310,6 +329,24 @@ public:
    */
   GfxRasterizerState createRasterizerState(
     const GfxRasterizerStateDesc&       desc) override;
+
+  /**
+   * \brief Creates geometry BVH
+   *
+   * \param [in] desc Geometry description
+   * \returns Newly created ray tracing BVH
+   */
+  GfxRayTracingBvh createRayTracingBvh(
+    const GfxRayTracingGeometryDesc&    desc) override;
+
+  /**
+   * \brief Creates instance BVH
+   *
+   * \param [in] desc Instance description
+   * \returns Newly created ray tracing BVH
+   */
+  GfxRayTracingBvh createRayTracingBvh(
+    const GfxRayTracingInstanceDesc&    desc) override;
 
   /**
    * \brief Creates a render target state object
@@ -437,6 +474,14 @@ private:
   uint32_t                            m_queueFamilyCount = 0;
 
   GfxVulkanMemoryTypeMasks getMemoryTypeMasks() const;
+
+  GfxVulkanRayTracingBvhSize computeRayTracingBvhSize(
+    const GfxVulkanRayTracingBvhInfo&   info) const;
+
+  GfxRayTracingBvh createRayTracingBvh(
+    const GfxRayTracingBvhDesc&         desc,
+    const GfxVulkanRayTracingBvhSize&   size,
+          GfxVulkanRayTracingBvhInfo&&  info);
 
 };
 

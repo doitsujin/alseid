@@ -121,6 +121,7 @@ public:
   GFX_VK_DPROC(vkBindBufferMemory2);
   GFX_VK_DPROC(vkBindImageMemory);
   GFX_VK_DPROC(vkBindImageMemory2);
+  GFX_VK_DPROC(vkBuildAccelerationStructuresKHR);
   GFX_VK_DPROC(vkCmdBeginDebugUtilsLabelEXT);
   GFX_VK_DPROC(vkCmdBeginQuery);
   GFX_VK_DPROC(vkCmdBeginRendering);
@@ -133,9 +134,13 @@ public:
   GFX_VK_DPROC(vkCmdBindVertexBuffers2);
   GFX_VK_DPROC(vkCmdBlitImage);
   GFX_VK_DPROC(vkCmdBlitImage2);
+  GFX_VK_DPROC(vkCmdBuildAccelerationStructuresKHR);
+  GFX_VK_DPROC(vkCmdBuildAccelerationStructuresIndirectKHR);
   GFX_VK_DPROC(vkCmdClearAttachments);
   GFX_VK_DPROC(vkCmdClearColorImage);
   GFX_VK_DPROC(vkCmdClearDepthStencilImage);
+  GFX_VK_DPROC(vkCmdCopyAccelerationStructureKHR);
+  GFX_VK_DPROC(vkCmdCopyAccelerationStructureToMemoryKHR);
   GFX_VK_DPROC(vkCmdCopyBuffer);
   GFX_VK_DPROC(vkCmdCopyBuffer2);
   GFX_VK_DPROC(vkCmdCopyBufferToImage);
@@ -144,6 +149,7 @@ public:
   GFX_VK_DPROC(vkCmdCopyImage2);
   GFX_VK_DPROC(vkCmdCopyImageToBuffer);
   GFX_VK_DPROC(vkCmdCopyImageToBuffer2);
+  GFX_VK_DPROC(vkCmdCopyMemoryToAccelerationStructureKHR);
   GFX_VK_DPROC(vkCmdCopyQueryPoolResults);
   GFX_VK_DPROC(vkCmdDispatch);
   GFX_VK_DPROC(vkCmdDispatchBase);
@@ -236,8 +242,13 @@ public:
   GFX_VK_DPROC(vkCmdUpdateBuffer);
   GFX_VK_DPROC(vkCmdWaitEvents);
   GFX_VK_DPROC(vkCmdWaitEvents2);
+  GFX_VK_DPROC(vkCmdWriteAccelerationStructuresPropertiesKHR);
   GFX_VK_DPROC(vkCmdWriteTimestamp);
   GFX_VK_DPROC(vkCmdWriteTimestamp2);
+  GFX_VK_DPROC(vkCopyAccelerationStructureKHR);
+  GFX_VK_DPROC(vkCopyAccelerationStructureToMemoryKHR);
+  GFX_VK_DPROC(vkCopyMemoryToAccelerationStructureKHR);
+  GFX_VK_DPROC(vkCreateAccelerationStructureKHR);
   GFX_VK_DPROC(vkCreateBuffer);
   GFX_VK_DPROC(vkCreateBufferView);
   GFX_VK_DPROC(vkCreateCommandPool);
@@ -262,6 +273,7 @@ public:
   GFX_VK_DPROC(vkCreateSemaphore);
   GFX_VK_DPROC(vkCreateShaderModule);
   GFX_VK_DPROC(vkCreateSwapchainKHR);
+  GFX_VK_DPROC(vkDestroyAccelerationStructureKHR);
   GFX_VK_DPROC(vkDestroyBuffer);
   GFX_VK_DPROC(vkDestroyBufferView);
   GFX_VK_DPROC(vkDestroyCommandPool);
@@ -291,11 +303,14 @@ public:
   GFX_VK_DPROC(vkFreeCommandBuffers);
   GFX_VK_DPROC(vkFreeDescriptorSets);
   GFX_VK_DPROC(vkFreeMemory);
+  GFX_VK_DPROC(vkGetAccelerationStructureBuildSizesKHR);
+  GFX_VK_DPROC(vkGetAccelerationStructureDeviceAddressKHR);
   GFX_VK_DPROC(vkGetBufferDeviceAddress);
   GFX_VK_DPROC(vkGetBufferMemoryRequirements);
   GFX_VK_DPROC(vkGetBufferMemoryRequirements2);
   GFX_VK_DPROC(vkGetBufferOpaqueCaptureAddress);
   GFX_VK_DPROC(vkGetDescriptorSetLayoutSupport);
+  GFX_VK_DPROC(vkGetDeviceAccelerationStructureCompatibilityKHR);
   GFX_VK_DPROC(vkGetDeviceGroupPeerMemoryFeatures);
   GFX_VK_DPROC(vkGetDeviceGroupPresentCapabilitiesKHR);
   GFX_VK_DPROC(vkGetDeviceGroupSurfacePresentModesKHR);
@@ -347,6 +362,7 @@ public:
   GFX_VK_DPROC(vkUpdateDescriptorSetWithTemplate);
   GFX_VK_DPROC(vkWaitForFences);
   GFX_VK_DPROC(vkWaitSemaphores);
+  GFX_VK_DPROC(vkWriteAccelerationStructuresPropertiesKHR);
 
 private:
 
@@ -376,5 +392,6 @@ inline VkObjectType getVulkanObjectType(VkPipeline)       { return VK_OBJECT_TYP
 inline VkObjectType getVulkanObjectType(VkDescriptorPool) { return VK_OBJECT_TYPE_DESCRIPTOR_POOL;  }
 inline VkObjectType getVulkanObjectType(VkDescriptorSet)  { return VK_OBJECT_TYPE_DESCRIPTOR_SET;   }
 inline VkObjectType getVulkanObjectType(VkSampler)        { return VK_OBJECT_TYPE_SAMPLER;          }
+inline VkObjectType getVulkanObjectType(VkAccelerationStructureKHR) { return VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR; }
 
 }

@@ -232,6 +232,20 @@ GfxFormatFeatures GfxVulkanDevice::getFormatFeatures(
 }
 
 
+uint64_t GfxVulkanDevice::computeRayTracingBvhSize(
+  const GfxRayTracingGeometryDesc&    desc) const {
+  GfxVulkanRayTracingBvhInfo info(*this, desc);
+  return computeRayTracingBvhSize(info).allocationSize;
+}
+
+
+uint64_t GfxVulkanDevice::computeRayTracingBvhSize(
+  const GfxRayTracingInstanceDesc&    desc) const {
+  GfxVulkanRayTracingBvhInfo info(*this, desc);
+  return computeRayTracingBvhSize(info).allocationSize;
+}
+
+
 GfxBuffer GfxVulkanDevice::createBuffer(
   const GfxBufferDesc&                desc,
         GfxMemoryTypes                memoryTypes) {
@@ -508,6 +522,36 @@ GfxRasterizerState GfxVulkanDevice::createRasterizerState(
 }
 
 
+GfxRayTracingBvh GfxVulkanDevice::createRayTracingBvh(
+  const GfxRayTracingGeometryDesc&    desc) {
+  GfxVulkanRayTracingBvhInfo info(*this, desc);
+  GfxVulkanRayTracingBvhSize size = computeRayTracingBvhSize(info);
+
+  GfxRayTracingBvhDesc subDesc;
+  subDesc.debugName = desc.debugName;
+  subDesc.type = GfxRayTracingBvhType::eGeometry;
+  subDesc.flags = desc.flags;
+  subDesc.size = size.allocationSize;
+
+  return createRayTracingBvh(subDesc, size, std::move(info));
+}
+
+
+GfxRayTracingBvh GfxVulkanDevice::createRayTracingBvh(
+  const GfxRayTracingInstanceDesc&    desc) {
+  GfxVulkanRayTracingBvhInfo info(*this, desc);
+  GfxVulkanRayTracingBvhSize size = computeRayTracingBvhSize(info);
+
+  GfxRayTracingBvhDesc subDesc;
+  subDesc.debugName = desc.debugName;
+  subDesc.type = GfxRayTracingBvhType::eInstance;
+  subDesc.flags = desc.flags;
+  subDesc.size = size.allocationSize;
+
+  return createRayTracingBvh(subDesc, size, std::move(info));
+}
+
+
 GfxRenderTargetState GfxVulkanDevice::createRenderTargetState(
   const GfxRenderTargetStateDesc&     desc) {
   return GfxRenderTargetState(m_pipelineManager->createRenderTargetState(desc));
@@ -678,6 +722,116 @@ GfxVulkanMemoryTypeMasks GfxVulkanDevice::getMemoryTypeMasks() const {
     result.vidMem = result.barMem;
 
   return result;
+}
+
+
+GfxVulkanRayTracingBvhSize GfxVulkanDevice::computeRayTracingBvhSize(
+  const GfxVulkanRayTracingBvhInfo&   info) const {
+  std::vector<uint32_t> primitiveCounts(info.rangeInfos.size());
+
+  for (size_t i = 0; i < info.rangeInfos.size(); i++)
+    primitiveCounts[i] = info.rangeInfos[i].primitiveCount;
+
+  VkAccelerationStructureBuildSizesInfoKHR sizeInfo = { VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR };
+
+  m_vk.vkGetAccelerationStructureBuildSizesKHR(m_vk.device,
+    VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+    &info.info, primitiveCounts.data(), &sizeInfo);
+
+  GfxVulkanRayTracingBvhSize result;
+  result.allocationSize = sizeInfo.accelerationStructureSize;
+  result.scratchSizeForUpdate = sizeInfo.updateScratchSize;
+  result.scratchSizeForBuild = sizeInfo.buildScratchSize;
+
+  return result;
+}
+
+
+GfxRayTracingBvh GfxVulkanDevice::createRayTracingBvh(
+  const GfxRayTracingBvhDesc&         desc,
+  const GfxVulkanRayTracingBvhSize&   size,
+        GfxVulkanRayTracingBvhInfo&&  info) {
+  VkBufferCreateInfo bufferInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+  bufferInfo.size = size.allocationSize;
+  bufferInfo.usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+                   | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR;
+
+  getQueueSharingInfo(
+    &bufferInfo.sharingMode,
+    &bufferInfo.queueFamilyIndexCount,
+    &bufferInfo.pQueueFamilyIndices);
+
+  GfxVulkanMemoryRequirements requirements = { };
+  requirements.dedicated = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS };
+  requirements.core = { VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2, &requirements.dedicated };
+
+  VkDeviceBufferMemoryRequirements requirementInfo = { VK_STRUCTURE_TYPE_DEVICE_BUFFER_MEMORY_REQUIREMENTS };
+  requirementInfo.pCreateInfo = &bufferInfo;
+
+  m_vk.vkGetDeviceBufferMemoryRequirements(m_vk.device, &requirementInfo, &requirements.core);
+
+  // If possible, allocate memory first so that we can exit
+  // early on failure, without creating a resource object.
+  GfxVulkanMemorySlice memorySlice;
+
+  GfxVulkanMemoryAllocationInfo allocationInfo = { };
+  allocationInfo.tiling = VK_IMAGE_TILING_LINEAR;
+  allocationInfo.memoryTypes = GfxMemoryType::eAny;
+
+  if (!requirements.dedicated.prefersDedicatedAllocation) {
+    if (!(memorySlice = m_memoryAllocator->allocateMemory(requirements, allocationInfo)))
+      return GfxRayTracingBvh();
+  }
+
+  VkBuffer buffer = VK_NULL_HANDLE;
+  VkResult vr = m_vk.vkCreateBuffer(m_vk.device, &bufferInfo, nullptr, &buffer);
+
+  if (vr)
+    throw VulkanError("Vulkan: Failed to create buffer", vr);
+
+  if (requirements.dedicated.prefersDedicatedAllocation) {
+    allocationInfo.dedicated = { VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO };
+    allocationInfo.dedicated.buffer = buffer;
+
+    if (!(memorySlice = m_memoryAllocator->allocateMemory(requirements, allocationInfo))) {
+      m_vk.vkDestroyBuffer(m_vk.device, buffer, nullptr);
+      return GfxRayTracingBvh();
+    }
+  }
+
+  VkBindBufferMemoryInfo bind = { VK_STRUCTURE_TYPE_BIND_BUFFER_MEMORY_INFO };
+  bind.buffer = buffer;
+  bind.memory = memorySlice.getHandle();
+  bind.memoryOffset = memorySlice.getOffset();
+
+  vr = m_vk.vkBindBufferMemory2(m_vk.device, 1, &bind);
+
+  if (vr) {
+    m_vk.vkDestroyBuffer(m_vk.device, buffer, nullptr);
+    throw VulkanError("Vulkan: Failed to bind buffer memory", vr);
+  }
+
+  VkAccelerationStructureCreateInfoKHR rtasInfo = { VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR };
+  rtasInfo.buffer = buffer;
+  rtasInfo.offset = 0;
+  rtasInfo.size = size.allocationSize;
+  rtasInfo.type = info.info.type;
+
+  VkAccelerationStructureKHR rtas = VK_NULL_HANDLE;
+  vr = m_vk.vkCreateAccelerationStructureKHR(m_vk.device, &rtasInfo, nullptr, &rtas);
+
+  if (vr) {
+    m_vk.vkDestroyBuffer(m_vk.device, buffer, nullptr);
+    throw VulkanError("Vulkan: Failed to create acceleration structure", vr);
+  }
+
+  VkAccelerationStructureDeviceAddressInfoKHR vaInfo = { VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR };
+  vaInfo.accelerationStructure = rtas;
+
+  VkDeviceAddress va = m_vk.vkGetAccelerationStructureDeviceAddressKHR(m_vk.device, &vaInfo);
+
+  return GfxRayTracingBvh(std::make_shared<GfxVulkanRayTracingBvh>(shared_from_this(),
+    desc, std::move(info), size, buffer, rtas, va, std::move(memorySlice)));
 }
 
 }

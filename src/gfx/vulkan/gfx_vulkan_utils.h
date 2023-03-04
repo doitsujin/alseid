@@ -935,6 +935,69 @@ inline VkBorderColor getVkBorderColor(GfxBorderColor borderColor) {
 
 
 /**
+ * \brief Converts BVH flags to Vulkan RTAS flags
+ *
+ * \param [in] flags BVH flags
+ * \returns Vulkan RTAS flags
+ */
+inline VkBuildAccelerationStructureFlagsKHR getVkAccelerationStructureFlags(GfxRayTracingBvhFlags flags) {
+  VkBuildAccelerationStructureFlagsKHR result = 0;
+
+  if (flags & GfxRayTracingBvhFlag::eDynamic) {
+    result |= VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR
+           |  VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR;
+  } else {
+    result |= VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+  }
+
+  return result;
+}
+
+
+/**
+ * \brief Converts geometry opacity to Vulkan geometry flags
+ *
+ * \param [in] opacity Opacity mode
+ * \returns Geometry flags
+ */
+inline VkGeometryFlagsKHR getVkGeometryFlags(GfxRayTracingOpacity opacity) {
+  switch (opacity) {
+    case GfxRayTracingOpacity::eOpaque:
+      return VK_GEOMETRY_OPAQUE_BIT_KHR;
+
+    case GfxRayTracingOpacity::eProbeOnce:
+      return VK_GEOMETRY_NO_DUPLICATE_ANY_HIT_INVOCATION_BIT_KHR;
+
+    case GfxRayTracingOpacity::eProbeAny:
+      return 0;
+  }
+
+  // Should be unreachable
+  return 0;
+}
+
+
+/**
+ * \brief Converts BVH build mode to Vulkan RTAS build type
+ *
+ * \param [in] mode Build mode
+ * \returns RTAS build mode
+ */
+inline VkBuildAccelerationStructureModeKHR getVkBuildMode(GfxRayTracingBvhBuildMode mode) {
+  switch (mode) {
+    case GfxRayTracingBvhBuildMode::eBuild:
+      return VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+
+    case GfxRayTracingBvhBuildMode::eUpdate:
+      return VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
+  }
+
+  // Should be unreachable
+  return VK_BUILD_ACCELERATION_STRUCTURE_MODE_MAX_ENUM_KHR;
+}
+
+
+/**
  * \brief Creates shader from built-in binary
  *
  * \param [in] size Code size, in bytes
