@@ -8,3 +8,4 @@ asa_shader_generator = generator(asshader,
 
 subdir('01-initialization')
 subdir('02-cube')
+subdir('03-raytracing')

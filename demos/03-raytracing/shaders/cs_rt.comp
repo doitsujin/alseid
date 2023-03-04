@@ -1,0 +1,56 @@
+#version 460
+
+#extension GL_EXT_ray_query : require
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform writeonly image2D r_dst;
+layout(set = 0, binding = 1) uniform accelerationStructureEXT r_bvh;
+
+layout(push_constant)
+uniform push_t {
+  mat4 viewMatrix;
+  mat4 projMatrix;
+};
+
+vec3 encodeSrgb(vec3 linear) {
+  bvec3 isLo = lessThanEqual(linear, vec3(0.0031308f));
+
+  vec3 loPart = linear * 12.92f;
+  vec3 hiPart = pow(linear, vec3(5.0f / 12.0f)) * 1.055f - 0.055f;
+  return mix(hiPart, loPart, isLo);
+}
+
+void main() {
+  ivec2 dstCoord = ivec2(gl_GlobalInvocationID.xy);
+  ivec2 dstSize = imageSize(r_dst);
+
+  // Ideally we'd pass the inverted matrix in right away
+  mat4 inverseViewMatrix = inverse(viewMatrix);
+  mat4 inverseProjMatrix = inverse(projMatrix);
+
+  vec3 projCoord = vec3((vec2(dstCoord) / vec2(dstSize - 1)) * 2.0f - 1.0f, 0.0f);
+  projCoord.y = -projCoord.y;
+
+  vec3 worldCoord = vec3(inverseProjMatrix * vec4(projCoord, 1.0f));
+
+  vec3 rayDirection = normalize(vec3(inverseViewMatrix * vec4(worldCoord, 0.0f)));
+  vec3 rayOrigin = vec3(inverseViewMatrix * vec4(0.0f, 0.0f, 0.0f, 1.0f));
+
+  rayQueryEXT rq;
+  rayQueryInitializeEXT(rq, r_bvh, 0, 0xff,
+    rayOrigin, 0.0f, rayDirection, 10000.0f);
+
+  while (rayQueryProceedEXT(rq))
+    continue;
+
+  vec3 color = vec3(0.5f);
+
+  if (rayQueryGetIntersectionTypeEXT(rq, true) != gl_RayQueryCommittedIntersectionNoneEXT) {
+    color.xy = rayQueryGetIntersectionBarycentricsEXT(rq, true);
+    color.z = 1.0f - (color.x + color.y);
+  }
+
+  if (all(lessThan(dstCoord, dstSize)))
+    imageStore(r_dst, dstCoord, vec4(encodeSrgb(color), 1.0f));
+}
