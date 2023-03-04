@@ -238,6 +238,19 @@ public:
     const uint32_t*                     strides) override;
 
   /**
+   * \brief Builds a BVH
+   *
+   * \param [in] bvh Ray tracing BVH to build or update
+   * \param [in] mode Whether to re-build or update the BVH
+   * \param [in] data Data sources, with one entry per geometry
+   *    or per set of instances as defined during BVH creation.
+   */
+  void buildRayTracingBvh(
+    const GfxRayTracingBvh&             bvh,
+          GfxRayTracingBvhBuildMode     mode,
+    const GfxRayTracingBvhData*         data) override;
+
+  /**
    * \brief Copies buffer data
    *
    * \param [in] dstBuffer Buffer to write to

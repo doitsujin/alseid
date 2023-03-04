@@ -7,6 +7,7 @@
 #include "gfx_vulkan_context.h"
 #include "gfx_vulkan_descriptor_array.h"
 #include "gfx_vulkan_image.h"
+#include "gfx_vulkan_ray_tracing.h"
 #include "gfx_vulkan_utils.h"
 
 namespace as {
@@ -567,6 +568,27 @@ void GfxVulkanContext::bindVertexBuffers(
   }
 
   m_vbosDirty |= ((2u << (count - 1u)) - 1u) << index;
+}
+
+
+void GfxVulkanContext::buildRayTracingBvh(
+  const GfxRayTracingBvh&             bvh,
+        GfxRayTracingBvhBuildMode     mode,
+  const GfxRayTracingBvhData*         data) {
+  auto& vk = m_device->vk();
+  m_barrierBatch.recordCommands(vk, m_cmd);
+
+  auto& vkBvh = static_cast<GfxVulkanRayTracingBvh&>(*bvh);
+
+  // Allocate scratch memory. Technically we're pessimistic here and we
+  // could use a global buffer, with a linear allocator per command list.
+  GfxScratchBuffer scratch = allocScratch(GfxUsage::eBvhBuild, vkBvh.getScratchSize(mode));
+
+  // Populate cached build info with the provided parameters
+  GfxVulkanRayTracingBvhInfo info = vkBvh.getBuildInfo(mode, data, scratch.getGpuAddress());
+  const VkAccelerationStructureBuildRangeInfoKHR* rangeInfos = info.rangeInfos.data();
+
+  vk.vkCmdBuildAccelerationStructuresKHR(m_cmd, 1, &info.info, &rangeInfos);
 }
 
 
@@ -1542,8 +1564,7 @@ std::pair<VkPipelineStageFlags2, VkAccessFlags2> GfxVulkanContext::getVkStageAcc
         break;
 
       case GfxUsage::eBvhBuild:
-        vkStages |= VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR
-                 |  VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR;
+        vkStages |= VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
         vkAccess |= VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR
                  |  VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
         break;

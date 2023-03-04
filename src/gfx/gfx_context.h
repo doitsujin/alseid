@@ -10,6 +10,7 @@
 #include "gfx_image.h"
 #include "gfx_pipeline.h"
 #include "gfx_scratch.h"
+#include "gfx_ray_tracing.h"
 #include "gfx_render.h"
 #include "gfx_types.h"
 
@@ -382,6 +383,19 @@ public:
           uint32_t                      stride) {
     bindVertexBuffers(index, 1, &descriptor, &stride);
   }
+
+  /**
+   * \brief Builds a BVH
+   *
+   * \param [in] bvh Ray tracing BVH to build or update
+   * \param [in] mode Whether to re-build or update the BVH
+   * \param [in] data Data sources, with one entry per geometry
+   *    or per set of instances as defined during BVH creation.
+   */
+  virtual void buildRayTracingBvh(
+    const GfxRayTracingBvh&             bvh,
+          GfxRayTracingBvhBuildMode     mode,
+    const GfxRayTracingBvhData*         data) = 0;
 
   /**
    * \brief Copies buffer data
