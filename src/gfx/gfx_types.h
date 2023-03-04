@@ -44,14 +44,12 @@ enum class GfxUsage : uint32_t {
   /** Resource can be used as a shading rate image. If this is used
    *  in a barrier. shading rate reads will be synchronized. */
   eShadingRate      = (1u << 9),
-  /** Resource can be used during ray traversal as an acceleration
-   *  structure. If this is set for a resource, \c eBvhBuild \e must
-   *  also be specified. In a barrier, this will synchronize ray
-   *  traversal access within the given shader stages. */
+  /** In a barrier, this will synchronize ray traversal access within
+   *  the given shader stages. Cannot be used as a resource usage flag. */
   eBvhTraversal     = (1u << 10),
-  /** Resource can be used to build, contain and copy acceleration
-   *  structrues. In a barrier, this will synchronize ray tracing
-   *  acceleration structure build and copy operations. */
+  /** Buffer resource can be used as an input buffer for BVH builds.
+   *  In a barrier, this will synchronize build and copy operations
+   *  on ray tracing BVHs. */
   eBvhBuild         = (1u << 11),
   /** Buffer can be written to by the CPU. This flag has no effect
    *  when used in barriers, since writes are either coherent or
