@@ -62,8 +62,6 @@ public:
     const WsiWindow&                    window,
           VkSurfaceKHR*                 surface) override;
 
-private:
-
 };
 
 }
