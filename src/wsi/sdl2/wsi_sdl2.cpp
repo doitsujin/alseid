@@ -136,6 +136,31 @@ std::string WsiSdl2::getMouseButtonName(
 }
 
 
+void WsiSdl2::showMessage(
+        LogSeverity                   severity,
+  const std::string&                  title,
+  const std::string&                  message) {
+  Log::message(severity, strcat(title, "\n", message));
+
+  Uint32 flags = 0;
+
+  switch (severity) {
+    case LogSeverity::eError:
+      flags |= SDL_MESSAGEBOX_ERROR;
+      break;
+
+    case LogSeverity::eWarn:
+      flags |= SDL_MESSAGEBOX_WARNING;
+      break;
+
+    default:
+      flags |= SDL_MESSAGEBOX_INFORMATION;
+  }
+
+  SDL_ShowSimpleMessageBox(flags, title.c_str(), message.c_str(), nullptr);
+}
+
+
 void WsiSdl2::unregisterWindow(
         WsiSdl2Window*                window) {
   std::lock_guard lock(m_windowLutMutex);

@@ -81,6 +81,18 @@ public:
     const WsiEventProc&                 proc) override;
 
   /**
+   * \brief Shows info message
+   *
+   * \param [in] severity Message severity
+   * \param [in] title Message box title
+   * \param [in] message Message
+   */
+  void showMessage(
+          LogSeverity                   severity,
+    const std::string&                  title,
+    const std::string&                  message) override;
+
+  /**
    * \brief Unregisters window
    *
    * This gets called automatically when

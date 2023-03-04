@@ -5,6 +5,7 @@
 #include "../gfx/gfx_backend.h"
 
 #include "../util/util_iface.h"
+#include "../util/util_log.h"
 
 #include "wsi_display.h"
 #include "wsi_event.h"
@@ -98,6 +99,20 @@ public:
    */
   virtual void processEvents(
     const WsiEventProc&                 proc) = 0;
+
+  /**
+   * \brief Shows info message
+   *
+   * Can be used to display errors. Will block calling
+   * thread until message is confirmed by the user.
+   * \param [in] severity Message severity
+   * \param [in] title Message box title
+   * \param [in] message Message
+   */
+  virtual void showMessage(
+          LogSeverity                   severity,
+    const std::string&                  title,
+    const std::string&                  message) = 0;
 
 };
 
