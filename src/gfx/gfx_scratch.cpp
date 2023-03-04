@@ -1,4 +1,5 @@
 #include "../util/util_assert.h"
+#include "../util/util_log.h"
 #include "../util/util_math.h"
 
 #include "gfx_device.h"
@@ -49,7 +50,7 @@ GfxScratchBufferPage::~GfxScratchBufferPage() {
 std::optional<GfxScratchBuffer> GfxScratchBufferPage::alloc(
         uint64_t                      size,
         uint64_t                      alignment) {
-  auto offset = m_allocator.alloc(size, alignment);
+  auto offset = m_allocator.alloc(align(size, alignment), alignment);
 
   if (!offset)
     return std::nullopt;
@@ -57,7 +58,7 @@ std::optional<GfxScratchBuffer> GfxScratchBufferPage::alloc(
   GfxScratchBuffer result;
   result.buffer = m_parent->getBuffer();
   result.offset = GfxScratchPageSize * m_pageIndex + *offset;
-  result.size = align(size, alignment);
+  result.size = size;
   return std::make_optional(std::move(result));
 }
 
@@ -78,6 +79,7 @@ GfxScratchAllocator::GfxScratchAllocator(
                    | GfxUsage::eConstantBuffer
                    | GfxUsage::eShaderResource;
   bufferDesc.size = GfxScratchBufferSize;
+  bufferDesc.flags = GfxBufferFlag::eDedicatedAllocation;
 
   if (memoryType != GfxMemoryType::eVideoMemory)
     bufferDesc.usage |= GfxUsage::eCpuWrite;
@@ -89,6 +91,9 @@ GfxScratchAllocator::GfxScratchAllocator(
 
   if (memoryType == GfxMemoryType::eSystemMemory)
     bufferDesc.usage |= GfxUsage::eCpuRead;
+
+  if (device.getFeatures().rayTracing)
+    bufferDesc.usage |= GfxUsage::eBvhBuild;
 
   m_buffer = device.createBuffer(bufferDesc, memoryType | GfxMemoryType::eSystemMemory);
 }

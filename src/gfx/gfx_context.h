@@ -112,7 +112,7 @@ public:
           GfxUsage                      usage,
     const T&                            data) {
     GfxScratchBuffer slice = allocScratch(usage | GfxUsage::eCpuWrite, sizeof(data));
-    std::memcpy(slice.buffer->map(GfxUsage::eCpuWrite, slice.offset), &data, sizeof(data));
+    std::memcpy(slice.map(GfxUsage::eCpuWrite, 0), &data, sizeof(data));
     return slice.getDescriptor(usage);
   }
 

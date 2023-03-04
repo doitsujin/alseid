@@ -29,7 +29,7 @@ struct GfxScratchBuffer {
   /** Buffer object that contains the allocation. The buffer
    *  is guaranteed to support the desied usage flags. */
   GfxBuffer buffer;
-  /** Size of the allocated region, in bytes */
+  /** Offset of the allocated region, in bytes */
   uint64_t offset = 0;
   /** Size of the allocated region, in bytes */
   uint64_t size = 0;
@@ -45,6 +45,38 @@ struct GfxScratchBuffer {
   GfxDescriptor getDescriptor(GfxUsage usage) const {
     return buffer->getDescriptor(usage, offset, size);
   }
+
+  /**
+   * \brief Retrieves GPU address at given location
+   *
+   * Only useful if the buffer itself has a GPU address.
+   * \returns GPU address of allocated slice
+   */
+  uint64_t getGpuAddress() const {
+    return buffer->getGpuAddress() + offset;
+  }
+  /**
+   * \brief Returns pointer to mapped memory region
+   *
+   * See \c GfxBufferIface::map.
+   * \param [in] access CPU access flags
+   * \param [in] offset Offset into the mapped resource
+   * \returns Pointer to mapped buffer
+   */
+  void* map(GfxUsageFlags access, size_t offset) {
+    return buffer->map(access, this->offset + offset);
+  }
+
+  /**
+   * \brief Flushes mapped memory region
+   *
+   * See \c GfxBufferIface::unmap.
+   * \param [in] access CPU access flags
+   */
+  void unmap(GfxUsageFlags access) {
+    buffer->unmap(access);
+  }
+
 };
 
 
