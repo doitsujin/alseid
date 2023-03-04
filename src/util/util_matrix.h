@@ -173,7 +173,7 @@ public:
    * \returns Reference to the given element
    */
   T operator [] (std::pair<uint32_t, uint32_t> index) const {
-    return m_cols[index.first][index.second];
+    return m_cols[index.second][index.first];
   }
 
   /**
@@ -236,7 +236,7 @@ private:
   VectorType multiplyMatrixColumn(
           std::integer_sequence<size_t, 0, Idx...> inner,
     const Matrix<T, Cols, Cols_>&       matrix) const {
-    VectorType accum = col<0>() * matrix.template Col<Col>().template broadcast<0>();
+    VectorType accum = col<0>() * matrix.template col<Col>().template broadcast<0>();
     return multiplyMatrixFmaChain<Col>(std::integer_sequence<size_t, Idx...>(), matrix, accum);
   }
 
