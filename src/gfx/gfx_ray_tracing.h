@@ -62,7 +62,7 @@ enum class GfxRayTracingOpacity : uint32_t {
 /**
  * \brief Ray tracing mesh properties
  */
-struct GfxRayTracingMeshData {
+struct GfxRayTracingMeshInfo {
   /** Vertex data format. Must support the \c GfxFormatFeature::eBvhGeometry
    *  feature. Vertex positions are assumed to be be tightly packed within the
    *  source buffer when building ray tracing BVHs. */
@@ -83,7 +83,7 @@ struct GfxRayTracingMeshData {
 /**
  * \brief Ray tracing AABB properties
  */
-struct GfxRayTracingAabbData {
+struct GfxRayTracingAabbInfo {
   /** Number of tightly packed AABBs in the source buffer. The data
    *  layout of an AABB matches that of the \c GfxAabb structure. */
   uint32_t boundingBoxCount;
@@ -93,16 +93,16 @@ struct GfxRayTracingAabbData {
 /**
  * \brief Ray tracing geometry properties
  */
-union GfxRayTracingGeometryData {
-  GfxRayTracingMeshData mesh;
-  GfxRayTracingAabbData aabb;
+union GfxRayTracingGeometryInfo {
+  GfxRayTracingMeshInfo mesh;
+  GfxRayTracingAabbInfo aabb;
 };
 
 
 /**
  * \brief Ray tracing geometry type
  */
-enum class GfxRayTracingGeometryType : uint32_t {
+enum class GfxRayTracingGeometryType : uint16_t {
   /** Triangle geometry. Properties are defined by
    *  the \c GfxRayTracingMeshData structure. */
   eMesh = 0,
@@ -113,6 +113,19 @@ enum class GfxRayTracingGeometryType : uint32_t {
 
 
 /**
+ * \brief Ray tracing geometry flags
+ */
+enum class GfxRayTracingGeometryFlag : uint16_t {
+  /** Allows specifying a transform matrix for meshes. May be
+   *  useful when combining multiple meshes into one BVH. */
+  eMeshTransform  = (1u << 0),
+  eFlagEnum       = 0
+};
+
+using GfxRayTracingGeometryFlags = Flags<GfxRayTracingGeometryFlag>;
+
+
+/**
  * \brief Ray tracing geometry properties
  *
  * Stores properties of a single geometry object within a geometry BVH.
@@ -120,11 +133,13 @@ enum class GfxRayTracingGeometryType : uint32_t {
 struct GfxRayTracingGeometry {
   /** Geometry type. Defines which member of \c data is used. */
   GfxRayTracingGeometryType type = GfxRayTracingGeometryType::eMesh;
+  /** Geometry flags */
+  GfxRayTracingGeometryFlags flags = 0;
   /** Geometry opacity. Defines how this geometry
    *  is treated during ray traversal. */
   GfxRayTracingOpacity opacity = GfxRayTracingOpacity::eOpaque;
   /** Geometry properties. */
-  GfxRayTracingGeometryData data = { };
+  GfxRayTracingGeometryInfo data = { };
 };
 
 
@@ -262,6 +277,8 @@ struct GfxRayTracingMeshDataSource {
   uint64_t vertexData;
   /** GPU address of first index */
   uint64_t indexData;
+  /** GPU address of transform matrix */
+  uint64_t transformData;
 };
 
 

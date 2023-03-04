@@ -34,6 +34,12 @@ GfxVulkanRayTracingBvhInfo::GfxVulkanRayTracingBvhInfo(
         geometry.geometry.triangles.maxVertex = geometryDesc.data.mesh.vertexCount - 1;
         geometry.geometry.triangles.indexType = getVkIndexType(geometryDesc.data.mesh.indexFormat);
 
+        if (geometryDesc.flags & GfxRayTracingGeometryFlag::eMeshTransform) {
+          // As per spect, vkGetAccelerationStructureBuildSizes only checks whether
+          // this is null, the pointer does not have to be valid at this time.
+          geometry.geometry.triangles.transformData.hostAddress = reinterpret_cast<const void*>(16);
+        }
+
         rangeInfo.primitiveCount = geometryDesc.data.mesh.primitiveCount;
       } break;
 
@@ -182,8 +188,16 @@ const GfxRayTracingBvhData*         data,
 
     switch (geometry.geometryType) {
       case VK_GEOMETRY_TYPE_TRIANGLES_KHR: {
+        bool hasTransformMatrix = geometry.geometry.triangles.transformData.hostAddress != nullptr;
         geometry.geometry.triangles.vertexData.deviceAddress = data[i].mesh.vertexData;
-        geometry.geometry.triangles.indexData.deviceAddress = data[i].mesh.indexData;
+
+        if (geometry.geometry.triangles.indexType != VK_INDEX_TYPE_NONE_KHR)
+          geometry.geometry.triangles.indexData.deviceAddress = data[i].mesh.indexData;
+
+        if (hasTransformMatrix) {
+          geometry.geometry.triangles.transformData = VkDeviceOrHostAddressConstKHR();
+          geometry.geometry.triangles.transformData.deviceAddress = data[i].mesh.transformData;
+        }
       } break;
 
       case VK_GEOMETRY_TYPE_AABBS_KHR: {
