@@ -299,6 +299,13 @@ public:
         return std::nullopt;
     }
 
+    for (const auto& r : resources.acceleration_structures) {
+      auto type = get_type(r.base_type_id);
+
+      if (!addBinding(bindings, GfxShaderBindingType::eBvh, r))
+        return std::nullopt;
+    }
+
     // Count number of bindings per set for the array heuristic
     std::array<uint32_t, GfxMaxDescriptorSets> bindingsPerSet = { };
 
