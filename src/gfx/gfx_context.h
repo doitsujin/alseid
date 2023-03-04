@@ -724,7 +724,7 @@ public:
    * \param [in] offset Offset into constant block
    * \param [in] data Constant data
    */
-  template<typename T>
+  template<typename T, std::enable_if_t<std::is_standard_layout_v<T> && std::is_trivial_v<T>, bool> = true>
   void setShaderConstants(
           uint32_t                      offset,
     const T&                            data) {
