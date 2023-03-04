@@ -276,7 +276,8 @@ public:
       Vector3D(1.0f,  0.0f,  0.0f), th,
       Vector3D(0.0f, -2.0f, -3.0f));
 
-    m_vertexGlobalConstants = context->writeScratch(GfxUsage::eConstantBuffer, constants);
+    GfxScratchBuffer vertexGlobalBuffer = context->writeScratch(GfxUsage::eConstantBuffer, constants);
+    m_vertexGlobalConstants = vertexGlobalBuffer.getDescriptor(GfxUsage::eConstantBuffer);
 
     // Compute model matrix. We'll allocate UBO data inside
     // the render functions for demonstration purposes.
@@ -321,7 +322,9 @@ public:
     VertexModelConstants vertexModelConstantData = { };
     vertexModelConstantData.modelMatrix = m_modelMatrix;
 
-    GfxDescriptor vertexModelConstants = context->writeScratch(GfxUsage::eConstantBuffer, vertexModelConstantData);
+    GfxScratchBuffer vertexModelBuffer = context->writeScratch(GfxUsage::eConstantBuffer, vertexModelConstantData);
+    GfxDescriptor vertexModelConstants = vertexModelBuffer.getDescriptor(GfxUsage::eConstantBuffer);
+
     context->bindDescriptor(1, 0, m_vertexGlobalConstants);
     context->bindDescriptor(1, 1, vertexModelConstants);
 
@@ -402,7 +405,9 @@ public:
     VertexModelConstants vertexModelConstantData = { };
     vertexModelConstantData.modelMatrix = m_modelMatrix;
 
-    GfxDescriptor vertexModelConstants = context->writeScratch(GfxUsage::eConstantBuffer, vertexModelConstantData);
+    GfxScratchBuffer vertexModelBuffer = context->writeScratch(GfxUsage::eConstantBuffer, vertexModelConstantData);
+    GfxDescriptor vertexModelConstants = vertexModelBuffer.getDescriptor(GfxUsage::eConstantBuffer);
+
     context->bindDescriptorArray(0, m_descriptorArray);
     context->bindDescriptor(1, 0, m_vertexGlobalConstants);
     context->bindDescriptor(1, 1, vertexModelConstants);

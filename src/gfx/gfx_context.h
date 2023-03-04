@@ -103,18 +103,18 @@ public:
    *
    * Convenience method that allocates a scratch buffer and immediately
    * writes data to it. See \c allocScratchData for more details.
-   * \param [in] usage Scratch buffer usage for the resulting descriptor.
-   *    The necessary CPU access bits are implied and need not be set.
+   * \param [in] usage Scratch buffer usage. The necessary CPU access
+   *    bits are implied and need not be set.
    * \param [in] data Data to write to the allocated slice
-   * \returns Descriptor for allocated buffer slice
+   * \returns Allocated buffer slice
    */
   template<typename T>
-  GfxDescriptor writeScratch(
-          GfxUsage                      usage,
+  GfxScratchBuffer writeScratch(
+          GfxUsageFlags                 usage,
     const T&                            data) {
     GfxScratchBuffer slice = allocScratch(usage | GfxUsage::eCpuWrite, sizeof(data));
     std::memcpy(slice.map(GfxUsage::eCpuWrite, 0), &data, sizeof(data));
-    return slice.getDescriptor(usage);
+    return slice;
   }
 
   /**
