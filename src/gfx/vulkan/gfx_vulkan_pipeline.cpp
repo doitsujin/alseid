@@ -1121,6 +1121,7 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
 GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::linkVariant(
   const GfxGraphicsStateDesc&         state) {
   auto& vk = m_mgr.device().vk();
+  auto& features = m_mgr.device().getVkFeatures();
 
   std::lock_guard lock(m_linkedMutex);
   GfxVulkanGraphicsPipelineVariant variant = lookupLinked(state);
@@ -1162,6 +1163,11 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::linkVariant(
   VkGraphicsPipelineCreateInfo info = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, &libInfo };
   info.layout = m_layout.getLayout();
   info.basePipelineIndex = -1;
+
+  // Shouldn't be necessary according to spec, but
+  // validation complains if we don't set this here.
+  if (features.khrFragmentShadingRate.attachmentFragmentShadingRate)
+    info.flags |= VK_PIPELINE_CREATE_RENDERING_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR;
 
   VkResult vr = vk.vkCreateGraphicsPipelines(vk.device,
     VK_NULL_HANDLE, 1, &info, nullptr, &variant.pipeline);

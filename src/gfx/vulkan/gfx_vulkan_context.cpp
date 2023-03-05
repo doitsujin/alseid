@@ -309,8 +309,21 @@ void GfxVulkanContext::beginRendering(
       std::min(renderArea.at<2>(), std::max(viewExtent.at<2>(), view.getDesc().subresource.layerCount)));
   }
 
+  // Set up shading rate image, if any
+  VkRenderingFragmentShadingRateAttachmentInfoKHR shadingRate = { VK_STRUCTURE_TYPE_RENDERING_FRAGMENT_SHADING_RATE_ATTACHMENT_INFO_KHR };
+
+  if (renderingInfo.shadingRate.view) {
+    auto& view = static_cast<const GfxVulkanImageView&>(*renderingInfo.shadingRate.view);
+    shadingRate.imageView = view.getHandle();
+    shadingRate.imageLayout = view.getLayout();
+    shadingRate.shadingRateAttachmentTexelSize = getVkExtent2D(m_device->getShadingRateTileSize());
+  }
+
   // Set up final Vulkan structure and begin rendering
   VkRenderingInfo info = { VK_STRUCTURE_TYPE_RENDERING_INFO };
+
+  if (shadingRate.imageView)
+    shadingRate.pNext = std::exchange(info.pNext, &shadingRate);
 
   if (flags & GfxRenderingFlag::eSuspend)
     info.flags |= VK_RENDERING_SUSPENDING_BIT;

@@ -157,6 +157,18 @@ struct GfxDepthStencilAttachmentInfo {
 
 
 /**
+ * \brief Shading rate attachment info
+ */
+struct GfxShadingRateAttachmentInfo {
+  /** Image view. The view must have been created with
+   *  \c GfxUsage::eShadingRate and \c GfxFormat::eR8ui
+   *  in order to be valid. If null, the image shading
+   *  rate will be 1x1. */
+  GfxImageView view;
+};
+
+
+/**
  * \brief Rendering info
  *
  * Stores a set of render targets to bind.
@@ -168,6 +180,8 @@ struct GfxRenderingInfo {
   /** Depth-stencil target info. Will be ignored in case the
    *  view is null, and fragment tests will not be performed. */
   GfxDepthStencilAttachmentInfo depthStencil;
+  /** Shading rate image. Will be ignored if the view is null. */
+  GfxShadingRateAttachmentInfo shadingRate;
 };
 
 }

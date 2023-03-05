@@ -25,8 +25,8 @@ GfxVulkanDevice::GfxVulkanDevice(
 , m_properties            (m_gfx->vk(), adapter, m_extensions)
 , m_features              (m_gfx->vk(), adapter, m_extensions)
 , m_memoryTypeMasks       (getMemoryTypeMasks())
-, m_shadingRateTileSize   (getShadingRateTileSize())
-, m_shadingRates          (getShadingRates())
+, m_shadingRateTileSize   (determineShadingRateTileSize())
+, m_shadingRates          (determineShadingRates())
 , m_pipelineManager       (std::make_unique<GfxVulkanPipelineManager>(*this))
 , m_descriptorPoolManager (std::make_unique<GfxVulkanDescriptorPoolManager>(*this))
 , m_memoryAllocator       (std::make_unique<GfxVulkanMemoryAllocator>(*this))
@@ -778,7 +778,7 @@ GfxVulkanMemoryTypeMasks GfxVulkanDevice::getMemoryTypeMasks() const {
 }
 
 
-Extent2D GfxVulkanDevice::getShadingRateTileSize() const {
+Extent2D GfxVulkanDevice::determineShadingRateTileSize() const {
   // We can pretty much ignore the maximum supported tile size here
   // since it's guaranteed to be at least 8. Aim for the smallest
   // supported tile size that is square and at least 8.
@@ -788,7 +788,7 @@ Extent2D GfxVulkanDevice::getShadingRateTileSize() const {
 }
 
 
-std::vector<VkPhysicalDeviceFragmentShadingRateKHR> GfxVulkanDevice::getShadingRates() const {
+std::vector<VkPhysicalDeviceFragmentShadingRateKHR> GfxVulkanDevice::determineShadingRates() const {
   std::vector<VkPhysicalDeviceFragmentShadingRateKHR> rates;
 
   if (!m_features.khrFragmentShadingRate.pipelineFragmentShadingRate

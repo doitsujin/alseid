@@ -119,6 +119,14 @@ public:
   }
 
   /**
+   * \brief Queries shading rate tile size
+   * \returns Shading rate tile size
+   */
+  Extent2D getShadingRateTileSize() const {
+    return m_shadingRateTileSize;
+  }
+
+  /**
    * \brief Retrieves descriptor pool manager
    * \returns Descriptor pool manager
    */
@@ -499,9 +507,9 @@ private:
 
   GfxVulkanMemoryTypeMasks getMemoryTypeMasks() const;
 
-  Extent2D getShadingRateTileSize() const;
+  Extent2D determineShadingRateTileSize() const;
 
-  std::vector<VkPhysicalDeviceFragmentShadingRateKHR> getShadingRates() const;
+  std::vector<VkPhysicalDeviceFragmentShadingRateKHR> determineShadingRates() const;
 
   GfxVulkanRayTracingBvhSize computeRayTracingBvhSize(
     const GfxVulkanRayTracingBvhInfo&   info) const;
