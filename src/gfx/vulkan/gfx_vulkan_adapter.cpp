@@ -77,11 +77,12 @@ GfxVulkanDeviceProperties::GfxVulkanDeviceProperties(
   const GfxVulkanProcs&               vk,
         VkPhysicalDevice              adapter,
   const GfxVulkanDeviceExtensions&    ext) {
-  const std::array<GfxVulkanPropertyChain, 9> fields = {{
+  const std::array<GfxVulkanPropertyChain, 10> fields = {{
     { &vk11 },
     { &vk12 },
     { &vk13 },
     { &khrAccelerationStructure,        &ext.khrAccelerationStructure },
+    { &khrFragmentShadingRate,          &ext.khrFragmentShadingRate },
     { &extConservativeRasterization,    &ext.extConservativeRasterization },
     { &extExtendedDynamicState3,        &ext.extExtendedDynamicState3 },
     { &extGraphicsPipelineLibrary,      &ext.extGraphicsPipelineLibrary },
@@ -106,11 +107,12 @@ GfxVulkanDeviceProperties::GfxVulkanDeviceProperties(
 
 GfxVulkanDeviceFeatures::GfxVulkanDeviceFeatures(
   const GfxVulkanDeviceExtensions&    ext) {
-  const std::array<GfxVulkanPropertyChain, 11> fields = {{
+  const std::array<GfxVulkanPropertyChain, 12> fields = {{
     { &vk11 },
     { &vk12 },
     { &vk13 },
     { &khrAccelerationStructure,        &ext.khrAccelerationStructure },
+    { &khrFragmentShadingRate,          &ext.khrFragmentShadingRate },
     { &khrRayQuery,                     &ext.khrRayQuery },
     { &khrRayTracingMaintenance1,       &ext.khrRayTracingMaintenance1 },
     { &extExtendedDynamicState2,        &ext.extExtendedDynamicState2 },

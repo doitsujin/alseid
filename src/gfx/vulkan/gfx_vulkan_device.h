@@ -199,6 +199,18 @@ public:
           GfxFormat                     format) const override;
 
   /**
+   * \brief Checks whether the given shading rate is supported
+   *
+   * \param [in] shadingRate Desired fragment size
+   * \param [in] samples Render target sample count
+   * \returns \c true if the shading rate is supported
+   *    for the given sample count.
+   */
+  bool supportsShadingRate(
+          Extent2D                      shadingRate,
+          uint32_t                      samples) const override;
+
+  /**
    * \brief Computes allocation size of geometry BVH
    *
    * \param [in] desc Geometry description
@@ -425,6 +437,15 @@ public:
           GfxQueue                      queue);
 
   /**
+   * \brief Checks whether the given pipeline state allows for non-default fragment shading rates
+   *
+   * \param [in] state Graphics pipeline state
+   * \returns \c true if shading rates are supported with that state
+   */
+  bool supportsFragmentShadingRateWithState(
+    const GfxGraphicsStateDesc&         state) const;
+
+  /**
    * \brief Sets debug name of a Vulkan object
    *
    * Does nothing if the device is not in debug mode.
@@ -458,6 +479,9 @@ private:
 
   GfxVulkanMemoryTypeMasks            m_memoryTypeMasks;
 
+  Extent2D                            m_shadingRateTileSize = Extent2D(0u);
+  std::vector<VkPhysicalDeviceFragmentShadingRateKHR> m_shadingRates;
+
   std::unique_ptr<GfxVulkanPipelineManager>       m_pipelineManager;
   std::unique_ptr<GfxVulkanDescriptorPoolManager> m_descriptorPoolManager;
   std::unique_ptr<GfxVulkanMemoryAllocator>       m_memoryAllocator;
@@ -474,6 +498,10 @@ private:
   uint32_t                            m_queueFamilyCount = 0;
 
   GfxVulkanMemoryTypeMasks getMemoryTypeMasks() const;
+
+  Extent2D getShadingRateTileSize() const;
+
+  std::vector<VkPhysicalDeviceFragmentShadingRateKHR> getShadingRates() const;
 
   GfxVulkanRayTracingBvhSize computeRayTracingBvhSize(
     const GfxVulkanRayTracingBvhInfo&   info) const;

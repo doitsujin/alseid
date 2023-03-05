@@ -46,6 +46,18 @@ public:
           GfxFormat                     format) const override;
 
   /**
+   * \brief Checks whether the given shading rate is supported
+   *
+   * \param [in] shadingRate Desired fragment size
+   * \param [in] samples Render target sample count
+   * \returns \c true if the shading rate is supported
+   *    for the given sample count.
+   */
+  bool supportsShadingRate(
+          Extent2D                      shadingRate,
+          uint32_t                      samples) const override;
+
+  /**
    * \brief Computes allocation size of geometry BVH
    *
    * \param [in] desc Geometry description

@@ -938,7 +938,8 @@ void GfxVulkanContext::setMultisampleState(
     m_flags |= GfxVulkanContextFlag::eDirtyPipeline;
 
     m_dynamicStatesDirty |= GfxVulkanDynamicState::eMultisampleState
-                         |  GfxVulkanDynamicState::eAlphaToCoverage;
+                         |  GfxVulkanDynamicState::eAlphaToCoverage
+                         |  GfxVulkanDynamicState::eShadingRate;
   }
 }
 
@@ -953,7 +954,8 @@ void GfxVulkanContext::setRasterizerState(
     m_flags |= GfxVulkanContextFlag::eDirtyPipeline;
 
     m_dynamicStatesDirty |= GfxVulkanDynamicState::eRasterizerState
-                         |  GfxVulkanDynamicState::eConservativeRaster;
+                         |  GfxVulkanDynamicState::eConservativeRaster
+                         |  GfxVulkanDynamicState::eShadingRate;
   }
 }
 
@@ -1120,6 +1122,18 @@ void GfxVulkanContext::updateGraphicsState(
 
     if (dynamicStateMask & GfxVulkanDynamicState::eBlendConstants)
       vk.vkCmdSetBlendConstants(m_cmd, m_blendConstants.float32);
+
+    if (dynamicStateMask & GfxVulkanDynamicState::eShadingRate) {
+      auto srState = static_cast<const GfxVulkanRasterizerState&>(*m_graphicsState.rasterizerState).getSrState();
+
+      if (!m_device->supportsFragmentShadingRateWithState(m_graphicsState)) {
+        srState.fragmentSize = VkExtent2D { 1u, 1u };
+        srState.combinerOps[0] = VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR;
+        srState.combinerOps[1] = VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR;
+      }
+
+      vk.vkCmdSetFragmentShadingRateKHR(m_cmd, &srState.fragmentSize, srState.combinerOps);
+    }
   }
 
   // Update index buffer as necessary

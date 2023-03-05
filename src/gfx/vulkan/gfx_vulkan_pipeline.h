@@ -40,6 +40,7 @@ enum class GfxVulkanDynamicState : uint32_t {
   eMultisampleState       = (1u << 8),
   eAlphaToCoverage        = (1u << 9),
   eBlendConstants         = (1u << 10),
+  eShadingRate            = (1u << 11),
   eFlagEnum               = 0
 };
 
@@ -342,10 +343,19 @@ public:
     return m_rsConservative;
   }
 
+  /**
+   * \brief Retrieves Vulkan shading rate info
+   * \returns Vulkan shading rate info
+   */
+  VkPipelineFragmentShadingRateStateCreateInfoKHR getSrState() const {
+    return m_srState;
+  }
+
 private:
 
   VkPipelineRasterizationConservativeStateCreateInfoEXT m_rsConservative = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_CONSERVATIVE_STATE_CREATE_INFO_EXT };
   VkPipelineRasterizationStateCreateInfo                m_rsState        = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
+  VkPipelineFragmentShadingRateStateCreateInfoKHR       m_srState        = { VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_STATE_CREATE_INFO_KHR };
 
 };
 
@@ -461,6 +471,14 @@ public:
    */
   VkSampleCountFlagBits getSampleCount() const {
     return VkSampleCountFlagBits(m_desc.sampleCount);
+  }
+
+  /**
+   * \brief Retrieves sample mask
+   * \returns Sample mask
+   */
+  VkSampleMask getSampleMask() const {
+    return m_msMask;
   }
 
   /**
@@ -774,7 +792,7 @@ private:
     : state(s), dynamicStates(v.dynamicStates), pipeline(v.pipeline) { }
 
     GfxGraphicsStateDesc              state;
-    uint32_t                          dynamicStates = 0;
+    GfxVulkanDynamicStates            dynamicStates = 0;
     std::atomic<VkPipeline>           pipeline = { VK_NULL_HANDLE };
 
     GfxVulkanGraphicsPipelineVariant getVariant() {
@@ -834,7 +852,9 @@ private:
   void deferCreateVariant(
     const GfxGraphicsStateDesc&         state);
 
-  bool canFastLink();
+  bool canFastLink() const;
+
+  bool supportsFragmentShadingRate() const;
 
   static bool hasSampleRateShading(
     const GfxShader&                    fragmentShader);

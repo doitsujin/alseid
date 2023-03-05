@@ -80,6 +80,10 @@ GfxVulkanDynamicStates getDynamicStateFlagsFromState(
         result |= GfxVulkanDynamicState::eBlendConstants;
         break;
 
+      case VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR:
+        result |= GfxVulkanDynamicState::eShadingRate;
+        break;
+
       default:
         Log::err("Unhandled dynamic state ", dyState.pDynamicStates[i]);
         break;
@@ -393,6 +397,10 @@ GfxVulkanRasterizerState::GfxVulkanRasterizerState(
     m_rsConservative.conservativeRasterizationMode = VK_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATE_EXT;
     m_rsState.pNext = &m_rsConservative;
   }
+
+  m_srState.fragmentSize = getVkExtent2D(desc.shadingRate);
+  m_srState.combinerOps[0] = VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR;
+  m_srState.combinerOps[1] = getVkShadingRateCombiner(desc.shadingRateOp);
 }
 
 
@@ -935,8 +943,18 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createLibraryLocked(
       dyStates.push_back(VK_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT);
   }
 
-  // set up rendering info. Only the view mask is used.
+  // Set up rendering info. Only the view mask is used.
   VkPipelineRenderingCreateInfo rtState = { VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
+
+  // Set up shading rate state
+  VkPipelineCreateFlags flags = 0;
+
+  if (features.khrFragmentShadingRate.attachmentFragmentShadingRate) {
+    flags |= VK_PIPELINE_CREATE_RENDERING_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR;
+
+    if (supportsFragmentShadingRate())
+      dyStates.push_back(VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR);
+  }
 
   // Set up dynamic state
   VkPipelineDynamicStateCreateInfo dyState = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
@@ -949,7 +967,7 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createLibraryLocked(
                             | VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT;
 
   VkGraphicsPipelineCreateInfo info = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, &libInfo };
-  info.flags                = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR;
+  info.flags                = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR | flags;
   info.layout               = m_layout.getLayout();
   info.stageCount           = shaderStages.stageInfo.size();
   info.pStages              = shaderStages.stageInfo.data();
@@ -987,6 +1005,7 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createLibraryLocked(
 GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
   const GfxGraphicsStateDesc&         state) const {
   auto& vk = m_mgr.device().vk();
+  auto& features = m_mgr.device().getVkFeatures();
 
   auto& rsInfo = static_cast<GfxVulkanRasterizerState&>(*state.rasterizerState);
   auto& dsInfo = static_cast<GfxVulkanDepthStencilState&>(*state.depthStencilState);
@@ -1009,6 +1028,7 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
   VkPipelineTessellationStateCreateInfo tsState = { VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO };
   VkPipelineViewportStateCreateInfo vpState = { VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
   VkPipelineRasterizationStateCreateInfo rsState = rsInfo.getRsState();
+  VkPipelineFragmentShadingRateStateCreateInfoKHR srState = rsInfo.getSrState();
   VkPipelineDepthStencilStateCreateInfo dsState = dsInfo.getDsState();
   VkPipelineMultisampleStateCreateInfo msState = msInfo.getMsState(rtInfo, m_sampleRateShading);
   VkPipelineColorBlendStateCreateInfo cbState = cbInfo.getCbState(rtState.colorAttachmentCount);
@@ -1026,6 +1046,23 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
   dsInfo.getDynamicStates(dyStates);
   cbInfo.getDynamicStates(dyStates);
 
+  // Set up shading rate state
+  VkPipelineCreateFlags flags = 0;
+  bool usesShadingRate = false;
+
+  if (features.khrFragmentShadingRate.attachmentFragmentShadingRate) {
+    flags |= VK_PIPELINE_CREATE_RENDERING_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR;
+
+    usesShadingRate = srState.fragmentSize.width != 1 || srState.fragmentSize.height != 1
+      || srState.combinerOps[0] != VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR
+      || srState.combinerOps[1] != VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR;
+
+    if (usesShadingRate) {
+      usesShadingRate = supportsFragmentShadingRate()
+        && m_mgr.device().supportsFragmentShadingRateWithState(state);
+    }
+  }
+
   // Set up dynamic state info
   VkPipelineDynamicStateCreateInfo dyState = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
   dyState.dynamicStateCount = dyStates.size();
@@ -1035,6 +1072,7 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
 
   // Set up pipeline create info
   VkGraphicsPipelineCreateInfo info = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, &rtState };
+  info.flags = flags;
   info.layout = m_layout.getLayout();
   info.stageCount = shaderStages.stageInfo.size();
   info.pStages = shaderStages.stageInfo.data();
@@ -1053,6 +1091,9 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
   info.pMultisampleState = &msState;
   info.pColorBlendState = &cbState;
   info.pDynamicState = &dyState;
+
+  if (usesShadingRate)
+    srState.pNext = std::exchange(info.pNext, &srState);
 
   // Create actual Vulkan pipeline
   GfxVulkanGraphicsPipelineVariant variant;
@@ -1195,7 +1236,7 @@ void GfxVulkanGraphicsPipeline::deferCreateVariant(
 }
 
 
-bool GfxVulkanGraphicsPipeline::canFastLink() {
+bool GfxVulkanGraphicsPipeline::canFastLink() const {
   auto& features = m_mgr.device().getVkFeatures();
 
   if (!features.extGraphicsPipelineLibrary.graphicsPipelineLibrary)
@@ -1205,6 +1246,14 @@ bool GfxVulkanGraphicsPipeline::canFastLink() {
   // for dynamic patch control point count
   if ((m_stages & GfxShaderStage::eTessControl)
    && !features.extExtendedDynamicState2.extendedDynamicState2PatchControlPoints)
+    return false;
+
+  return true;
+}
+
+
+bool GfxVulkanGraphicsPipeline::supportsFragmentShadingRate() const {
+  if (m_sampleRateShading)
     return false;
 
   return true;

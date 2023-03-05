@@ -93,6 +93,7 @@ public:
   GFX_VK_IPROC(vkGetPhysicalDeviceFeatures2);
   GFX_VK_IPROC(vkGetPhysicalDeviceFormatProperties);
   GFX_VK_IPROC(vkGetPhysicalDeviceFormatProperties2);
+  GFX_VK_IPROC(vkGetPhysicalDeviceFragmentShadingRatesKHR);
   GFX_VK_IPROC(vkGetPhysicalDeviceImageFormatProperties);
   GFX_VK_IPROC(vkGetPhysicalDeviceImageFormatProperties2);
   GFX_VK_IPROC(vkGetPhysicalDeviceMemoryProperties);
@@ -210,6 +211,7 @@ public:
   GFX_VK_DPROC(vkCmdSetEvent);
   GFX_VK_DPROC(vkCmdSetEvent2);
   GFX_VK_DPROC(vkCmdSetExtraPrimitiveOverestimationSizeEXT);
+  GFX_VK_DPROC(vkCmdSetFragmentShadingRateKHR);
   GFX_VK_DPROC(vkCmdSetFrontFace);
   GFX_VK_DPROC(vkCmdSetLineRasterizationModeEXT);
   GFX_VK_DPROC(vkCmdSetLineStippleEnableEXT);

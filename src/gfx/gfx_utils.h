@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "../util/util_math.h"
 #include "../util/util_types.h"
 
 namespace as {
@@ -53,6 +54,37 @@ inline Extent3D gfxComputeWorkgroupCount(
         Extent3D                        threadCount,
         Extent3D                        workgroupSize) {
   return (threadCount + workgroupSize - 1) / workgroupSize;
+}
+
+
+/**
+ * \brief Encodes shading rate tile value
+ *
+ * \param [in] extent Fragment size. \e Must be
+ *    either 1, 2 or 4 in either dimension.
+ * \returns Encoded value
+ */
+inline uint8_t gfxEncodeShadingRate(
+        Extent2D                        extent) {
+  return (findmsb(extent.at<1>()))
+       | (findmsb(extent.at<0>()) << 2);
+}
+
+
+/**
+ * \brief Computes shading rate image size
+ *
+ * \param [in] extent Render target size in pixels
+ * \param [in] tileSizeLog2 Logarithmic representation
+ *    of the shading rate tile size. Can be queried from
+ *    the graphics device.
+ * \returns Exact shading rate image size, in pixels
+ */
+inline Extent2D gfxComputeShadingRateImageSize(
+        Extent2D                        extent,
+        Extent2D                        tileSizeLog2) {
+  Extent2D tileSize = Extent2D(1u) << tileSizeLog2;
+  return (extent + tileSize - 1u) >> tileSizeLog2;
 }
 
 

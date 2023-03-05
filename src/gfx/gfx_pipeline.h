@@ -146,6 +146,29 @@ enum class GfxFrontFace : uint32_t {
 
 
 /**
+ * \brief Shading rate op
+ *
+ * Defines how to combine global shading rate and attachment
+ * shading rate. Note that primitive shading rates are not
+ * supported and will be ignored.
+ */
+enum class GfxShadingRateOp : uint32_t {
+  /** Uses the rasterization state's shading rate and
+   *  ignores the bound shading rate image, if any. */
+  eFixed  = 0,
+  /** Uses the bound shading rate image, if any,
+   *  and ignores context state. */
+  eImage  = 1,
+  /** Uses the minimum (more granular) shading rate
+   *  between context state and attachment. */
+  eMin    = 2,
+  /** Uses the maximum (less granular) shading rate
+   *  between context state and attachment. */
+  eMax    = 3,
+};
+
+
+/**
  * \brief Rasterizer state description
  */
 struct GfxRasterizerStateDesc {
@@ -159,6 +182,9 @@ struct GfxRasterizerStateDesc {
   float depthBias = 0.0f;
   float depthBiasSlope = 0.0f;
   float depthBiasClamp = 0.0f;
+  /** Fragment shading rate state */
+  GfxShadingRateOp shadingRateOp = GfxShadingRateOp::eFixed;
+  Extent2D shadingRate = Extent2D(1, 1);
 
   /**
    * \brief Checks whether depth bias is enabled

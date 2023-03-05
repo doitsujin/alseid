@@ -36,6 +36,8 @@ struct GfxDeviceFeatures {
   /** Indicates whether the fragment shader can export
    *  a per-pixel stencil reference. */
   uint32_t fragmentShaderStencilExport : 1;
+  /** Indicates support for variable rate shading. */
+  uint32_t fragmentShadingRate : 1;
   /** Indicates support for decoding gdeflate-encoded buffers
    *  directly on the GPU. */
   uint32_t gdeflateDecompression : 1;
@@ -71,6 +73,13 @@ struct GfxDeviceFeatures {
    *  fashion as \c maxSamplerDescriptors does to samplers.
    *  This will be at least 250000. */
   uint32_t maxResourceDescriptors;
+  /** Tile size of shading rate images, in pixels. Will be between
+   *  8 and 32, and will generally be the smallest that the device
+   *  supports within these boundaries. */
+  Extent2D shadingRateTileSize;
+  /** Logarithmic representation of the shading rate tile size. Can
+   *  be used to more easily compute the shading rate image size. */
+  Extent2D shadingRateTileSizeLog2;
 };
 
 
@@ -152,6 +161,22 @@ public:
    */
   virtual GfxFormatFeatures getFormatFeatures(
           GfxFormat                     format) const = 0;
+
+  /**
+   * \brief Checks whether the given shading rate is supported
+   *
+   * If the fragment shading rate feature is supported, only 1x1,
+   * 2x1 and 2x2 are guaranteed to be supported, and support may
+   * futher vary with different sample counts.
+   * Otherwise, only 1x1 is reported as supported.
+   * \param [in] extent Desired fragment size
+   * \param [in] samples Render target sample count
+   * \returns \c true if the shading rate is supported
+   *    for the given sample count.
+   */
+  virtual bool supportsShadingRate(
+          Extent2D                      extent,
+          uint32_t                      samples) const = 0;
 
   /**
    * \brief Computes allocation size of geometry BVH

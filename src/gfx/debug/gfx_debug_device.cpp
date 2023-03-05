@@ -32,6 +32,13 @@ GfxFormatFeatures GfxDebugDevice::getFormatFeatures(
 }
 
 
+bool GfxDebugDevice::supportsShadingRate(
+        Extent2D                      shadingRate,
+        uint32_t                      samples) const {
+  return m_device->supportsShadingRate(shadingRate, samples);
+}
+
+
 uint64_t GfxDebugDevice::computeRayTracingBvhSize(
   const GfxRayTracingGeometryDesc&    desc) const {
   // TODO validate desc

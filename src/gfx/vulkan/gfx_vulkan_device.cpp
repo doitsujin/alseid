@@ -25,6 +25,8 @@ GfxVulkanDevice::GfxVulkanDevice(
 , m_properties            (m_gfx->vk(), adapter, m_extensions)
 , m_features              (m_gfx->vk(), adapter, m_extensions)
 , m_memoryTypeMasks       (getMemoryTypeMasks())
+, m_shadingRateTileSize   (getShadingRateTileSize())
+, m_shadingRates          (getShadingRates())
 , m_pipelineManager       (std::make_unique<GfxVulkanPipelineManager>(*this))
 , m_descriptorPoolManager (std::make_unique<GfxVulkanDescriptorPoolManager>(*this))
 , m_memoryAllocator       (std::make_unique<GfxVulkanMemoryAllocator>(*this))
@@ -123,6 +125,7 @@ GfxDeviceFeatures GfxVulkanDevice::getFeatures() const {
   result.dualSourceBlending = m_features.core.features.dualSrcBlend;
   result.fastLinkGraphicsPipelines = m_features.extGraphicsPipelineLibrary.graphicsPipelineLibrary;
   result.fragmentShaderStencilExport = m_extensions.extShaderStencilExport;
+  result.fragmentShadingRate = !m_shadingRates.empty();
   result.gdeflateDecompression = m_gdeflatePipeline->getPipeline() != VK_NULL_HANDLE;
 
   result.rayTracing =
@@ -164,6 +167,15 @@ GfxDeviceFeatures GfxVulkanDevice::getFeatures() const {
   // all supported Vulkan devices.
   result.maxSamplerDescriptors = 1000;
   result.maxResourceDescriptors = 250000;
+
+  // Fill in shading rate properties if the feature is supported
+  if (result.fragmentShadingRate) {
+    result.shadingRateTileSize = m_shadingRateTileSize;
+    result.shadingRateTileSizeLog2 = Extent2D(
+      findmsb(m_shadingRateTileSize.at<0>()),
+      findmsb(m_shadingRateTileSize.at<1>()));
+  }
+
   return result;
 }
 
@@ -229,6 +241,23 @@ GfxFormatFeatures GfxVulkanDevice::getFormatFeatures(
   }
 
   return result;
+}
+
+
+bool GfxVulkanDevice::supportsShadingRate(
+        Extent2D                      shadingRate,
+        uint32_t                      samples) const {
+  if (shadingRate == Extent2D(1u, 1u))
+    return true;
+
+  for (const auto& rate : m_shadingRates) {
+    if ((rate.fragmentSize.width == shadingRate.at<0>())
+     && (rate.fragmentSize.height == shadingRate.at<1>())
+     && (rate.sampleCounts & VkSampleCountFlagBits(samples)))
+      return true;
+  }
+
+  return false;
 }
 
 
@@ -690,6 +719,30 @@ void GfxVulkanDevice::waitQueueIdle(
 }
 
 
+bool GfxVulkanDevice::supportsFragmentShadingRateWithState(
+  const GfxGraphicsStateDesc&         state) const {
+  auto& rsInfo = static_cast<GfxVulkanRasterizerState&>(*state.rasterizerState);
+  auto& msInfo = static_cast<GfxVulkanMultisampleState&>(*state.multisampleState);
+
+  if (!m_properties.khrFragmentShadingRate.fragmentShadingRateWithConservativeRasterization) {
+    VkPipelineRasterizationConservativeStateCreateInfoEXT rsConservativeState = rsInfo.getRsConservativeState();
+
+    if (rsConservativeState.conservativeRasterizationMode != VK_CONSERVATIVE_RASTERIZATION_MODE_DISABLED_EXT)
+      return false;
+  }
+
+  if (!m_properties.khrFragmentShadingRate.fragmentShadingRateWithSampleMask) {
+    VkSampleMask fullMask = (1u << VkSampleMask(msInfo.getSampleCount())) - 1u;
+    VkSampleMask currMask = msInfo.getSampleMask();
+
+    if ((currMask & fullMask) != fullMask)
+      return false;
+  }
+
+  return true;
+}
+
+
 GfxVulkanMemoryTypeMasks GfxVulkanDevice::getMemoryTypeMasks() const {
   const auto& memoryProperties = m_properties.memory.memoryProperties;
 
@@ -722,6 +775,47 @@ GfxVulkanMemoryTypeMasks GfxVulkanDevice::getMemoryTypeMasks() const {
     result.vidMem = result.barMem;
 
   return result;
+}
+
+
+Extent2D GfxVulkanDevice::getShadingRateTileSize() const {
+  // We can pretty much ignore the maximum supported tile size here
+  // since it's guaranteed to be at least 8. Aim for the smallest
+  // supported tile size that is square and at least 8.
+  return Extent2D(
+    std::max(8u, m_properties.khrFragmentShadingRate.minFragmentShadingRateAttachmentTexelSize.width),
+    std::max(8u, m_properties.khrFragmentShadingRate.minFragmentShadingRateAttachmentTexelSize.height));
+}
+
+
+std::vector<VkPhysicalDeviceFragmentShadingRateKHR> GfxVulkanDevice::getShadingRates() const {
+  std::vector<VkPhysicalDeviceFragmentShadingRateKHR> rates;
+
+  if (!m_features.khrFragmentShadingRate.pipelineFragmentShadingRate
+   || !m_features.khrFragmentShadingRate.attachmentFragmentShadingRate)
+    return rates;
+
+  uint32_t rateCount = 0;
+  VkResult vr = m_vk.vkGetPhysicalDeviceFragmentShadingRatesKHR(m_vk.adapter, &rateCount, nullptr);
+
+  if (vr != VK_SUCCESS) {
+    Log::err("Vulkan: Failed to query available shading rates", vr);
+    return rates;
+  }
+
+  rates.reserve(rateCount);
+
+  for (uint32_t i = 0; i < rateCount; i++)
+    rates.push_back({ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_KHR });
+
+  vr = m_vk.vkGetPhysicalDeviceFragmentShadingRatesKHR(m_vk.adapter, &rateCount, rates.data());
+
+  if (vr != VK_SUCCESS) {
+    Log::err("Vulkan: Failed to query available shading rates", vr);
+    rates.clear();
+  }
+
+  return rates;
 }
 
 

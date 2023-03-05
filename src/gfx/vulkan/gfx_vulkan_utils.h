@@ -38,6 +38,13 @@ inline VkOffset3D getVkOffset3D(Offset3D offset) {
 }
 
 
+inline VkOffset2D getVkOffset2D(Offset2D offset) {
+  return VkOffset2D {
+    offset.at<0>(),
+    offset.at<1>() };
+}
+
+
 /**
  * \brief Converts common extent to Vulkan extent
  *
@@ -49,6 +56,13 @@ inline VkExtent3D getVkExtent3D(Extent3D extent) {
     extent.at<0>(),
     extent.at<1>(),
     extent.at<2>() };
+}
+
+
+inline VkExtent2D getVkExtent2D(Extent2D extent) {
+  return VkExtent2D {
+    extent.at<0>(),
+    extent.at<1>() };
 }
 
 
@@ -1015,6 +1029,32 @@ inline VkBuildAccelerationStructureModeKHR getVkBuildMode(GfxRayTracingBvhBuildM
 
   // Should be unreachable
   return VK_BUILD_ACCELERATION_STRUCTURE_MODE_MAX_ENUM_KHR;
+}
+
+
+/**
+ * \brief Converts shading rate op to combiner
+ *
+ * \param [in] op Shading rate op
+ * \returns Vulkan shading rate combiner
+ */
+inline VkFragmentShadingRateCombinerOpKHR getVkShadingRateCombiner(GfxShadingRateOp op) {
+  switch (op) {
+    case GfxShadingRateOp::eFixed:
+      return VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR;
+
+    case GfxShadingRateOp::eImage:
+      return VK_FRAGMENT_SHADING_RATE_COMBINER_OP_REPLACE_KHR;
+
+    case GfxShadingRateOp::eMin:
+      return VK_FRAGMENT_SHADING_RATE_COMBINER_OP_MIN_KHR;
+
+    case GfxShadingRateOp::eMax:
+      return VK_FRAGMENT_SHADING_RATE_COMBINER_OP_MAX_KHR;
+  }
+
+  // Should be unreachable
+  return VK_FRAGMENT_SHADING_RATE_COMBINER_OP_MAX_ENUM_KHR;
 }
 
 
