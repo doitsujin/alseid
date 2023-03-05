@@ -283,6 +283,12 @@ struct GfxRayTracingMeshDataSource {
   uint64_t indexData;
   /** GPU address of transform matrix */
   uint64_t transformData;
+  /** Index of first vertex. Corresponds to the
+   *  \c firstVertex parameter in a draw call. */
+  uint32_t firstVertex;
+  /** Index of first index. Corresponds to the
+   *  \c firstIndex parameter in a draw call. */
+  uint32_t firstIndex;
 };
 
 

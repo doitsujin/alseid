@@ -186,6 +186,7 @@ const GfxRayTracingBvhData*         data,
 
   for (uint32_t i = 0; i < info.info.geometryCount; i++) {
     auto& geometry = info.geometries[i];
+    auto& rangeInfo = info.rangeInfos[i];
 
     switch (geometry.geometryType) {
       case VK_GEOMETRY_TYPE_TRIANGLES_KHR: {
@@ -199,6 +200,9 @@ const GfxRayTracingBvhData*         data,
           geometry.geometry.triangles.transformData = VkDeviceOrHostAddressConstKHR();
           geometry.geometry.triangles.transformData.deviceAddress = data[i].mesh.transformData;
         }
+
+        rangeInfo.primitiveOffset = data[i].mesh.firstIndex * getVkIndexSize(geometry.geometry.triangles.indexType);
+        rangeInfo.firstVertex = data[i].mesh.firstVertex;
       } break;
 
       case VK_GEOMETRY_TYPE_AABBS_KHR: {

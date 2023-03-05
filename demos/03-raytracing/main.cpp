@@ -163,6 +163,8 @@ void run_app() {
   GfxRayTracingBvhData geometryData;
   geometryData.mesh.vertexData = geometryBuffer->getGpuAddress();
   geometryData.mesh.indexData = geometryBuffer->getGpuAddress() + sizeof(g_vertexData);
+  geometryData.mesh.firstVertex = 0;
+  geometryData.mesh.firstIndex = 0;
 
   bvhContext->buildRayTracingBvh(geometryBvh, GfxRayTracingBvhBuildMode::eBuild, &geometryData);
   bvhContext->memoryBarrier(GfxUsage::eBvhBuild, 0, GfxUsage::eBvhBuild, 0);

@@ -834,6 +834,27 @@ inline VkIndexType getVkIndexType(GfxFormat format) {
 
 
 /**
+ * \brief Converts format to Vulkan index type
+ *
+ * \param [in] format Format
+ * \returns Index type
+ */
+inline uint32_t getVkIndexSize(VkIndexType type) {
+  switch (type) {
+    default:
+    case VK_INDEX_TYPE_NONE_KHR:
+      return 0;
+
+    case VK_INDEX_TYPE_UINT16:
+      return sizeof(uint16_t);
+
+    case VK_INDEX_TYPE_UINT32:
+      return sizeof(uint32_t);
+  }
+}
+
+
+/**
  * \brief Converts filter to Vulkan filter
  *
  * \param [in] filter Filter
