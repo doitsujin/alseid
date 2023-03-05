@@ -71,16 +71,16 @@ struct GfxRayTracingMeshInfo {
   /** Vertex stride, in bytes. For best performance, vertex positions
    *  should be tightly packed according to the vertex format.  */
   uint32_t vertexStride;
+  /** Number of vertices in the buffer. If the geometry is indexed,
+   *  this must be greater than the largest index value in the index
+   *  buffer, otherwise, this is used to compute the primitive count. */
+  uint32_t vertexCount;
   /** Index data format. If \c GfxFormat::eUnknown, the geometry is not indexed,
    *  otherwise this must be \c GfxFormat::eR16ui or \c GfxFormat::eR32ui. */
   GfxFormat indexFormat;
-  /** Number of vertices in the buffer. If the geometry is indexed, this must
-   *  be greater than the largest index value in the index buffer, otherwise,
-   *  this must be at least as large as \c primitiveCount * 3. */
-  uint32_t vertexCount;
-  /** Number of triangle primitives in the mesh. Defines the number of
-   *  indices or vertices that will be consumed from source buffers. */
-  uint32_t primitiveCount;
+  /** Number of indices in the map. If the geometry is indexed,
+   *  this is used to compute the primitive count. */
+  uint32_t indexCount;
 };
 
 

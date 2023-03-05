@@ -121,9 +121,9 @@ void run_app() {
   geometryInfo.data.mesh.vertexFormat = GfxFormat::eR32G32B32A32f;
   geometryInfo.data.mesh.vertexOffset = 0;
   geometryInfo.data.mesh.vertexStride = 16;
-  geometryInfo.data.mesh.indexFormat = GfxFormat::eR16ui;
   geometryInfo.data.mesh.vertexCount = g_vertexData.size();
-  geometryInfo.data.mesh.primitiveCount = g_indexData.size() / 3;
+  geometryInfo.data.mesh.indexFormat = GfxFormat::eR16ui;
+  geometryInfo.data.mesh.indexCount = g_indexData.size();
 
   GfxRayTracingGeometryDesc geometryBvhDesc;
   geometryBvhDesc.debugName = "Geometry BVH";

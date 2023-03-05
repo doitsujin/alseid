@@ -41,7 +41,9 @@ GfxVulkanRayTracingBvhInfo::GfxVulkanRayTracingBvhInfo(
           geometry.geometry.triangles.transformData.hostAddress = reinterpret_cast<const void*>(16);
         }
 
-        rangeInfo.primitiveCount = geometryDesc.data.mesh.primitiveCount;
+        rangeInfo.primitiveCount = geometry.geometry.triangles.indexType == VK_INDEX_TYPE_NONE_KHR
+          ? geometryDesc.data.mesh.vertexCount / 3
+          : geometryDesc.data.mesh.indexCount / 3;
       } break;
 
       case GfxRayTracingGeometryType::eAabb: {
