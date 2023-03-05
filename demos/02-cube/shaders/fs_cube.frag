@@ -1,5 +1,6 @@
 #version 450
 
+#extension GL_EXT_fragment_shading_rate : require
 #extension GL_EXT_nonuniform_qualifier : require
 
 layout(set = 0, binding = 0) uniform texture2D r_textures[];
@@ -16,6 +17,11 @@ uniform push_t {
 };
 
 void main() {
-  vec3 color = texture(sampler2D(r_textures[textureIndex], r_sampler), i_coord).xyz;
-  o_color = vec4(normalize(i_normal).z * color, 1.0f);
+  if (gl_ShadingRateEXT == 5)
+    o_color.xyz = vec3(0.0f, 1.0f, 0.0f);
+  else if (gl_ShadingRateEXT == 4)
+    o_color.xyz = vec3(0.0f, 0.0f, 1.0f);
+  else
+    o_color.xyz = vec3(1.0f, 0.0f, 0.0f);
+  o_color.w = 1.0f;
 }

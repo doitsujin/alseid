@@ -343,7 +343,7 @@ public:
     context->imageBarrier(m_depthImageMs,
       m_depthImageMs->getAvailableSubresources().pickAspects(GfxImageAspect::eDepth),
       GfxUsage::eRenderTarget, 0,
-      GfxUsage::eRenderTarget | GfxUsage::eShaderResource, 0, 0);
+      GfxUsage::eRenderTarget | GfxUsage::eShaderResource, GfxShaderStage::eFragment, 0);
 
     context->endDebugLabel();
 
@@ -357,6 +357,26 @@ public:
   void renderColorPass() {
     GfxContext context = m_contexts[m_contextId];
     context->beginDebugLabel("Color pass", GfxColorValue(1.0f, 0.8f, 0.5f, 1.0f));
+
+    context->imageBarrier(m_shadingRateImage,
+      m_shadingRateImage->getAvailableSubresources(),
+      0, 0, GfxUsage::eTransferDst, 0,
+      GfxBarrierFlag::eDiscard);
+
+    auto data = context->allocScratch(GfxUsage::eCpuWrite | GfxUsage::eTransferDst,
+      m_shadingRateImage->getDesc().extent.at<0>() * m_shadingRateImage->getDesc().extent.at<1>());
+    std::memset(data.map(GfxUsage::eCpuWrite, 0), gfxEncodeShadingRate(Extent2D(2, 2)), data.size);
+
+    context->copyBufferToImage(
+      m_shadingRateImage,
+      m_shadingRateImage->getAvailableSubresources(),
+      Offset3D(0, 0, 0), m_shadingRateImage->getDesc().extent,
+      data.buffer, data.offset,
+      Extent2D(m_shadingRateImage->getDesc().extent));
+
+    context->imageBarrier(m_shadingRateImage,
+      m_shadingRateImage->getAvailableSubresources(),
+      GfxUsage::eTransferDst, 0, GfxUsage::eShadingRate, 0, 0);
 
     // Initialize the color images. We do not need to
     // acquire the resolve image from the compute queue
@@ -385,6 +405,13 @@ public:
     depthViewDesc.subresource = m_depthImageMs->getAvailableSubresources();
     depthViewDesc.usage = GfxUsage::eRenderTarget;
 
+    // Shading rate image view properties
+    GfxImageViewDesc shadingRateViewDesc;
+    shadingRateViewDesc.type = GfxImageViewType::e2D;
+    shadingRateViewDesc.format = m_shadingRateImage->getDesc().format;
+    shadingRateViewDesc.subresource = m_shadingRateImage->getAvailableSubresources();
+    shadingRateViewDesc.usage = GfxUsage::eShadingRate;
+
     // Begin rendering and clear the color image to grey.
     GfxRenderingInfo renderInfo;
     renderInfo.color[0].op = GfxRenderTargetOp::eClear;
@@ -396,7 +423,14 @@ public:
     renderInfo.depthStencil.view = m_depthImageMs->createView(depthViewDesc);
     renderInfo.depthStencil.readOnlyAspects = GfxImageAspect::eDepth;
 
+    renderInfo.shadingRate.view = m_shadingRateImage->createView(shadingRateViewDesc);
+
     context->beginRendering(renderInfo, 0);
+
+    GfxRasterizerStateDesc rsDesc;
+    rsDesc.shadingRate = Extent2D(2, 1);
+    rsDesc.shadingRateOp = GfxShadingRateOp::eImage;
+    context->setRasterizerState(m_device->createRasterizerState(rsDesc));
 
     // Render actual geometry
     context->setViewport(GfxViewport(Offset2D(0, 0), m_renderTargetSize));
@@ -565,6 +599,7 @@ private:
   GfxImage                  m_depthImageMs;
   GfxImage                  m_colorImageMs;
   GfxImage                  m_colorImage;
+  GfxImage                  m_shadingRateImage;
 
   GfxImage                  m_texture;
   uint32_t                  m_textureIndex = 0;
@@ -733,10 +768,13 @@ private:
 
 
   void createRenderTargets() {
+    GfxDeviceFeatures features = m_device->getFeatures();
+
     // Free existing render targets first
     m_depthImageMs = GfxImage();
     m_colorImageMs = GfxImage();
     m_colorImage = GfxImage();
+    m_shadingRateImage = GfxImage();
 
     // Find suitable formats for our use case
     GfxFormat depthFormat = findFormat(
@@ -769,6 +807,15 @@ private:
     desc.samples = 1;
 
     m_colorImage = m_device->createImage(desc, GfxMemoryType::eAny);
+
+    desc.debugName = "Shading rate image";
+    desc.type = GfxImageType::e2D;
+    desc.format = GfxFormat::eR8ui;
+    desc.usage = GfxUsage::eShadingRate | GfxUsage::eTransferDst;
+    desc.extent = Extent3D(gfxComputeShadingRateImageSize(m_renderTargetSize, features.shadingRateTileSizeLog2), 1u);
+    desc.samples = 1;
+
+    m_shadingRateImage = m_device->createImage(desc, GfxMemoryType::eAny);
   }
 
 
