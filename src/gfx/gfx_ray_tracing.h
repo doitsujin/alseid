@@ -63,10 +63,14 @@ enum class GfxRayTracingOpacity : uint32_t {
  * \brief Ray tracing mesh properties
  */
 struct GfxRayTracingMeshInfo {
-  /** Vertex data format. Must support the \c GfxFormatFeature::eBvhGeometry
-   *  feature. Vertex positions are assumed to be be tightly packed within the
-   *  source buffer when building ray tracing BVHs. */
+  /** Vertex data format. Must support \c GfxFormatFeature::eBvhGeometry. */
   GfxFormat vertexFormat;
+  /** Offset of vertex position, in bytes. This is provided to
+   *  allow reusing arbitrarily formatted vertex buffer data. */
+  uint32_t vertexOffset;
+  /** Vertex stride, in bytes. For best performance, vertex positions
+   *  should be tightly packed according to the vertex format.  */
+  uint32_t vertexStride;
   /** Index data format. If \c GfxFormat::eUnknown, the geometry is not indexed,
    *  otherwise this must be \c GfxFormat::eR16ui or \c GfxFormat::eR32ui. */
   GfxFormat indexFormat;

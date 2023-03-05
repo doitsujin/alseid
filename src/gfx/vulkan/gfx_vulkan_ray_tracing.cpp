@@ -30,7 +30,8 @@ GfxVulkanRayTracingBvhInfo::GfxVulkanRayTracingBvhInfo(
 
         geometry.geometry.triangles = { VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR };
         geometry.geometry.triangles.vertexFormat = device.getVkFormat(geometryDesc.data.mesh.vertexFormat);
-        geometry.geometry.triangles.vertexStride = Gfx::getFormatInfo(geometryDesc.data.mesh.vertexFormat).planes[0].elementSize;
+        geometry.geometry.triangles.vertexStride = geometryDesc.data.mesh.vertexStride;
+        geometry.geometry.triangles.vertexData.deviceAddress = geometryDesc.data.mesh.vertexOffset;
         geometry.geometry.triangles.maxVertex = geometryDesc.data.mesh.vertexCount - 1;
         geometry.geometry.triangles.indexType = getVkIndexType(geometryDesc.data.mesh.indexFormat);
 
@@ -189,7 +190,7 @@ const GfxRayTracingBvhData*         data,
     switch (geometry.geometryType) {
       case VK_GEOMETRY_TYPE_TRIANGLES_KHR: {
         bool hasTransformMatrix = geometry.geometry.triangles.transformData.hostAddress != nullptr;
-        geometry.geometry.triangles.vertexData.deviceAddress = data[i].mesh.vertexData;
+        geometry.geometry.triangles.vertexData.deviceAddress += data[i].mesh.vertexData;
 
         if (geometry.geometry.triangles.indexType != VK_INDEX_TYPE_NONE_KHR)
           geometry.geometry.triangles.indexData.deviceAddress = data[i].mesh.indexData;
