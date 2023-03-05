@@ -234,8 +234,9 @@ void run_app() {
       th = 3.141592654f / 6.0f;
 
       Matrix4x4 viewMatrix = computeViewMatrix(
-        Vector3D(1.0f,  0.0f,  0.0f), th,
-        Vector3D(0.0f, -2.0f, -3.0f));
+        Vector3D(0.0f, 2.0f, 3.0f),
+        normalize(Vector3D(0.0f, 0.5f, 1.0f)),
+        Vector3D(0.0f, 1.0f, 0.0f));
 
       Matrix4x4 projMatrix = computeProjectionMatrix(
         Vector2D(image->getDesc().extent), f, zNear);

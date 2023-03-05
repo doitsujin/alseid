@@ -273,8 +273,9 @@ public:
     constants.projMatrix = computeProjectionMatrix(
       Vector2D(m_renderTargetSize), f, zNear);
     constants.viewMatrix = computeViewMatrix(
-      Vector3D(1.0f,  0.0f,  0.0f), th,
-      Vector3D(0.0f, -2.0f, -3.0f));
+      Vector3D(0.0f, 2.0f, 3.0f),
+      normalize(Vector3D(0.0f, 0.5f, 1.0f)),
+      Vector3D(0.0f, 1.0f, 0.0f));
 
     GfxScratchBuffer vertexGlobalBuffer = context->writeScratch(GfxUsage::eConstantBuffer, constants);
     m_vertexGlobalConstants = vertexGlobalBuffer.getDescriptor(GfxUsage::eConstantBuffer);

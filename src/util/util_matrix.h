@@ -364,13 +364,16 @@ inline Matrix4x4 computeProjectionMatrix(Vector2D viewport, float f, float zNear
  *
  * Equivalent to multiplying a translation matrix on the
  * left side with a rotation matrix on the right side.
- * \param [in] u Normalized axis to rotate around. Last component must be 0.
+ * \param [in] u Normalized axis to rotate around.
  * \param [in] th Rotation angle
- * \param [in] v Translation vector. Last component must be 1.
+ * \param [in] v Translation vector.
  * \returns Resulting matrix
  */
 inline Matrix4x4 computeTransformMatrix(Vector4D u, float th, Vector4D v) {
   SinCos sincos = approx_sincos(th);
+
+  u.set<3>(0.0f);
+  v.set<3>(1.0f);
 
   Vector4D usin = u * sincos.sin;
   Vector4D ucos = u * (1.0f - sincos.cos);
@@ -387,28 +390,35 @@ inline Matrix4x4 computeTransformMatrix(Vector4D u, float th, Vector4D v) {
 }
 
 inline Matrix4x4 computeTransformMatrix(Vector3D u, float th, Vector3D v) {
-  return computeTransformMatrix(Vector4D(u, 0.0f), th, Vector4D(v, 1.0f));
+  return computeTransformMatrix(Vector4D(u, 0.0f), th, Vector4D(v, 0.0f));
 }
 
 
 /**
  * \brief Computes camera matrix
  *
- * Much like \c computeTransformMatrix, but as if the
- * multiplication is performed in reverse order.
- * \param [in] u Normalized axis to rotate around. Last component must be 0.
- * \param [in] th Rotation angle
- * \param [in] v Translation vector. Last component must be 1.
+ * \param [in] eye Camera position
+ * \param [in] dir Normalized directional vector
+ * \param [in] up Normalized vector pointing upwards
  * \returns Resulting matrix
  */
-inline Matrix4x4 computeViewMatrix(Vector4D u, float th, Vector4D v) {
-  Matrix4x4 matrix = computeTransformMatrix(u, th, Vector4D(0.0f, 0.0f, 0.0f, 1.0f));
-  matrix.set<3>(matrix * v);
+inline Matrix4x4 computeViewMatrix(Vector4D eye, Vector4D dir, Vector4D up) {
+  eye.set<3>(-1.0f);
+  dir.set<3>(0.0f);
+
+  Vector4D zaxis = dir;
+  Vector4D xaxis = cross(up, zaxis);
+  Vector4D yaxis = cross(zaxis, xaxis);
+  Vector4D wpart = Vector4D(0.0f, 0.0f, 0.0f, 1.0f);
+
+  Matrix4x4 matrix = transpose(Matrix4x4(xaxis, yaxis, zaxis, wpart));
+  matrix.set<3>(matrix * -eye);
+
   return matrix;
 }
 
-inline Matrix4x4 computeViewMatrix(Vector3D u, float th, Vector3D v) {
-  return computeViewMatrix(Vector4D(u, 0.0f), th, Vector4D(v, 1.0f));
+inline Matrix4x4 computeViewMatrix(Vector3D eye, Vector3D dir, Vector3D up) {
+  return computeViewMatrix(Vector4D(eye, 0.0f), Vector4D(dir, 0.0f), Vector4D(up, 0.0f));
 }
 
 
@@ -420,7 +430,7 @@ inline Matrix4x4 computeViewMatrix(Vector3D u, float th, Vector3D v) {
  * \returns Resulting rotation matrix
  */
 inline Matrix4x4 computeRotationMatrix(Vector4D u, float th) {
-  return computeTransformMatrix(u, th, Vector4D(0.0f, 0.0f, 0.0f, 1.0f));
+  return computeTransformMatrix(u, th, Vector4D(0.0f));
 }
 
 inline Matrix4x4 computeRotationMatrix(Vector3D u, float th) {
@@ -435,6 +445,8 @@ inline Matrix4x4 computeRotationMatrix(Vector3D u, float th) {
  * \returns Resulting translation matrix
  */
 inline Matrix4x4 computeTranslationMatrix(Vector4D v) {
+  v.set<3>(1.0f);
+
   return Matrix4x4(
     Vector4D(1.0f, 0.0f, 0.0f, 0.0f),
     Vector4D(0.0f, 1.0f, 0.0f, 0.0f),
@@ -443,7 +455,7 @@ inline Matrix4x4 computeTranslationMatrix(Vector4D v) {
 }
 
 inline Matrix4x4 computeTranslationMatrix(Vector3D v) {
-  return computeTranslationMatrix(Vector4D(v, 1.0f));
+  return computeTranslationMatrix(Vector4D(v, 0.0f));
 }
 
 

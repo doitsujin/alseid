@@ -512,7 +512,7 @@ force_inline __m128 blend_packed(__m128 a, __m128 b) {
  * \returns a × b
  */
 force_inline __m128 cross_packed(__m128 a, __m128 b) {
-  uint8_t s = _MM_SHUFFLE(3, 0, 2, 1);
+  constexpr uint8_t s = _MM_SHUFFLE(3, 0, 2, 1);
 
   __m128 as = _mm_shuffle_ps(a, a, s);
   __m128 bs = _mm_shuffle_ps(b, b, s);
