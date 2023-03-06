@@ -2,8 +2,9 @@
 
 #include <string>
 
-#include "util_vector.h"
+#include "util_hash.h"
 #include "util_matrix.h"
+#include "util_vector.h"
 
 namespace as {
 
@@ -113,5 +114,102 @@ struct uint24_t {
 };
 
 static_assert(sizeof(uint24_t) == 3 && alignof(uint24_t) == 1);
+
+
+/**
+ * \brief Short string
+ *
+ * Provides storage for null-terminated fixed-size strings.
+ * \tparam N Maximum number of characters to store
+ * \tparam Ch Character type
+ */
+template<size_t N>
+class ShortString {
+
+public:
+
+  ShortString() = default;
+
+  ShortString(const char* str) {
+    size_t i = 0;
+
+    while (i + 1 < N && str[i]) {
+      m_data[i] = str[i];
+      i += 1;
+    }
+
+    while (i < N) {
+      m_data[i] = '\0';
+      i += 1;
+    }
+  }
+
+  ShortString(const std::string& str)
+  : ShortString(str.c_str()) { }
+
+  char operator [] (size_t idx) const {
+    return m_data[idx];
+  }
+
+  size_t size() const {
+    size_t n = 0;
+
+    while (m_data[n])
+      n += 1;
+
+    return n;
+  }
+
+  const char* data() const {
+    return m_data;
+  }
+
+  const char* c_str() const {
+    return m_data;
+  }
+
+  bool operator == (const char* other) const {
+    for (size_t i = 0; i < N; i++) {
+      if (m_data[i] != other[i])
+        return false;
+
+      if (!m_data[i])
+        break;
+    }
+
+    return true;
+  }
+
+  bool operator == (const std::string& other) const {
+    return operator == (other.c_str());
+  }
+
+  bool operator == (const ShortString& other) const {
+    return operator == (other.c_str());
+  }
+
+  template<typename T>
+  bool operator != (const T& other) const {
+    return !operator == (other);
+  }
+
+  bool empty() const {
+    return m_data[0] == '\0';
+  }
+
+  size_t hash() const {
+    HashState hash;
+
+    for (size_t i = 0; i < N && m_data[i]; i++)
+      hash.add(uint32_t(uint8_t(m_data[i])));
+
+    return hash;
+  }
+
+private:
+
+  char m_data[N];
+
+};
 
 }
