@@ -566,8 +566,7 @@ void GfxVulkanContext::bindIndexBuffer(
 void GfxVulkanContext::bindVertexBuffers(
         uint32_t                      index,
         uint32_t                      count,
-  const GfxDescriptor*                descriptors,
-  const uint32_t*                     strides) {
+  const GfxDescriptor*                descriptors) {
   if (unlikely(!count))
     return;
 
@@ -577,7 +576,6 @@ void GfxVulkanContext::bindVertexBuffers(
     m_vertexBufferHandles[index + i] = info.buffer.buffer;
     m_vertexBufferOffsets[index + i] = info.buffer.offset;
     m_vertexBufferSizes[index + i] = info.buffer.range;
-    m_vertexBufferStrides[index + i] = info.buffer.buffer ? strides[i] : 0u;
   }
 
   m_vbosDirty |= ((2u << (count - 1u)) - 1u) << index;
@@ -1173,10 +1171,8 @@ void GfxVulkanContext::updateGraphicsState(
         uint32_t index = offset + first;
 
         vk.vkCmdBindVertexBuffers2(m_cmd, index, count,
-          &m_vertexBufferHandles[index],
-          &m_vertexBufferOffsets[index],
-          &m_vertexBufferSizes[index],
-          &m_vertexBufferStrides[index]);
+          &m_vertexBufferHandles[index], &m_vertexBufferOffsets[index],
+          &m_vertexBufferSizes[index], nullptr);
 
         offset += first + count;
         vboMask >>= first + count;
@@ -1352,7 +1348,6 @@ void GfxVulkanContext::resetState() {
     m_vertexBufferHandles[i] = VK_NULL_HANDLE;
     m_vertexBufferOffsets[i] = 0;
     m_vertexBufferSizes[i] = 0;
-    m_vertexBufferStrides[i] = 0;
   }
 
   m_depthBoundsMin = 0.0f;

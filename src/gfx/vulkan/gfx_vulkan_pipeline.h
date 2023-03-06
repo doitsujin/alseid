@@ -275,37 +275,16 @@ public:
     return m_tsState;
   }
 
-  /**
-   * \brief Retrieves dynamic state flags
-   * \returns Dynamic state flags
-   */
-  GfxVulkanDynamicStates getDynamicStateFlags() const {
-    return m_dynamic;
-  }
-
-  /**
-   * \brief Appends dynamic states to a given vector
-   * \param [out] container Vector containing dynamic states
-   */
-  template<typename T>
-  void getDynamicStates(T& container) {
-    for (uint32_t i = 0; i < m_dyState.dynamicStateCount; i++)
-      container.push_back(m_dyState.pDynamicStates[i]);
-  }
-
 private:
 
   GfxVulkanPipelineManager&               m_mgr;
-  GfxVulkanDynamicStates                  m_dynamic = 0;
 
   std::array<VkVertexInputAttributeDescription, GfxMaxVertexAttributes> m_viAttributes = { };
   std::array<VkVertexInputBindingDescription,   GfxMaxVertexBindings>   m_viBindings   = { };
-  std::array<VkDynamicState,                    1>                      m_dyList       = { };
 
   VkPipelineVertexInputStateCreateInfo    m_viState = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
   VkPipelineInputAssemblyStateCreateInfo  m_iaState = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
   VkPipelineTessellationStateCreateInfo   m_tsState = { VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO };
-  VkPipelineDynamicStateCreateInfo        m_dyState = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
 
   VkPipeline                              m_pipeline  = VK_NULL_HANDLE;
 

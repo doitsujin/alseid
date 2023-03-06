@@ -360,13 +360,11 @@ public:
    * \param [in] index First vertex buffer to set
    * \param [in] count Number of vertex buffers to set
    * \param [in] descriptors Vertex buffer descriptors
-   * \param [in] strides Vertex buffer strides
    */
   virtual void bindVertexBuffers(
           uint32_t                      index,
           uint32_t                      count,
-    const GfxDescriptor*                descriptors,
-    const uint32_t*                     strides) = 0;
+    const GfxDescriptor*                descriptors) = 0;
 
   /**
    * \brief Sets a single vertex buffer
@@ -375,13 +373,11 @@ public:
    * batching vertex buffer updates is not useful.
    * \param [in] index Vertex buffer to set
    * \param [in] descriptor Vertex buffer descriptor
-   * \param [in] stride Vertex buffer stride
    */
   void bindVertexBuffer(
           uint32_t                      index,
-    const GfxDescriptor&                descriptor,
-          uint32_t                      stride) {
-    bindVertexBuffers(index, 1, &descriptor, &stride);
+    const GfxDescriptor&                descriptor) {
+    bindVertexBuffers(index, 1, &descriptor);
   }
 
   /**

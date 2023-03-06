@@ -169,14 +169,17 @@ public:
     vertexInputDesc.attributes[0].binding = 0;
     vertexInputDesc.attributes[0].format = GfxFormat::eR32G32B32f;
     vertexInputDesc.attributes[0].offset = offsetof(Vertex, position);
+    vertexInputDesc.attributes[0].stride = sizeof(Vertex);
 
     vertexInputDesc.attributes[1].binding = 0;
     vertexInputDesc.attributes[1].format = GfxFormat::eR32G32B32f;
     vertexInputDesc.attributes[1].offset = offsetof(Vertex, normal);
+    vertexInputDesc.attributes[1].stride = sizeof(Vertex);
 
     vertexInputDesc.attributes[2].binding = 0;
     vertexInputDesc.attributes[2].format = GfxFormat::eR32G32f;
     vertexInputDesc.attributes[2].offset = offsetof(Vertex, coord);
+    vertexInputDesc.attributes[2].stride = sizeof(Vertex);
 
     m_viState = m_device->createVertexInputState(vertexInputDesc);
 
@@ -330,7 +333,7 @@ public:
     context->bindDescriptor(1, 1, vertexModelConstants);
 
     context->bindIndexBuffer(m_indexDescriptor, GfxFormat::eR16ui);
-    context->bindVertexBuffer(0, m_vertexDescriptor, sizeof(Vertex));
+    context->bindVertexBuffer(0, m_vertexDescriptor);
 
     if (m_textureInitialized)
       context->drawIndexed(36, 1, 0, 0, 0);
@@ -415,7 +418,7 @@ public:
     context->bindDescriptor(1, 2, m_samplerLinear->getDescriptor());
 
     context->bindIndexBuffer(m_indexDescriptor, GfxFormat::eR16ui);
-    context->bindVertexBuffer(0, m_vertexDescriptor, sizeof(Vertex));
+    context->bindVertexBuffer(0, m_vertexDescriptor);
 
     context->setShaderConstants(0, m_textureIndex);
 
