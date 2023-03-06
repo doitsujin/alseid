@@ -36,8 +36,15 @@ namespace as {
       return *this;
     }
 
-    small_vector             (const small_vector&) = delete;
-    small_vector& operator = (const small_vector&) = delete;
+    small_vector(const small_vector& other) {
+      copy(other);
+    }
+
+    small_vector& operator = (const small_vector& other) {
+      clear();
+      copy(other);
+      return *this;
+    }
 
     ~small_vector() {
       free();
@@ -187,6 +194,13 @@ namespace as {
         m_size      = std::exchange(other.m_size,     size_t(0));
         u.m_ptr     = std::exchange(other.u.m_ptr,    nullptr);
       }
+    }
+
+    void copy(const small_vector& other) {
+      reserve(other.size());
+
+      for (size_t i = 0; i < other.size(); i++)
+        emplace_back(other[i]);
     }
 
   };
