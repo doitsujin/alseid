@@ -234,8 +234,7 @@ public:
   void bindVertexBuffers(
           uint32_t                      index,
           uint32_t                      count,
-    const GfxDescriptor*                descriptors,
-    const uint32_t*                     strides) override;
+    const GfxDescriptor*                descriptors) override;
 
   /**
    * \brief Builds a BVH
@@ -557,7 +556,6 @@ private:
   std::array<VkBuffer,      GfxMaxVertexBindings> m_vertexBufferHandles = { };
   std::array<VkDeviceSize,  GfxMaxVertexBindings> m_vertexBufferOffsets = { };
   std::array<VkDeviceSize,  GfxMaxVertexBindings> m_vertexBufferSizes = { };
-  std::array<VkDeviceSize,  GfxMaxVertexBindings> m_vertexBufferStrides = { };
 
   float                             m_depthBoundsMin  = 1.0f;
   float                             m_depthBoundsMax  = 1.0f;

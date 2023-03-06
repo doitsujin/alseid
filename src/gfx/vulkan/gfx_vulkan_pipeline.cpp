@@ -25,11 +25,6 @@ GfxVulkanDynamicStates getDynamicStateFlagsFromState(
         result |= GfxVulkanDynamicState::eViewports;
         break;
 
-      case VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE:
-        // No flag for this since this is dynamic for all pipelines
-        // that use vertex buffers, and ignored otherwise.
-        break;
-
       case VK_DYNAMIC_STATE_PATCH_CONTROL_POINTS_EXT:
         result |= GfxVulkanDynamicState::eTessellationState;
         break;
@@ -319,7 +314,7 @@ GfxVulkanVertexInputState::GfxVulkanVertexInputState(
 
       auto& bind = m_viBindings[m_viState.vertexBindingDescriptionCount++];
       bind.binding = info.binding;
-      bind.stride = 0;
+      bind.stride = info.stride;
       bind.inputRate = getVkInputRate(info.inputRate);
     }
   }
@@ -327,8 +322,6 @@ GfxVulkanVertexInputState::GfxVulkanVertexInputState(
   if (m_viState.vertexAttributeDescriptionCount) {
     m_viState.pVertexAttributeDescriptions = m_viAttributes.data();
     m_viState.pVertexBindingDescriptions = m_viBindings.data();
-
-    m_dyList[m_dyState.dynamicStateCount++] = VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE;
   }
 
   m_iaState.topology = getVkPrimitiveTopology(desc.primitiveTopology);
@@ -336,14 +329,9 @@ GfxVulkanVertexInputState::GfxVulkanVertexInputState(
 
   m_tsState.patchControlPoints = desc.patchVertexCount;
 
-  if (m_dyState.dynamicStateCount)
-    m_dyState.pDynamicStates = m_dyList.data();
-
   // Compile vertex input pipeline library from this state if supported
   if (m_mgr.device().getVkFeatures().extGraphicsPipelineLibrary.graphicsPipelineLibrary)
     createLibrary();
-
-  m_dynamic = getDynamicStateFlagsFromState(m_dyState);
 }
 
 
@@ -364,7 +352,6 @@ void GfxVulkanVertexInputState::createLibrary() {
   info.flags                = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR;
   info.pVertexInputState    = &m_viState;
   info.pInputAssemblyState  = &m_iaState;
-  info.pDynamicState        = &m_dyState;
   info.basePipelineIndex    = -1;
 
   VkResult vr = vk.vkCreateGraphicsPipelines(vk.device,
@@ -372,8 +359,6 @@ void GfxVulkanVertexInputState::createLibrary() {
 
   if (vr)
     throw VulkanError("Vulkan: Failed to create vertex input pipeline library", vr);
-
-  m_dynamic = getDynamicStateFlagsFromState(m_dyState);
 }
 
 
@@ -1039,8 +1024,6 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
     viState = viInfo.getViState();
     iaState = viInfo.getIaState();
     tsState = viInfo.getTsState();
-
-    viInfo.getDynamicStates(dyStates);
   }
 
   dsInfo.getDynamicStates(dyStates);
@@ -1140,7 +1123,6 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::linkVariant(
   if (m_stages & GfxShaderStage::eVertex) {
     auto& viState = static_cast<GfxVulkanVertexInputState&>(*state.vertexInputState);
     libraries.push_back(viState.getHandle());
-    variant.dynamicStates |= viState.getDynamicStateFlags();
   }
 
   // Look up fragment output state library

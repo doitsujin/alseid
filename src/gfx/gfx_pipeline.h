@@ -45,6 +45,9 @@ struct GfxVertexInputAttribute {
   /** Data offset within a given vertex. Must be aligned
    *  with respect to the format's requirements. */
   uint32_t offset = 0;
+  /** Vertex stride. Must be at least as large as the
+   *  size of the vertex within the current binding. */
+  uint32_t stride = 0;
   /** Input rate. This \e must be the same for all
    *  attributes that use the same \c binding index. */
   GfxInputRate inputRate = GfxInputRate::ePerVertex;
