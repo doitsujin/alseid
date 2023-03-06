@@ -1,8 +1,15 @@
 #pragma once
 
 #include "../util/util_flags.h"
+#include "../util/util_types.h"
 
 namespace as {
+
+/**
+ * \brief Shader I/O variable name
+ */
+using GfxSemanticName = ShortString<32>;
+
 
 /**
  * \brief Resource usage

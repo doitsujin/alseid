@@ -351,8 +351,8 @@ public:
 
       if (overlapsPrev) {
         if (prevBinding->type != b.binding.type) {
-          Log::err("SPIR-V: Descriptor type ", uint32_t(b.binding.type), " of binding ", b.binding.name,
-            " does not match type ", uint32_t(prevBinding->type), " of overlapping binding ", prevBinding->name,
+          Log::err("SPIR-V: Descriptor type ", uint32_t(b.binding.type), " of binding ", b.binding.name.c_str(),
+            " does not match type ", uint32_t(prevBinding->type), " of overlapping binding ", prevBinding->name.c_str(),
             " at ", prevBinding->descriptorSet, ":", prevBinding->descriptorIndex);
           return std::nullopt;
         }

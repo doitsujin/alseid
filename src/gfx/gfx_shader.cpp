@@ -97,7 +97,7 @@ bool GfxShaderDesc::deserialize(
     if (!stream.read(nameBuffer.data(), nameLength))
       return false;
 
-    b.name = std::string(nameBuffer.data());
+    b.name = nameBuffer.data();
   }
 
   return true;

@@ -65,18 +65,18 @@ enum class GfxShaderBindingType : uint32_t {
 struct GfxShaderBinding {
   /** Descriptor type. This determines what kind
    *  of resource can be bound to this binding. */
-  GfxShaderBindingType type;
+  GfxShaderBindingType type = GfxShaderBindingType::eUnknown;
   /** Descriptor set index. */
-  uint32_t descriptorSet;
+  uint32_t descriptorSet = 0;
   /** Descriptor index within the set. */
-  uint32_t descriptorIndex;
+  uint32_t descriptorIndex = 0;
   /** Number of descriptors within the binding. If this is
    *  \c 0, this binding references a global descriptor array,
    *  and \e must be the only binding within the set. */
-  uint32_t descriptorCount;
+  uint32_t descriptorCount = 0;
   /** Binding name for local bindings. Global descriptor
    *  array bindings may have this set to \c nullptr. */
-  std::string name;
+  GfxSemanticName name = "";
 };
 
 
