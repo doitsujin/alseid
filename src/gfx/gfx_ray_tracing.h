@@ -34,9 +34,9 @@ using GfxRayTracingBvhFlags = Flags<GfxRayTracingBvhFlag>;
  */
 struct GfxAabb {
   /** Minimum box coordinates */
-  Vector3D min = Vector3D(0.0f);
+  Vector3D min;
   /** Maximum box coordinates */
-  Vector3D max = Vector3D(0.0f);
+  Vector3D max;
 };
 
 

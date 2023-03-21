@@ -159,6 +159,17 @@ enum class GfxQueue : uint32_t {
 
 
 /**
+ * \brief Virtual address range
+ */
+struct GfxAddressRange {
+  /** Base virtual address */
+  uint64_t base = 0;
+  /** Size of the range, in bytes */
+  uint64_t size = 0;
+};
+
+
+/**
  * \brief Image aspect
  */
 enum class GfxImageAspect : uint32_t {

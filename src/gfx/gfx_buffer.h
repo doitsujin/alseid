@@ -198,6 +198,22 @@ public:
   }
 
   /**
+   * \brief Returns GPU address range
+   *
+   * \param [in] offset Offset into the buffer
+   * \param [in] size Range size
+   * \returns Given address range within the buffer
+   */
+  GfxAddressRange getGpuAddressRange(
+          uint64_t                      offset,
+          uint64_t                      size) const {
+    GfxAddressRange result;
+    result.base = m_va + offset;
+    result.size = size;
+    return result;
+  }
+
+  /**
    * \brief Returns pointer to mapped memory region
    *
    * If the buffer has been created with \c GfxUsage::eCpuRead,
