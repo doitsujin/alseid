@@ -885,12 +885,24 @@ inline Vector<float, 4> approx_rsqrt(Vector<float, 4> a) {
 }
 
 inline Vector<float, 4> approx_sin(Vector<float, 4> a) {
+#ifdef __SSE4_1__
   return Vector<float, 4>(approx_sin_packed(__m128(a)));
+#else
+  return Vector<float, 4>(
+    approx_sin(a.at<0>()), approx_sin(a.at<1>()),
+    approx_sin(a.at<2>()), approx_sin(a.at<3>()));
+#endif
 }
 
 inline Vector<float, 4> approx_cos(Vector<float, 4> a) {
+#ifdef __SSE4_1__
   return Vector<float, 4>(approx_sin_packed(
     _mm_add_ps(__m128(a), _mm_set1_ps(float(pi / 2)))));
+#else
+  return Vector<float, 4>(
+    approx_cos(a.at<0>()), approx_cos(a.at<1>()),
+    approx_cos(a.at<2>()), approx_cos(a.at<3>()));
+#endif
 }
 
 inline float dot(Vector<float, 4> a, Vector<float, 4> b) {
