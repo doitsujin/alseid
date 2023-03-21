@@ -493,7 +493,7 @@ force_inline __m128 blend_packed(__m128 a, __m128 b) {
   #ifdef __SSE4_1__
   return _mm_blend_ps(a, b, Imm);
   #else
-  __m128 mask = _mm_cvtps_epi32(_mm_set_epi32(
+  __m128 mask = _mm_castsi128_ps(_mm_set_epi32(
     Imm & 0x8 ? ~0u : 0, Imm & 0x4 ? ~0u : 0,
     Imm & 0x2 ? ~0u : 0, Imm & 0x1 ? ~0u : 0));
 
