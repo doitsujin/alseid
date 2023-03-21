@@ -311,7 +311,6 @@ public:
     GfxRenderingInfo renderInfo;
     renderInfo.depthStencil.depthOp = GfxRenderTargetOp::eClear;
     renderInfo.depthStencil.view = m_depthImageMs->createView(depthViewDesc);
-    renderInfo.depthStencil.readOnlyAspects = GfxImageAspect::eDepth;
     renderInfo.depthStencil.clearValue = GfxDepthStencilValue(0.0f, 0);
 
     context->beginRendering(renderInfo, 0);
