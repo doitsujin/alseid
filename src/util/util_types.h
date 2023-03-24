@@ -117,6 +117,29 @@ static_assert(sizeof(uint24_t) == 3 && alignof(uint24_t) == 1);
 
 
 /**
+ * \brief 16-bit float type
+ *
+ * Only provides storage as well as conversion methods
+ * to and from 32-bit floats.
+ */
+struct float16_t {
+  float16_t() = default;
+
+  explicit float16_t(float f)
+  : data(f32tof16(f)) { }
+
+  bool operator == (const float16_t& other) const = default;
+  bool operator != (const float16_t& other) const = default;
+
+  explicit operator float () const {
+    return f16tof32(data);
+  }
+
+  uint16_t data;
+};
+
+
+/**
  * \brief Short string
  *
  * Provides storage for null-terminated fixed-size strings.
