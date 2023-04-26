@@ -440,7 +440,7 @@ public:
 
     // We actually need for compute work from the previous frame
     // to complete here since this accesses the color image
-    submission.addWaitSemaphore(m_computeSemaphore, m_computeTimeline - 1);
+    submission.addWaitSemaphore(m_computeSemaphore, m_computeTimeline);
 
     // And also signal the graphics semaphore since subsequent
     // compute queue work needs for rendering to complete
