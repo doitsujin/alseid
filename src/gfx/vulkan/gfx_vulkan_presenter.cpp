@@ -18,7 +18,6 @@ GfxVulkanPresenter::GfxVulkanPresenter(
 : m_device        (std::move(device))
 , m_wsi           (std::move(wsiBrdige))
 , m_desc          (desc) {
-  createFence();
   createSurface();
 }
 
@@ -26,7 +25,6 @@ GfxVulkanPresenter::GfxVulkanPresenter(
 GfxVulkanPresenter::~GfxVulkanPresenter() {
   destroySwapchain();
   destroySurface();
-  destroyFence();
 }
 
 
@@ -137,10 +135,8 @@ GfxPresentStatus GfxVulkanPresenter::present(
 
   if (m_swapchain && !m_dirty) {
     vr = vk.vkAcquireNextImageKHR(vk.device, m_swapchain,
-      ~0ull, VK_NULL_HANDLE, m_fence, &imageId);
-
-    if (vr > 0)
-      waitForFence();
+      ~0ull, m_semaphores[m_semaphoreIndex].getAcquireHandle(),
+      VK_NULL_HANDLE, &imageId);
   }
 
   while (vr) {
@@ -160,12 +156,9 @@ GfxPresentStatus GfxVulkanPresenter::present(
       return GfxPresentStatus::eAcquireFailed;
 
     vr = vk.vkAcquireNextImageKHR(vk.device, m_swapchain,
-      ~0ull, VK_NULL_HANDLE, m_fence, &imageId);
+      ~0ull, m_semaphores[m_semaphoreIndex].getAcquireHandle(),
+      VK_NULL_HANDLE, &imageId);
   }
-
-  // Wait for image acquisition to complete. Most drivers will stall
-  // here anyway, so there's no real advantage to using semaphores.
-  waitForFence();
 
   // The acquisition fence itself doesn't quite guarantee
   // that it's actually safe to reset the command buffers,
@@ -189,15 +182,20 @@ GfxPresentStatus GfxVulkanPresenter::present(
 
   // Submit presenter command list
   m_submission.addCommandList(context.getContext()->endCommandList());
-  m_submission.addSignalSemaphore(objects.semaphore, 0);
+  m_submission.addWaitSemaphore(m_semaphores[m_semaphoreIndex].acquire, 0);
+  m_submission.addSignalSemaphore(m_semaphores[m_semaphoreIndex].present, 0);
   m_submission.addSignalSemaphore(objects.timeline, ++objects.timelineValue);
 
   m_device->submit(m_desc.queue, std::move(m_submission));
 
   // Execute the actual present operation
   vr = m_device->present(m_presentQueue,
-    static_cast<GfxVulkanSemaphore&>(*objects.semaphore).getHandle(),
+    m_semaphores[m_semaphoreIndex].getPresentHandle(),
     m_swapchain, imageId);
+
+  // Advance to next semaphore pair
+  m_semaphoreIndex += 1;
+  m_semaphoreIndex %= m_semaphores.size();
 
   if (vr >= 0)
     return GfxPresentStatus::eSuccess;
@@ -212,16 +210,13 @@ GfxPresentStatus GfxVulkanPresenter::present(
 }
 
 
-void GfxVulkanPresenter::waitForFence() {
+void GfxVulkanPresenter::waitForDevice() {
   auto& vk = m_device->vk();
 
-  VkResult vr = vk.vkWaitForFences(vk.device, 1, &m_fence, VK_TRUE, ~0ull);
-
-  if (!vr)
-    vr = vk.vkResetFences(vk.device, 1, &m_fence);
+  VkResult vr = vk.vkDeviceWaitIdle(vk.device);
 
   if (vr)
-    throw VulkanError("Vulkan: Failed to wait for presenter fence.", vr);
+    throw VulkanError("Vulkan: Failed to wait for device.", vr);
 }
 
 
@@ -379,17 +374,6 @@ VkResult GfxVulkanPresenter::pickPresentMode(
 }
 
 
-void GfxVulkanPresenter::createFence() {
-  auto& vk = m_device->vk();
-
-  VkFenceCreateInfo fenceInfo = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
-  VkResult vr = vk.vkCreateFence(vk.device, &fenceInfo, nullptr, &m_fence);
-
-  if (vr)
-    throw VulkanError("Vulkan: Failed to create fence", vr);
-}
-
-
 void GfxVulkanPresenter::createSurface() {
   auto& vk = m_device->vk();
 
@@ -542,8 +526,11 @@ VkResult GfxVulkanPresenter::createSwapchain() {
   imageDesc.usage = actualUsage;
   imageDesc.extent = Extent3D(imageExtent.width, imageExtent.height, 1u);
 
-  GfxSemaphoreDesc semaphoreDesc;
-  semaphoreDesc.debugName = "Swapchain WSI Semaphore";
+  GfxSemaphoreDesc acquireSemaphoreDesc;
+  acquireSemaphoreDesc.debugName = "Swapchain acquire Semaphore";
+
+  GfxSemaphoreDesc presentSemaphoreDesc;
+  presentSemaphoreDesc.debugName = "Swapchain present Semaphore";
 
   GfxSemaphoreDesc timelineDesc;
   timelineDesc.debugName = "Swapchain timeline Semaphore";
@@ -551,28 +538,29 @@ VkResult GfxVulkanPresenter::createSwapchain() {
 
   m_objects.resize(imageCount);
 
-  for (uint32_t i = 0; i < imageCount; i++) {
+  for (uint32_t i = 0; i < m_objects.size(); i++) {
     auto& objects = m_objects.at(i);
 
     objects.image = GfxImage(std::make_shared<GfxVulkanImage>(m_device, imageDesc,
       imageHandles[i], swapchainInfo.imageSharingMode == VK_SHARING_MODE_CONCURRENT));
     objects.context = m_device->createContext(m_desc.queue);
-    objects.semaphore = GfxSemaphore(std::make_shared<GfxVulkanSemaphore>(
-      m_device, semaphoreDesc, VK_SEMAPHORE_TYPE_BINARY));
     objects.timeline = GfxSemaphore(std::make_shared<GfxVulkanSemaphore>(
-      m_device, semaphoreDesc, VK_SEMAPHORE_TYPE_TIMELINE));
+      m_device, timelineDesc, VK_SEMAPHORE_TYPE_TIMELINE));
     objects.timelineValue = 0;
+  }
+
+  m_semaphoreIndex = 0;
+  m_semaphores.resize(imageCount);
+
+  for (uint32_t i = 0; i < m_semaphores.size(); i++) {
+    m_semaphores[i].acquire = GfxSemaphore(std::make_shared<GfxVulkanSemaphore>(
+      m_device, acquireSemaphoreDesc, VK_SEMAPHORE_TYPE_BINARY));
+    m_semaphores[i].present = GfxSemaphore(std::make_shared<GfxVulkanSemaphore>(
+      m_device, presentSemaphoreDesc, VK_SEMAPHORE_TYPE_BINARY));
   }
 
   m_dirty = VK_FALSE;
   return VK_SUCCESS;
-}
-
-
-void GfxVulkanPresenter::destroyFence() {
-  auto& vk = m_device->vk();
-
-  vk.vkDestroyFence(vk.device, m_fence, nullptr);
 }
 
 
@@ -594,16 +582,14 @@ void GfxVulkanPresenter::destroySwapchain() {
   if (!m_swapchain)
     return;
 
-  // Wait until all queues involved in presentation are idle. This
-  // is necessary to synchronize swap image and semaphore access.
-  m_device->waitQueueIdle(m_desc.queue);
-
-  if (m_presentQueue != m_desc.queue)
-    m_device->waitQueueIdle(m_presentQueue);
+  waitForDevice();
 
   vk.vkDestroySwapchainKHR(vk.device, m_swapchain, nullptr);
 
   // Destroy other per-image objects involved in presentation
+  m_semaphoreIndex = 0;
+  m_semaphores.clear();
+
   m_objects.clear();
 
   m_image = GfxImage();

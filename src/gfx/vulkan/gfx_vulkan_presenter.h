@@ -6,6 +6,7 @@
 #include "../gfx_submission.h"
 
 #include "gfx_vulkan_device.h"
+#include "gfx_vulkan_semaphore.h"
 
 #include "wsi/gfx_vulkan_wsi.h"
 
@@ -28,12 +29,28 @@ enum class GfxVulkanPresenterBlitMode : uint32_t {
 
 
 /**
+ * \brief Per-frame semaphores
+ */
+struct GfxVulkanPresenterSemaphores {
+  GfxSemaphore acquire;
+  GfxSemaphore present;
+
+  VkSemaphore getAcquireHandle() const {
+    return static_cast<GfxVulkanSemaphore&>(*acquire).getHandle();
+  }
+
+  VkSemaphore getPresentHandle() const {
+    return static_cast<GfxVulkanSemaphore&>(*present).getHandle();
+  }
+};
+
+
+/**
  * \brief Per-frame objects
  */
 struct GfxVulkanPresenterObjects {
   GfxImage image;
   GfxContext context;
-  GfxSemaphore semaphore;
   GfxSemaphore timeline;
   uint64_t timelineValue = 0;
 };
@@ -120,7 +137,6 @@ private:
   GfxPresentMode            m_presentMode = GfxPresentMode::eFifo;
   GfxVulkanPresenterBlitMode m_blitMode   = GfxVulkanPresenterBlitMode::eNone;
 
-  VkFence                   m_fence       = VK_NULL_HANDLE;
   VkSurfaceKHR              m_surface     = VK_NULL_HANDLE;
   VkSwapchainKHR            m_swapchain   = VK_NULL_HANDLE;
 
@@ -128,9 +144,12 @@ private:
 
   GfxImage                  m_image;
 
-  std::vector<GfxVulkanPresenterObjects> m_objects;
+  std::vector<GfxVulkanPresenterSemaphores> m_semaphores;
+  size_t                                    m_semaphoreIndex = 0;
 
-  void waitForFence();
+  std::vector<GfxVulkanPresenterObjects>    m_objects;
+
+  void waitForDevice();
 
   uint32_t pickImageCount(
     const VkSurfaceCapabilitiesKHR&     caps) const;
@@ -146,13 +165,9 @@ private:
           VkPresentModeKHR              desired,
           VkPresentModeKHR&             actual) const;
 
-  void createFence();
-
   void createSurface();
 
   VkResult createSwapchain();
-
-  void destroyFence();
 
   void destroySurface();
 
