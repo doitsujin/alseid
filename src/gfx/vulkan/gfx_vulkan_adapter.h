@@ -36,6 +36,8 @@ public:
   uint32_t khrDeferredHostOperations      = 0;
   uint32_t khrFragmentShadingRate         = 0;
   uint32_t khrPipelineLibrary             = 0;
+  uint32_t khrPresentId                   = 0;
+  uint32_t khrPresentWait                 = 0;
   uint32_t khrRayQuery                    = 0;
   uint32_t khrRayTracingMaintenance1      = 0;
   uint32_t khrSwapchain                   = 0;
@@ -74,11 +76,13 @@ private:
 
   std::vector<const char*> m_extensionList;
 
-  const std::array<Extension, 14> s_extensions = {{
+  const std::array<Extension, 16> s_extensions = {{
     { &khrAccelerationStructure,        VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,     1, false },
     { &khrDeferredHostOperations,       VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,   1, false },
     { &khrFragmentShadingRate,          VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME,      1, false },
     { &khrPipelineLibrary,              VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,           1, false },
+    { &khrPresentId,                    VK_KHR_PRESENT_ID_EXTENSION_NAME,                 1, false },
+    { &khrPresentWait,                  VK_KHR_PRESENT_WAIT_EXTENSION_NAME,               1, false },
     { &khrRayQuery,                     VK_KHR_RAY_QUERY_EXTENSION_NAME,                  1, false },
     { &khrRayTracingMaintenance1,       VK_KHR_RAY_TRACING_MAINTENANCE_1_EXTENSION_NAME,  1, false },
     { &khrSwapchain,                    VK_KHR_SWAPCHAIN_EXTENSION_NAME,                  1, true  },
@@ -170,6 +174,8 @@ public:
   VkPhysicalDeviceVulkan13Features                        vk13                            = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
   VkPhysicalDeviceAccelerationStructureFeaturesKHR        khrAccelerationStructure        = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR };
   VkPhysicalDeviceFragmentShadingRateFeaturesKHR          khrFragmentShadingRate          = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR };
+  VkPhysicalDevicePresentIdFeaturesKHR                    khrPresentId                    = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR };
+  VkPhysicalDevicePresentWaitFeaturesKHR                  khrPresentWait                  = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR };
   VkPhysicalDeviceRayQueryFeaturesKHR                     khrRayQuery                     = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR };
   VkPhysicalDeviceRayTracingMaintenance1FeaturesKHR       khrRayTracingMaintenance1       = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MAINTENANCE_1_FEATURES_KHR };
   VkPhysicalDeviceExtendedDynamicState2FeaturesEXT        extExtendedDynamicState2        = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT };
@@ -194,7 +200,7 @@ private:
     bool required;
   };
 
-  std::array<Feature, 77> m_features = {{
+  std::array<Feature, 79> m_features = {{
     { &core.features.depthBiasClamp,                                        true  },
     { &core.features.depthBounds,                                           false },
     { &core.features.drawIndirectFirstInstance,                             true  },
@@ -267,6 +273,10 @@ private:
 
     { &khrFragmentShadingRate.pipelineFragmentShadingRate,                  false },
     { &khrFragmentShadingRate.attachmentFragmentShadingRate,                false },
+
+    { &khrPresentId.presentId,                                              false },
+
+    { &khrPresentWait.presentWait,                                          false },
 
     { &khrRayQuery.rayQuery,                                                false },
 

@@ -363,6 +363,7 @@ public:
   GFX_VK_DPROC(vkUpdateDescriptorSets);
   GFX_VK_DPROC(vkUpdateDescriptorSetWithTemplate);
   GFX_VK_DPROC(vkWaitForFences);
+  GFX_VK_DPROC(vkWaitForPresentKHR);
   GFX_VK_DPROC(vkWaitSemaphores);
   GFX_VK_DPROC(vkWriteAccelerationStructuresPropertiesKHR);
 

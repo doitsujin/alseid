@@ -107,12 +107,14 @@ GfxVulkanDeviceProperties::GfxVulkanDeviceProperties(
 
 GfxVulkanDeviceFeatures::GfxVulkanDeviceFeatures(
   const GfxVulkanDeviceExtensions&    ext) {
-  const std::array<GfxVulkanPropertyChain, 12> fields = {{
+  const std::array<GfxVulkanPropertyChain, 14> fields = {{
     { &vk11 },
     { &vk12 },
     { &vk13 },
     { &khrAccelerationStructure,        &ext.khrAccelerationStructure },
     { &khrFragmentShadingRate,          &ext.khrFragmentShadingRate },
+    { &khrPresentId,                    &ext.khrPresentId },
+    { &khrPresentWait,                  &ext.khrPresentWait },
     { &khrRayQuery,                     &ext.khrRayQuery },
     { &khrRayTracingMaintenance1,       &ext.khrRayTracingMaintenance1 },
     { &extExtendedDynamicState2,        &ext.extExtendedDynamicState2 },
