@@ -694,13 +694,21 @@ VkResult GfxVulkanDevice::present(
         GfxQueue                      queue,
         VkSemaphore                   semaphore,
         VkSwapchainKHR                swapchain,
-        uint32_t                      imageId) {
+        uint32_t                      imageId,
+        uint64_t                      presentId) {
+  VkPresentIdKHR presentIdInfo = { VK_STRUCTURE_TYPE_PRESENT_ID_KHR };
+  presentIdInfo.swapchainCount = 1;
+  presentIdInfo.pPresentIds = &presentId;
+
   VkPresentInfoKHR presentInfo = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
   presentInfo.waitSemaphoreCount = 1;
   presentInfo.pWaitSemaphores = &semaphore;
   presentInfo.swapchainCount = 1;
   presentInfo.pSwapchains = &swapchain;
   presentInfo.pImageIndices = &imageId;
+
+  if (m_features.khrPresentId.presentId)
+    presentIdInfo.pNext = std::exchange(presentInfo.pNext, &presentIdInfo);
 
   std::lock_guard lock(m_submissionMutex);
 

@@ -429,13 +429,15 @@ public:
    * \param [in] semaphore Binary wait semaphore
    * \param [in] swapchain Vulkan swap chain
    * \param [in] imageId Swap image ID
+   * \param [in] presentId Present ID
    * \returns Vulkan result of the operation
    */
   VkResult present(
           GfxQueue                      queue,
           VkSemaphore                   semaphore,
           VkSwapchainKHR                swapchain,
-          uint32_t                      imageId);
+          uint32_t                      imageId,
+          uint64_t                      presentId);
 
   /**
    * \brief Waits for a queue to become idle

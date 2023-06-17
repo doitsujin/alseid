@@ -119,6 +119,16 @@ public:
   GfxPresentStatus present(
     const GfxPresenterProc&             proc) override;
 
+  /**
+   * \brief Synchronizes with presentation of prior frames
+   *
+   * If present_wait is not supported, this will synchronize with
+   * a timeline semaphore tied to the final swap chain blit.
+   * \param [in] maxLatency Desired frame latency
+   */
+  void synchronize(
+          uint32_t                      maxLatency) override;
+
 private:
 
   std::shared_ptr<GfxVulkanDevice>  m_device;
@@ -144,6 +154,10 @@ private:
 
   GfxImage                  m_image;
 
+  GfxSemaphore              m_frameSemaphore;
+  uint64_t                  m_frameId         = 0ull;
+  uint64_t                  m_frameIdCreated  = 0ull;
+
   std::vector<GfxVulkanPresenterSemaphores> m_semaphores;
   size_t                                    m_semaphoreIndex = 0;
 
@@ -164,6 +178,8 @@ private:
   VkResult pickPresentMode(
           VkPresentModeKHR              desired,
           VkPresentModeKHR&             actual) const;
+
+  void createFrameSemaphore();
 
   void createSurface();
 

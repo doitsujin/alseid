@@ -19,6 +19,10 @@ GfxVulkanPresenter::GfxVulkanPresenter(
 , m_wsi           (std::move(wsiBrdige))
 , m_desc          (desc) {
   createSurface();
+  createFrameSemaphore();
+
+  if (m_device->getVkFeatures().khrPresentWait.presentWait)
+    Log::info("Vulkan: Using VK_KHR_present_wait for frame latency control.");
 }
 
 
@@ -191,22 +195,57 @@ GfxPresentStatus GfxVulkanPresenter::present(
   // Execute the actual present operation
   vr = m_device->present(m_presentQueue,
     m_semaphores[m_semaphoreIndex].getPresentHandle(),
-    m_swapchain, imageId);
+    m_swapchain, imageId, m_frameId + 1);
 
   // Advance to next semaphore pair
   m_semaphoreIndex += 1;
   m_semaphoreIndex %= m_semaphores.size();
 
-  if (vr >= 0)
-    return GfxPresentStatus::eSuccess;
+  if (vr < 0) {
+    if (vr == VK_ERROR_SURFACE_LOST_KHR) {
+      destroySwapchain();
+      destroySurface();
+      createSurface();
+    }
 
-  if (vr == VK_ERROR_SURFACE_LOST_KHR) {
-    destroySwapchain();
-    destroySurface();
-    createSurface();
+    return GfxPresentStatus::ePresentFailed;
   }
 
-  return GfxPresentStatus::ePresentFailed;
+  // Signal the frame semaphore for frame latency purposes and
+  // increment frame ID. We only do this on successful presents
+  // so that the app does not have to care about failed presents.
+  m_submission.addSignalSemaphore(m_frameSemaphore, ++m_frameId);
+  m_device->submit(m_desc.queue, std::move(m_submission));
+  return GfxPresentStatus::eSuccess;
+}
+
+
+void GfxVulkanPresenter::synchronize(
+        uint32_t                      maxLatency) {
+  auto& vk = m_device->vk();
+
+  if (maxLatency >= m_frameId)
+    return;
+
+  // Wait for the frame semaphore first. This will always
+  // work, even if the swap chain has been recreated.
+  uint64_t syncFrameId = m_frameId - maxLatency;
+  m_frameSemaphore->wait(syncFrameId);
+
+  if (!m_device->getVkFeatures().khrPresentWait.presentWait)
+    return;
+
+  // Only bother with present wait in FIFO mode since doing
+  // it in mailbox/immediate would defeat the purpose.
+  if (m_presentMode != GfxPresentMode::eFifo)
+    return;
+
+  // We can only properly wait for presentation if
+  // the swap chain has not recently been recreated.
+  if (m_swapchain && syncFrameId > m_frameIdCreated) {
+    VkResult vr = vk.vkWaitForPresentKHR(vk.device, m_swapchain, syncFrameId, ~0ull);
+    handleVkResult("Vulkan: Failed to wait for present", vr);
+  }
 }
 
 
@@ -371,6 +410,14 @@ VkResult GfxVulkanPresenter::pickPresentMode(
   // This shouldn't happen since FIFO is required
   actual = *modes.begin();
   return VK_SUCCESS;
+}
+
+
+void GfxVulkanPresenter::createFrameSemaphore() {
+  GfxSemaphoreDesc desc;
+  desc.debugName = "Frame semaphore";
+
+  m_frameSemaphore = m_device->createSemaphore(desc);
 }
 
 
@@ -559,6 +606,7 @@ VkResult GfxVulkanPresenter::createSwapchain() {
       m_device, presentSemaphoreDesc, VK_SEMAPHORE_TYPE_BINARY));
   }
 
+  m_frameIdCreated = m_frameId;
   m_dirty = VK_FALSE;
   return VK_SUCCESS;
 }
@@ -737,7 +785,7 @@ bool GfxVulkanPresenter::handleVkResult(
   if (vr >= 0)
     return true;
 
-  if (vr == VK_ERROR_SURFACE_LOST_KHR)
+  if (vr == VK_ERROR_SURFACE_LOST_KHR || vr == VK_ERROR_OUT_OF_DATE_KHR)
     return false;
 
   throw VulkanError(pMessage, vr);

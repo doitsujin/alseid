@@ -260,6 +260,18 @@ public:
   virtual GfxPresentStatus present(
     const GfxPresenterProc&             proc) = 0;
 
+  /**
+   * \brief Synchronizes with presentation of prior frames
+   *
+   * This can be used to enforce a specific frame latency.
+   * A value of 0 will wait for the most recent successful
+   * present operation to complete, higher values will
+   * synchronize with prior present operations.
+   * \param [in] maxLatency Desired frame latency
+   */
+  virtual void synchronize(
+          uint32_t                      maxLatency) = 0;
+
 };
 
 /** See GfxPresenterIface. */
