@@ -250,6 +250,9 @@ public:
   }
 
   void beginFrame() {
+    // Enforce a frame latency of 1
+    m_presenter->synchronize(1);
+
     // Compute frame time for animation purposes
     auto curTime = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::duration<float, std::ratio<1>>>(curTime - m_startTime).count();
