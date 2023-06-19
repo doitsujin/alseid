@@ -3,7 +3,7 @@
 
 namespace as {
 
-bool GfxGeometryBufferDesc::serialize(
+bool GfxGeometry::serialize(
         WrBufferedStream&             output) {
   WrStream stream(output);
 
@@ -12,7 +12,6 @@ bool GfxGeometryBufferDesc::serialize(
 
   success &= stream.write(flags)
           && stream.write(materialCount)
-          && stream.write(bufferSize)
           && stream.write(aabb)
           && stream.write(meshletCount)
           && stream.write(meshletOffset)
@@ -60,7 +59,7 @@ bool GfxGeometryBufferDesc::serialize(
 }
 
 
-std::optional<GfxGeometryBufferDesc> GfxGeometryBufferDesc::deserialize(
+std::optional<GfxGeometry> GfxGeometry::deserialize(
         RdMemoryView                  input) {
   RdStream stream(input);
   uint16_t version = 0;
@@ -68,23 +67,22 @@ std::optional<GfxGeometryBufferDesc> GfxGeometryBufferDesc::deserialize(
   if (!stream.read(version) || version != 1)
     return std::nullopt;
 
-  std::optional<GfxGeometryBufferDesc> result;
-  auto& desc = result.emplace();
-
   uint16_t streamCount = 0;
   uint16_t meshCount = 0;
   uint16_t lodCount = 0;
 
+  std::optional<GfxGeometry> result;
+  auto& desc = result.emplace();
+
   if (!stream.read(desc.flags)
    || !stream.read(desc.materialCount)
-   || !stream.read(desc.bufferSize)
    || !stream.read(desc.aabb)
    || !stream.read(desc.meshletCount)
    || !stream.read(desc.meshletOffset)
    || !stream.read(streamCount)
    || !stream.read(meshCount)
    || !stream.read(lodCount))
-    return std::nullopt;
+      return std::nullopt;
 
   desc.streams.resize(streamCount);
 
@@ -151,24 +149,6 @@ std::optional<GfxGeometryBufferDesc> GfxGeometryBufferDesc::deserialize(
   }
 
   return result;
-}
-
-
-
-
-GfxGeometryBufferIface::GfxGeometryBufferIface(
-        GfxGeometryBufferDesc         desc,
-        GfxBuffer                     buffer,
-        uint64_t                      offset)
-: m_desc    (desc)
-, m_buffer  (buffer)
-, m_offset  (offset) {
-
-}
-
-
-GfxGeometryBufferIface::~GfxGeometryBufferIface() {
-
 }
 
 }

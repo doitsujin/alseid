@@ -106,9 +106,37 @@ struct GfxMeshLod {
 
 
 /**
+ * \brief Mesh data
+ *
+ * Stores a list of LODs for a mesh of a specific material.
+ * This structure is not intended to be used by the GPU.
+ */
+struct GfxMesh {
+  /** Material index. Materials are provided per instance, this
+   *  is not intended to index into a global material list. */
+  uint16_t materialIndex = 0;
+  /** Vertex stream index. This describes which buffer regions
+   *  to pull vertex data, primitive data and index data from. */
+  uint16_t streamIndex = 0;
+  /** Index of the first LOD used for this mesh, relative to
+   *  the start of the LOD list within the metadata buffer. */
+  uint16_t lodIndex = 0;
+  /** Number of LODs in the mesh. All LODs for the mesh must
+   *  be stored consecutively, with the maximum distance in
+   *  descending order. */
+  uint16_t lodCount = 0;
+  /** Maximum number of meshlets for any given LOD.
+   *  Can be used to determine the number of required
+   *  task shader invocations for meshlet rendering. */
+  uint32_t maxMeshletCount = 0;
+};
+
+
+/**
  * \brief Mesh buffer stream description
  *
  * Stores data layout info for a given vertex stream.
+ * This structure is not intended to be used by the GPU.
  */
 struct GfxMeshDataStream {
   /** Index buffer format */
@@ -139,56 +167,35 @@ struct GfxMeshDataStream {
 
 
 /**
- * \brief Mesh data
- *
- * Stores a list of LODs for a mesh of a specific
- * material in a GPU-friendly format.
- */
-struct GfxMesh {
-  /** Material index. Materials are provided per instance, this
-   *  is not intended to index into a global material list. */
-  uint16_t materialIndex = 0;
-  /** Vertex stream index within the data buffer */
-  uint16_t streamIndex = 0;
-  /** Absolute index of the first LOD */
-  uint16_t lodIndex = 0;
-  /** Number of LODs in the mesh */
-  uint16_t lodCount = 0;
-  /** Maximum number of meshlets for any given LOD */
-  uint32_t maxMeshletCount = 0;
-};
-
-
-/**
  * \brief Geometry flags
  */
-enum class GfxGeometryFlag : uint16_t {
+enum class GfxGeometryFlag : uint32_t {
   /** Enables frustum culling based on the AABB */
   eAabb           = (1u << 0),
 
   eFlagEnum       = 0
 };
 
-
 using GfxGeometryFlags = Flags<GfxGeometryFlag>;
 
 
 /**
- * \brief Geometry buffer description
+ * \brief Geometry description
+ *
+ * Stores basic info for a geometry asset and
+ * outlines the layout of the data buffer.
  */
-struct GfxGeometryBufferDesc {
+struct GfxGeometry {
   /** Geometry flags */
   GfxGeometryFlags flags = 0;
-  /** Number of materials referenced by the object */
-  uint16_t materialCount = 0;
-  /** Data buffer size, in bytes */
-  uint32_t bufferSize = 0;
+  /** Number of materials referenced by the object. */
+  uint32_t materialCount = 0;
   /** Axis-aligned bounding box. If culling is enabled,
    *  this must account for any potential animation. */
   GfxAabb aabb = { };
-  /** Meshlet count */
+  /** Total meshlet count stored in the data buffer. */
   uint32_t meshletCount = 0;
-  /** Meshlet metadata offset */
+  /** Meshlet metadata offset within the data buffer. */
   uint32_t meshletOffset = 0;
   /** List of data stream descriptions */
   std::vector<GfxMeshDataStream> streams;
@@ -212,107 +219,9 @@ struct GfxGeometryBufferDesc {
    * \param [in] input Stream to read from
    * \returns Decoded mesh buffer description
    */
-  std::optional<GfxGeometryBufferDesc> deserialize(
+  static std::optional<GfxGeometry> deserialize(
           RdMemoryView                  input);
 
 };
-
-
-/**
- * \brief Geometry buffer interface
- *
- * High-level abstraction around a buffer
- * that contains geometry data.
- */
-class GfxGeometryBufferIface {
-
-public:
-
-  /**
-   * \brief Creates a geometry buffer
-   *
-   * \param [in] desc Geometry buffer descrption
-   * \param [in] buffer The buffer that stores the geometry
-   * \param [in] offset Offset into the buffer
-   */
-  GfxGeometryBufferIface(
-          GfxGeometryBufferDesc         desc,
-          GfxBuffer                     buffer,
-          uint64_t                      offset);
-
-  ~GfxGeometryBufferIface();
-
-  /**
-   * \brief Retrieves description
-   * \returns Object description
-   */
-  GfxGeometryBufferDesc getDesc() const {
-    return m_desc;
-  }
-
-  /**
-   * \brief Retrieves buffer
-   * \returns Buffer
-   */
-  GfxBuffer buffer() const {
-    return m_buffer;
-  }
-
-  /**
-   * \brief Retrieves buffer address
-   *
-   * Any stream data offset can be added to the
-   * returned address.
-   * \returns Buffer VA range
-   */
-  uint64_t getGpuAddress() const {
-    return m_buffer->getGpuAddress() + m_offset;
-  }
-
-  /**
-   * \brief Retrieves buffer descriptor
-   *
-   * \param [in] usage Descriptor usage
-   * \param [in] offset Offset into the buffer
-   * \param [in] size Size of the buffer range
-   * \returns Buffer descriptor
-   */
-  GfxDescriptor getDescriptor(
-          GfxUsage                      usage,
-          uint64_t                      offset,
-          uint64_t                      size) const {
-    return m_buffer->getDescriptor(usage, m_offset + offset, size);
-  }
-
-private:
-
-  GfxGeometryBufferDesc m_desc;
-  GfxBuffer             m_buffer;
-  uint64_t              m_offset;
-
-};
-
-
-/**
- * \brief Geometry buffer object
- *
- * See GfxGeometryBufferIface.
- */
-class GfxGeometryBuffer : public IfaceRef<GfxGeometryBufferIface> {
-
-public:
-
-  GfxGeometryBuffer() { }
-  GfxGeometryBuffer(std::nullptr_t) { }
-
-  GfxGeometryBuffer(
-          GfxGeometryBufferDesc         desc,
-          GfxBuffer                     buffer,
-          uint64_t                      offset)
-  : IfaceRef<GfxGeometryBufferIface>(std::make_shared<GfxGeometryBufferIface>(
-      std::move(desc), std::move(buffer), offset)) { }
-
-};
-
 
 }
