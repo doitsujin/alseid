@@ -5,22 +5,8 @@ as_files += files([
   'sha1/sha1.c',
 ])
 
-as_lodepng_files = files([
-  'lodepng/lodepng.cpp',
-])
-
-as_lodepng_cpp_args = [
-  '-DLODEPNG_NO_COMPILE_ENCODER=1',
-  '-DLODEPNG_NO_COMPILE_DISK=1'
-]
-
-as_nanojpeg_files = files([
-  'nanojpeg/nanojpeg.c',
-])
-
 as_stb_image_files = files([
   'stb_image/stb_image.c'
-])
 
 as_gdeflate_glsl = custom_target('cs_gdeflate',
   output  : 'cs_gdeflate.h',
