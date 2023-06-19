@@ -5,9 +5,7 @@
 #include "../../src/third_party/bc7enc/bc7enc.h"
 #include "../../src/third_party/bc7enc/rgbcx.h"
 
-#include "../../src/third_party/nanojpeg/nanojpeg.h"
-
-#include "../../src/third_party/lodepng/lodepng.h"
+#include "../../src/third_party/stb_image/stb_image.h"
 
 #include "../../src/util/util_log.h"
 #include "../../src/util/util_math.h"
@@ -17,7 +15,6 @@
 
 std::mutex g_globalMutex;
 
-std::atomic<bool> g_nanojpegInitialized = { false };
 std::atomic<bool> g_bc7encInitialized = { false };
 
 
@@ -262,76 +259,24 @@ bool Texture::readImage(
     return false;
   }
 
-  if (data.size() >= 4) {
-    if (data[0] == 0xFF && data[1] == 0xD8)
-      return readJpg(path, layer, data.data(), data.size());
+  int w = 0;
+  int h = 0;
+  int n = 0;
 
-    if (data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47)
-      return readPng(path, layer, data.data(), data.size());
-  }
+  auto imageData = stbi_load_from_memory(data.data(), data.size(), &w, &h, &n, 4);
 
-  Log::err(path, ": Unsupported format");
-  return false;
-}
-
-
-bool Texture::readJpg(
-  const std::filesystem::path&        path,
-        TextureImage&                 layer,
-  const void*                         data,
-        size_t                        size) {
-  std::lock_guard lock(g_globalMutex);
-
-  if (!g_nanojpegInitialized.exchange(true))
-    njInit();
-
-  if (njDecode(data, size)) {
-    Log::err(path, ": Failed to decode JPEG");
+  if (!imageData) {
+    Log::err("Failed to decode ", path);
     return false;
   }
 
-  layer.w = njGetWidth();
-  layer.h = njGetHeight();
-  layer.channels = njIsColor() ? 3 : 1;
-  layer.rawData.resize(layer.w * layer.h * sizeof(uint32_t));
-
-  const unsigned char* image = njGetImage();
-
-  for (uint32_t y = 0; y < layer.h; y++) {
-    for (uint32_t x = 0; x < layer.w; x++) {
-      if (njIsColor()) {
-        uint32_t dword = uint32_t(image[0]) << 0
-                       | uint32_t(image[1]) << 8
-                       | uint32_t(image[2]) << 16
-                       | uint32_t(0xFF) << 24;
-        layer.set(x, y, dword);
-        image += 3;
-      } else {
-        uint32_t dword = uint32_t(image[0])
-                       | uint32_t(0xFF) << 24;
-        layer.set(x, y, dword);
-        image += 1;
-      }
-    }
-  }
-
-  njDone();
-  return true;
-}
-
-
-bool Texture::readPng(
-  const std::filesystem::path&        path,
-        TextureImage&                 layer,
-  const void*                         data,
-        size_t                        size) {
-  if (lodepng::decode(layer.rawData, layer.w, layer.h,
-      reinterpret_cast<const unsigned char*>(data), size)) {
-    Log::err(path, ": Failed to decode PNG");
-    return false;
-  }
-
+  layer.w = w;
+  layer.h = h;
   layer.channels = 4;
+  layer.rawData.resize(w * h * sizeof(uint32_t));
+  std::memcpy(layer.rawData.data(), imageData, layer.rawData.size());
+
+  stbi_image_free(imageData);
   return true;
 }
 

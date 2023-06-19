@@ -3,6 +3,5 @@ as_texture_files = files(
   'texture.cpp',
 )
 
-astexture = executable('astexture', as_texture_files, as_lodepng_files, as_nanojpeg_files,
-  cpp_args  : as_lodepng_cpp_args,
+astexture = executable('astexture', as_texture_files, as_stb_image_files,
   link_with : lib_alseid)
