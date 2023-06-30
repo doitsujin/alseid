@@ -7,6 +7,7 @@ as_files += files([
 
 as_stb_image_files = files([
   'stb_image/stb_image.c'
+])
 
 as_gdeflate_glsl = custom_target('cs_gdeflate',
   output  : 'cs_gdeflate.h',
