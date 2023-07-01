@@ -9,8 +9,9 @@ RdFileStream::RdFileStream() {
 
 RdFileStream::RdFileStream(IoFile file)
 : m_file(std::move(file))
-, m_size(m_file->getSize()) {
-
+, m_size(0) {
+  if (m_file)
+    m_size = m_file->getSize();
 }
 
 
