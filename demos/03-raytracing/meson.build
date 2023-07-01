@@ -7,7 +7,7 @@ demo_03_raytracing_spv = spv_shader_generator.process(demo_03_raytracing_shaders
 custom_target('demo_03_raytracing_resources',
   output      : 'demo_03_raytracing_resources.asa',
   input       : demo_03_raytracing_spv,
-  command     : [ asshader, '@OUTPUT@', '@INPUT@' ],
+  command     : [ asarc, '-o', '@OUTPUT@', '-s', '@INPUT@' ],
   install     : true,
   install_dir : 'demos/resources')
 

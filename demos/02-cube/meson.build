@@ -13,17 +13,17 @@ demo_02_cube_textures = files(
 demo_02_cube_shaders_asa = custom_target('demo_02_cube_shaders',
   output      : 'demo_02_cube_shaders.asa',
   input       : demo_02_cube_spv,
-  command     : [ asshader, '@OUTPUT@', '@INPUT@' ])
+  command     : [ asarc, '-o', '@OUTPUT@', '-s', '@INPUT@' ])
 
 demo_02_cube_textures_asa = custom_target('demo_02_cube_textures',
   output      : 'demo_02_cube_textures.asa',
   input       : demo_02_cube_textures,
-  command     : [ astexture, '-o', '@OUTPUT@', '-f', 'bc7', '@INPUT@' ])
+  command     : [ asarc, '-o', '@OUTPUT@', '-t-allow-bc7', 'on', '-t', '@INPUT@' ])
 
 custom_target('demo_02_cube_resources',
   output      : 'demo_02_cube_resources.asa',
   input       : [ demo_02_cube_shaders_asa, demo_02_cube_textures_asa ],
-  command     : [ asarchive, 'merge', '-o', '@OUTPUT@', '@INPUT@' ],
+  command     : [ asarc, '-o', '@OUTPUT@', '-a', '@INPUT@' ],
   install     : true,
   install_dir : 'demos/resources')
 
