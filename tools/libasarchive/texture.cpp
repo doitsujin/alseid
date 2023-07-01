@@ -281,7 +281,7 @@ BuildResult TextureBuildJob::runIoJob() {
     return BuildResult::eInvalidArgument;
   }
 
-  if (m_desc.enableLayers && m_inputs.size() > 1) {
+  if (!m_desc.enableLayers && m_inputs.size() > 1) {
     Log::err("Multiple inputs specified for single-layer texture");
     return BuildResult::eInvalidArgument;
   }
