@@ -14,6 +14,9 @@ spirv_cross_core_dep = spirv_cross_proj.dependency('spirv-cross-core')
 spirv_cross_glsl_dep = spirv_cross_proj.dependency('spirv-cross-glsl')
 spirv_cross_hlsl_dep = spirv_cross_proj.dependency('spirv-cross-hlsl')
 
+nlohmann_json_proj = subproject('nlohmann')
+nlohmann_json_dep = nlohmann_json_proj.get_variable('nlohmann_json_dep')
+
 subdir('src')
 subdir('tools')
 subdir('demos')

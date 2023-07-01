@@ -4,3 +4,6 @@
 [submodule "src/third_party/libdeflate"]
 	path = src/third_party/libdeflate
 	url = https://github.com/NVIDIA/libdeflate.git
+[submodule "subprojects/nlohmann"]
+	path = subprojects/nlohmann
+	url = https://github.com/nlohmann/json.git
