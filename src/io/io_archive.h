@@ -363,8 +363,8 @@ public:
   /**
    * \brief Synchronously reads compresseed sub file
    *
-   * Reads and, if necessary, decompresses sub-file
-   * contents into pre-allocated memory as necessary.
+   * Reads raw sub-file  into pre-allocated memory
+   * without performing any decompression.
    * \param [in] subFile Sub-file to read
    * \param [in] dst Destination buffer
    * \returns Result of the I/O operation
@@ -382,7 +382,7 @@ public:
    * \brief Reads sub file
    *
    * Reads and, if necessary, decompresses sub-file
-   * contents into pre-allocated memory as necessary.
+   * contents into pre-allocated memory.
    * \param [in] request I/O request object
    * \param [in] subFile Sub-file to read
    * \param [in] dst Destination buffer
@@ -391,15 +391,16 @@ public:
     const IoRequest&                    request,
     const IoArchiveSubFile*             subFile,
           void*                         dst) const {
-    if (!subFile->isCompressed())
+    if (!subFile->isCompressed()) {
       readCompressed(request, subFile, dst);
-
-    streamCompressed(request, subFile,
-      [this, subFile, dst] (const void* src, size_t size) {
-        return decompress(subFile, dst, src)
-          ? IoStatus::eSuccess
-          : IoStatus::eError;
-      });
+    } else {
+      streamCompressed(request, subFile,
+        [this, subFile, dst] (const void* src, size_t size) {
+          return decompress(subFile, dst, src)
+            ? IoStatus::eSuccess
+            : IoStatus::eError;
+        });
+    }
   }
 
   /**
@@ -420,16 +421,17 @@ public:
     const IoArchiveSubFile*             subFile,
           void*                         dst,
           Cb&&                          callback) const {
-    if (!subFile->isCompressed())
+    if (!subFile->isCompressed()) {
       readCompressed(request, subFile, dst, std::move(callback));
+    } else {
+      streamCompressed(request, subFile,
+        [this, subFile, dst, cb = std::move(callback)] (const void* src, size_t size) {
+          if (!decompress(subFile, dst, src))
+            return IoStatus::eError;
 
-    streamCompressed(request, subFile,
-      [this, subFile, dst, cb = std::move(callback)] (const void* src, size_t size) {
-        if (!decompress(subFile, dst, src))
-          return IoStatus::eError;
-
-        return cb(dst, subFile->getSize());
-      });
+          return cb(dst, subFile->getSize());
+        });
+    }
   }
 
   /**
