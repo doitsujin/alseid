@@ -27,6 +27,18 @@ bool GfxShaderDesc::serialize(
     success &= stream.write(uint16_t(workgroupSize.at<0>()))
             && stream.write(uint16_t(workgroupSize.at<1>()))
             && stream.write(uint16_t(workgroupSize.at<2>()));
+
+    if (!workgroupSize.at<0>() || !workgroupSize.at<1>() || !workgroupSize.at<2>()) {
+      success &= stream.write(uint16_t(workgroupSpecIds.at<0>()))
+              && stream.write(uint16_t(workgroupSpecIds.at<1>()))
+              && stream.write(uint16_t(workgroupSpecIds.at<2>()));
+    }
+  }
+
+  // Write out mesh shader output info as necessary
+  if (stage == GfxShaderStage::eMesh) {
+    success &= stream.write(uint16_t(maxOutputVertices))
+            && stream.write(uint16_t(maxOutputPrimitives));
   }
 
   // Write out binding info. Names are not null-terminated.
@@ -71,6 +83,22 @@ bool GfxShaderDesc::deserialize(
       return false;
 
     workgroupSize = Extent3D(x, y, z);
+
+    if (!x || !y || !z) {
+      if (!stream.readAs<uint16_t>(x)
+       || !stream.readAs<uint16_t>(y)
+       || !stream.readAs<uint16_t>(z))
+        return false;
+
+      workgroupSpecIds = Extent3D(x, y, z);
+    }
+  }
+
+  // Decode mesh output info
+  if (stage == GfxShaderStage::eMesh) {
+    if (!stream.readAs<uint16_t>(maxOutputVertices)
+     || !stream.readAs<uint16_t>(maxOutputPrimitives))
+      return false;
   }
 
   // Decode binding infos

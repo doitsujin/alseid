@@ -107,9 +107,16 @@ struct GfxShaderDesc {
   GfxShaderStage stage = GfxShaderStage::eFlagEnum;
   /** Shader property flags */
   GfxShaderFlags flags = 0;
-  /** Workgroup size. Only defined for compute,
-   *  mesh and task shaders. */
+  /** Workgroup size. Only defined for compute, mesh
+   *  and task shaders. If any component is 0, a
+   *  specialization constant is used instead. */
   Extent3D workgroupSize = Extent3D(0, 0, 0);
+  /** Workgroup size specialization constant IDs. */
+  Extent3D workgroupSpecIds = Extent3D(0, 0, 0);
+  /** Maximum number of vertices written by mesh shader */
+  uint32_t maxOutputVertices = 0;
+  /** Maximum number of primitives written by mesh shader */
+  uint32_t maxOutputPrimitives = 0;
   /** Number of bytes for shader constants. */
   uint32_t constantSize = 0;
   /** Binding descriptions. Bindings \e must be ordered
@@ -137,6 +144,17 @@ struct GfxShaderDesc {
   bool deserialize(
           RdMemoryView                  input);
 
+};
+
+
+/**
+ * \brief Mesh shader output info
+ */
+struct GfxShaderMeshOutputInfo {
+  /** Maximum number of vertices that the shader can emit */
+  uint32_t maxVertexCount = 0;
+  /** Maximum number of primitives that the shader can emit */
+  uint32_t maxPrimitiveCount = 0;
 };
 
 
@@ -267,6 +285,32 @@ public:
    */
   Extent3D getWorkgroupSize() const {
     return m_desc.workgroupSize;
+  }
+
+  /**
+   * \brief Queries workgroup size spec IDs
+   *
+   * For any component where the reported workgroup
+   * size is 0, this will return the specialization
+   * constant ID that determines the workgroup size.
+   * \returns Workgroup size spec constant IDs
+   */
+  Extent3D getWorkgroupSizeSpecIds() const {
+    return m_desc.workgroupSpecIds;
+  }
+
+  /**
+   * \brief Queries maximum vertex and primitive count
+   *
+   * Only relevant for mesh shaders, and used internally
+   * to compute the workgroup size for mesh shaders.
+   * \returns Maximum vertex and primitive count
+   */
+  GfxShaderMeshOutputInfo getMeshOutputInfo() const {
+    GfxShaderMeshOutputInfo result;
+    result.maxVertexCount = m_desc.maxOutputVertices;
+    result.maxPrimitiveCount = m_desc.maxOutputPrimitives;
+    return result;
   }
 
   /**
