@@ -990,7 +990,8 @@ public:
     const GfxShader&                    shader,
     const VkSpecializationInfo*         specInfo,
           VkPipelineShaderStageCreateInfo& stageInfo,
-          VkShaderModuleCreateInfo&     moduleInfo) const;
+          VkShaderModuleCreateInfo&     moduleInfo,
+    const GfxVulkanSpecConstantData*    specData) const;
 
   /**
    * \brief Initializes spec constant data

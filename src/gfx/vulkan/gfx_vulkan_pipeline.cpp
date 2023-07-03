@@ -694,7 +694,7 @@ void GfxVulkanGraphicsShaders::getShaderStageInfo(
 
   for (uint32_t i = 0; i < m_shaders.size(); i++) {
     bool freeCode = mgr.initShaderStage(m_shaders[i],
-      &result.specInfo, result.stageInfo[i], result.moduleInfo[i]);
+      &result.specInfo, result.stageInfo[i], result.moduleInfo[i], specData);
 
     if (freeCode)
       result.freeMask |= 1u << i;
@@ -1380,7 +1380,7 @@ VkPipeline GfxVulkanComputePipeline::createPipelineLocked() {
   pipelineInfo.basePipelineIndex = -1;
 
   bool freeCode = m_mgr.initShaderStage(m_desc.compute,
-    &specInfo, pipelineInfo.stage, moduleInfo);
+    &specInfo, pipelineInfo.stage, moduleInfo, &m_specConstants);
 
   VkPipeline pipeline = VK_NULL_HANDLE;
   VkResult vr = vk.vkCreateComputePipelines(vk.device,
@@ -1459,7 +1459,8 @@ bool GfxVulkanPipelineManager::initShaderStage(
   const GfxShader&                    shader,
   const VkSpecializationInfo*         specInfo,
         VkPipelineShaderStageCreateInfo& stageInfo,
-        VkShaderModuleCreateInfo&     moduleInfo) const {
+        VkShaderModuleCreateInfo&     moduleInfo,
+  const GfxVulkanSpecConstantData*    specData) const {
   auto& vk = m_device.vk();
 
   GfxShaderStage stage = shader->getShaderStage();
@@ -1502,6 +1503,19 @@ bool GfxVulkanPipelineManager::initShaderStage(
 
     if (vr)
       throw VulkanError("Vulkan: Failed to create shader module", vr);
+  }
+
+  // Ensure that gl_SubgroupSize and friends actually behave as expected in
+  // compute and mesh shaders, and ensure full subgroups whenever possible.
+  if (gfxShaderStageHasWorkgroupSize(stage)) {
+    stageInfo.flags |= VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT;
+
+    uint32_t localSizeX = specData
+      ? getActualWorkgroupSize(shader, *specData).at<0>()
+      : shader->getWorkgroupSize().at<0>();
+
+    if (!(localSizeX % m_device.getVkProperties().vk13.maxSubgroupSize))
+      stageInfo.flags |= VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT;
   }
 
   return binary.format != GfxShaderFormat::eVulkanSpirv;
