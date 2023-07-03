@@ -48,6 +48,20 @@ using GfxVulkanDynamicStates = Flags<GfxVulkanDynamicState>;
 
 
 /**
+ * \brief Vulkan shader spec constant data
+ *
+ * Everything neatly laid out so that passing
+ * this data to a shader is trivial.
+ */
+struct GfxVulkanSpecConstantData {
+  uint32_t minSubgroupSize;
+  uint32_t maxSubgroupSize;
+  uint32_t meshShaderWorkgroupSize;
+  uint32_t meshShaderFlags;
+};
+
+
+/**
  * \brief Vulkan binding info
  */
 struct GfxVulkanBindingInfo {
@@ -579,6 +593,7 @@ private:
 
 struct GfxVulkanGraphicsShaderStages {
   uint32_t freeMask = 0;
+  VkSpecializationInfo specInfo = { };
   small_vector<VkShaderModuleCreateInfo, 5> moduleInfo;
   small_vector<VkPipelineShaderStageCreateInfo, 5> stageInfo;
 };
@@ -600,11 +615,14 @@ public:
   /**
    * \brief Sets up shader stage info
    *
+   * \param [out] result Shader stage info
    * \param [in] manager Pipeline manager
-   * \returns Shader stage info
+   * \param [in] specData Specialization data
    */
-  GfxVulkanGraphicsShaderStages getShaderStageInfo(
-          GfxVulkanPipelineManager&     mgr) const;
+  void getShaderStageInfo(
+          GfxVulkanGraphicsShaderStages& result,
+          GfxVulkanPipelineManager&     mgr,
+    const GfxVulkanSpecConstantData*    specData) const;
 
 private:
 
@@ -731,6 +749,12 @@ public:
   GfxVulkanGraphicsPipelineVariant createLibrary();
 
   /**
+   * \brief Queries actual workgroup size
+   * \returns Workgroup size
+   */
+  Extent3D getWorkgroupSize() const override;
+
+  /**
    * \brief Checks whether the pipeline is available
    * \returns \c true if the pipeline is available
    */
@@ -798,6 +822,9 @@ private:
   GfxVulkanPipelineManager&         m_mgr;
   const GfxVulkanPipelineLayout&    m_layout;
   GfxVulkanGraphicsShaders          m_shaders;
+  GfxVulkanSpecConstantData         m_specConstants;
+
+  Extent3D                          m_workgroupSize = Extent3D(0, 0, 0);
 
   GfxVulkanGraphicsPipelineVariant  m_library;
   VkBool32                          m_sampleRateShading = VK_FALSE;
@@ -879,6 +906,12 @@ public:
   }
 
   /**
+   * \brief Queries actual workgroup size
+   * \returns Workgroup size
+   */
+  Extent3D getWorkgroupSize() const override;
+
+  /**
    * \brief Checks whether the pipeline is available
    * \returns \c true if the pipeline is available
    */
@@ -896,6 +929,9 @@ private:
   const GfxVulkanPipelineLayout&  m_layout;
 
   GfxComputePipelineDesc    m_desc;
+  GfxVulkanSpecConstantData m_specConstants;
+
+  Extent3D                  m_workgroupSize = Extent3D(0, 0, 0);
 
   std::mutex                m_mutex;
   std::atomic<VkPipeline>   m_pipeline = { VK_NULL_HANDLE };
@@ -930,22 +966,43 @@ public:
   }
 
   /**
+   * \brief Queries specialization constant data
+   *
+   * Some specialization constants may need to be adjusted
+   * afterwards depending on the pipeline properties.
+   * \returns Default spec constant data
+   */
+  GfxVulkanSpecConstantData getDefaultSpecConstants() const;
+
+  /**
    * \brief Initializes a shader stage struct
    *
    * Creates a shader module as necessary, which \e must be
    * freed by the caller after creating the pipeline.
-   * \param [in] stage Shader stage
-   * \param [in] binary Shader binary
-   * \param [in] stageInfo Vulkan shader stage info
-   * \param [in] moduleInfo Vulkan shader module info
+   * \param [in] shader Shader object
+   * \param [in] specInfo Specialization info
+   * \param [out] stageInfo Vulkan shader stage info
+   * \param [out] moduleInfo Vulkan shader module info
    * \returns \c true if the code in the returned
    *    shader module create info must be freed
    */
   bool initShaderStage(
-          GfxShaderStage                stage,
-          GfxShaderBinary               binary,
+    const GfxShader&                    shader,
+    const VkSpecializationInfo*         specInfo,
           VkPipelineShaderStageCreateInfo& stageInfo,
-          VkShaderModuleCreateInfo&     moduleInfo);
+          VkShaderModuleCreateInfo&     moduleInfo) const;
+
+  /**
+   * \brief Initializes spec constant data
+   *
+   * Fills the property struct in question and populates
+   * the specialization constant data array itself.
+   * \param [out] specData Specialization data
+   * \param [out] specInfo Specialization info
+   */
+  void initSpecializationInfo(
+    const GfxVulkanSpecConstantData*    specData,
+          VkSpecializationInfo&         specInfo) const;
 
   /**
    * \brief Creates descriptor array layout

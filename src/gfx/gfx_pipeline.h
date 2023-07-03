@@ -827,6 +827,14 @@ public:
   virtual ~GfxGraphicsPipelineIface() { }
 
   /**
+   * \brief Queries workgroup size
+   *
+   * Only valid for mesh shader pipelines.
+   * \returns Mesh/Task workgroup size
+   */
+  virtual Extent3D getWorkgroupSize() const = 0;
+
+  /**
    * \brief Checks whether the pipeline is available
    *
    * Availability indicates that the pipeline can be used for
@@ -849,16 +857,6 @@ public:
     const GfxGraphicsStateDesc&         state) = 0;
 
   /**
-   * \brief Queries workgroup size
-   *
-   * Only valid for mesh shader pipelines.
-   * \returns Mesh/Task workgroup size
-   */
-  Extent3D getWorkgroupSize() const {
-    return m_workgroupSize;
-  }
-
-  /**
    * \brief Queries shader stages
    * \returns Shader stage mask
    */
@@ -869,8 +867,7 @@ public:
 protected:
 
   std::string     m_debugName;
-  Extent3D        m_workgroupSize = Extent3D(0, 0, 0);
-  GfxShaderStages m_stages        = 0;
+  GfxShaderStages m_stages = 0;
 
 };
 
@@ -906,6 +903,14 @@ public:
   virtual ~GfxComputePipelineIface() { }
 
   /**
+   * \brief Queries workgroup size
+   *
+   * Only valid for mesh shader pipelines.
+   * \returns Mesh/Task workgroup size
+   */
+  virtual Extent3D getWorkgroupSize() const = 0;
+
+  /**
    * \brief Checks whether the pipeline is available
    *
    * Availability indicates that the pipeline can be used
@@ -914,18 +919,9 @@ public:
    */
   virtual bool isAvailable() const = 0;
 
-  /**
-   * \brief Queries workgroup size
-   * \returns Compute workgroup size
-   */
-  Extent3D getWorkgroupSize() const {
-    return m_workgroupSize;
-  }
-
 protected:
 
   std::string m_debugName;
-  Extent3D    m_workgroupSize;
 
 };
 

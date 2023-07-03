@@ -14,6 +14,14 @@
 
 namespace as {
 
+static const std::array<VkSpecializationMapEntry, 4> g_specConstantMap = {{
+  { uint32_t(GfxSpecConstantId::eMinSubgroupSize),          offsetof(GfxVulkanSpecConstantData, minSubgroupSize),         sizeof(uint32_t) },
+  { uint32_t(GfxSpecConstantId::eMaxSubgroupSize),          offsetof(GfxVulkanSpecConstantData, maxSubgroupSize),         sizeof(uint32_t) },
+  { uint32_t(GfxSpecConstantId::eMeshShaderWorkgroupSize),  offsetof(GfxVulkanSpecConstantData, meshShaderWorkgroupSize), sizeof(uint32_t) },
+  { uint32_t(GfxSpecConstantId::eMeshShaderFlags),          offsetof(GfxVulkanSpecConstantData, meshShaderFlags),         sizeof(uint32_t) },
+}};
+
+
 GfxVulkanDynamicStates getDynamicStateFlagsFromState(
   const VkPipelineDynamicStateCreateInfo& dyState) {
   GfxVulkanDynamicStates result = 0;
@@ -84,6 +92,39 @@ GfxVulkanDynamicStates getDynamicStateFlagsFromState(
         break;
     }
   }
+
+  return result;
+}
+
+
+uint32_t lookupSpecConstant(
+        uint32_t                      specId,
+  const GfxVulkanSpecConstantData&    specConstants) {
+  uint32_t specData = 0;
+
+  for (const auto& e : g_specConstantMap) {
+    if (e.constantID == specId && e.size == sizeof(specData))
+      std::memcpy(&specData, reinterpret_cast<const char*>(&specConstants) + e.offset, sizeof(specData));
+  }
+
+  return specData;
+}
+
+
+Extent3D getActualWorkgroupSize(
+  const GfxShader&                    shader,
+  const GfxVulkanSpecConstantData&    specConstants) {
+  Extent3D result = shader->getWorkgroupSize();
+  Extent3D specIds = shader->getWorkgroupSizeSpecIds();
+
+  if (!result.at<0>())
+    result.set<0>(lookupSpecConstant(specIds.at<0>(), specConstants));
+
+  if (!result.at<1>())
+    result.set<1>(lookupSpecConstant(specIds.at<1>(), specConstants));
+
+  if (!result.at<2>())
+    result.set<2>(lookupSpecConstant(specIds.at<2>(), specConstants));
 
   return result;
 }
@@ -642,23 +683,22 @@ GfxVulkanGraphicsShaders::GfxVulkanGraphicsShaders(
 }
 
 
-GfxVulkanGraphicsShaderStages GfxVulkanGraphicsShaders::getShaderStageInfo(
-        GfxVulkanPipelineManager&     mgr) const {
-  GfxVulkanGraphicsShaderStages result;
+void GfxVulkanGraphicsShaders::getShaderStageInfo(
+        GfxVulkanGraphicsShaderStages& result,
+        GfxVulkanPipelineManager&     mgr,
+  const GfxVulkanSpecConstantData*    specData) const {
+  mgr.initSpecializationInfo(specData, result.specInfo);
+
   result.moduleInfo.resize(m_shaders.size());
   result.stageInfo.resize(m_shaders.size());
 
   for (uint32_t i = 0; i < m_shaders.size(); i++) {
-    bool freeCode = mgr.initShaderStage(
-      m_shaders[i]->getShaderStage(),
-      m_shaders[i]->getShaderBinary(),
-      result.stageInfo[i], result.moduleInfo[i]);
+    bool freeCode = mgr.initShaderStage(m_shaders[i],
+      &result.specInfo, result.stageInfo[i], result.moduleInfo[i]);
 
     if (freeCode)
       result.freeMask |= 1u << i;
   }
-
-  return result;
 }
 
 
@@ -714,9 +754,11 @@ GfxVulkanGraphicsPipeline::GfxVulkanGraphicsPipeline(
 , m_mgr               (mgr)
 , m_layout            (layout)
 , m_shaders           (desc)
+, m_specConstants     (mgr.getDefaultSpecConstants())
 , m_sampleRateShading (hasSampleRateShading(desc.fragment))
 , m_canLink           (canFastLink())
 , m_isAvailable       (!m_canLink) {
+
 
 }
 
@@ -729,10 +771,27 @@ GfxVulkanGraphicsPipeline::GfxVulkanGraphicsPipeline(
 , m_mgr               (mgr)
 , m_layout            (layout)
 , m_shaders           (desc)
+, m_specConstants     (mgr.getDefaultSpecConstants())
 , m_sampleRateShading (hasSampleRateShading(desc.fragment))
 , m_canLink           (canFastLink())
 , m_isAvailable       (!m_canLink) {
+  // If the mesh shader emits significantly fewer vertices and
+  // primitives than it has invocations, lower the workgroup size.
+  GfxShaderMeshOutputInfo meshOutputs = desc.mesh->getMeshOutputInfo();
 
+  uint32_t maxOutputCount = std::max(
+    meshOutputs.maxVertexCount,
+    meshOutputs.maxPrimitiveCount);
+
+  // Also don't ever go below the minimum subgroup size
+  maxOutputCount = std::max(maxOutputCount, m_specConstants.minSubgroupSize);
+
+  while (m_specConstants.meshShaderWorkgroupSize >= 2 * maxOutputCount)
+    m_specConstants.meshShaderWorkgroupSize /= 2;
+
+  // Compute actual workgroup size based on specialization constants
+  m_workgroupSize = getActualWorkgroupSize(
+    desc.task ? desc.task : desc.mesh, m_specConstants);
 }
 
 
@@ -810,6 +869,11 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createLibrary() {
 }
 
 
+Extent3D GfxVulkanGraphicsPipeline::getWorkgroupSize() const {
+  return m_workgroupSize;
+}
+
+
 bool GfxVulkanGraphicsPipeline::isAvailable() const {
   return m_isAvailable.load();
 }
@@ -858,7 +922,8 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createLibraryLocked(
   // Set up shader stages. Since this path will only ever be hit
   // if graphics pipeline libraries are supported, we don't need
   // to worry about destroying shader modules later.
-  GfxVulkanGraphicsShaderStages shaderStages = m_shaders.getShaderStageInfo(m_mgr);
+  GfxVulkanGraphicsShaderStages shaderStages;
+  m_shaders.getShaderStageInfo(shaderStages, m_mgr, &m_specConstants);
 
   // All depth-stencil and rasteriaztion state is dynamic. Additionally,
   // multisample state is dynamic if sample rate shading is used.
@@ -999,7 +1064,8 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
   auto& rtInfo = static_cast<GfxVulkanRenderTargetState&>(*state.renderTargetState);
 
   // Set up shader stages.
-  GfxVulkanGraphicsShaderStages shaderStages = m_shaders.getShaderStageInfo(m_mgr);
+  GfxVulkanGraphicsShaderStages shaderStages;
+  m_shaders.getShaderStageInfo(shaderStages, m_mgr, &m_specConstants);
 
   // Set up state objects. We typically don't have
   // a large number of dynamic states here.
@@ -1261,10 +1327,12 @@ GfxVulkanComputePipeline::GfxVulkanComputePipeline(
   const GfxVulkanPipelineLayout&      layout,
   const GfxComputePipelineDesc&       desc)
 : GfxComputePipelineIface(desc)
-, m_mgr     (mgr)
-, m_layout  (layout)
-, m_desc    (desc) {
-
+, m_mgr           (mgr)
+, m_layout        (layout)
+, m_desc          (desc)
+, m_specConstants (mgr.getDefaultSpecConstants()) {
+  // Compute actual workgroup size based on specialization constants
+  m_workgroupSize = getActualWorkgroupSize(m_desc.compute, m_specConstants);
 }
 
 
@@ -1272,6 +1340,11 @@ GfxVulkanComputePipeline::~GfxVulkanComputePipeline() {
   auto& vk = m_mgr.device().vk();
 
   vk.vkDestroyPipeline(vk.device, m_pipeline.load(), nullptr);
+}
+
+
+Extent3D GfxVulkanComputePipeline::getWorkgroupSize() const {
+  return m_workgroupSize;
 }
 
 
@@ -1294,6 +1367,11 @@ VkPipeline GfxVulkanComputePipeline::createPipeline() {
 VkPipeline GfxVulkanComputePipeline::createPipelineLocked() {
   auto& vk = m_mgr.device().vk();
 
+  // Set up specialization constants
+  VkSpecializationInfo specInfo = { };
+
+  m_mgr.initSpecializationInfo(&m_specConstants, specInfo);
+
   // Set up basic compute pipeline info
   VkShaderModuleCreateInfo moduleInfo = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
 
@@ -1301,10 +1379,8 @@ VkPipeline GfxVulkanComputePipeline::createPipelineLocked() {
   pipelineInfo.layout = m_layout.getLayout();
   pipelineInfo.basePipelineIndex = -1;
 
-  bool freeCode = m_mgr.initShaderStage(
-    m_desc.compute->getShaderStage(),
-    m_desc.compute->getShaderBinary(),
-    pipelineInfo.stage, moduleInfo);
+  bool freeCode = m_mgr.initShaderStage(m_desc.compute,
+    &specInfo, pipelineInfo.stage, moduleInfo);
 
   VkPipeline pipeline = VK_NULL_HANDLE;
   VkResult vr = vk.vkCreateComputePipelines(vk.device,
@@ -1355,12 +1431,39 @@ GfxVulkanPipelineManager::~GfxVulkanPipelineManager() {
 }
 
 
+GfxVulkanSpecConstantData GfxVulkanPipelineManager::getDefaultSpecConstants() const {
+  const auto& properties = m_device.getVkProperties();
+
+  GfxMeshShaderFlags meshShaderFlags = 0;
+
+  if (properties.extMeshShader.prefersLocalInvocationVertexOutput
+   || properties.extMeshShader.prefersLocalInvocationPrimitiveOutput)
+    meshShaderFlags |= GfxMeshShaderFlag::ePreferLocalOutput;
+
+  if (properties.extMeshShader.prefersCompactVertexOutput)
+    meshShaderFlags |= GfxMeshShaderFlag::ePreferCompactVertexOutput;
+
+  if (properties.extMeshShader.prefersCompactPrimitiveOutput)
+    meshShaderFlags |= GfxMeshShaderFlag::ePreferCompactPrimitiveOutput;
+
+  GfxVulkanSpecConstantData result = { };
+  result.minSubgroupSize = properties.vk13.minSubgroupSize;
+  result.maxSubgroupSize = properties.vk13.maxSubgroupSize;
+  result.meshShaderWorkgroupSize = properties.extMeshShader.maxPreferredMeshWorkGroupInvocations;
+  result.meshShaderFlags = uint32_t(meshShaderFlags);
+  return result;
+}
+
+
 bool GfxVulkanPipelineManager::initShaderStage(
-        GfxShaderStage                stage,
-        GfxShaderBinary               binary,
+  const GfxShader&                    shader,
+  const VkSpecializationInfo*         specInfo,
         VkPipelineShaderStageCreateInfo& stageInfo,
-        VkShaderModuleCreateInfo&     moduleInfo) {
+        VkShaderModuleCreateInfo&     moduleInfo) const {
   auto& vk = m_device.vk();
+
+  GfxShaderStage stage = shader->getShaderStage();
+  GfxShaderBinary binary = shader->getShaderBinary();
 
   moduleInfo = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
 
@@ -1388,6 +1491,7 @@ bool GfxVulkanPipelineManager::initShaderStage(
   stageInfo = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO };
   stageInfo.stage = getVkShaderStage(stage);
   stageInfo.pName = "main";
+  stageInfo.pSpecializationInfo = specInfo;
 
   if (m_device.getVkFeatures().extGraphicsPipelineLibrary.graphicsPipelineLibrary) {
     // Chain shader module info if possible
@@ -1401,6 +1505,17 @@ bool GfxVulkanPipelineManager::initShaderStage(
   }
 
   return binary.format != GfxShaderFormat::eVulkanSpirv;
+}
+
+
+void GfxVulkanPipelineManager::initSpecializationInfo(
+  const GfxVulkanSpecConstantData*    specData,
+        VkSpecializationInfo&         specInfo) const {
+  specInfo = { };
+  specInfo.mapEntryCount = g_specConstantMap.size();
+  specInfo.pMapEntries = g_specConstantMap.data();
+  specInfo.dataSize = sizeof(*specData);
+  specInfo.pData = specData;
 }
 
 

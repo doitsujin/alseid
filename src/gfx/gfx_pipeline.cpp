@@ -298,15 +298,11 @@ GfxGraphicsPipelineIface::GfxGraphicsPipelineIface(
 
 GfxGraphicsPipelineIface::GfxGraphicsPipelineIface(
   const GfxMeshPipelineDesc&          desc) {
-  if (desc.mesh) {
-    m_workgroupSize = desc.mesh->getWorkgroupSize();
+  if (desc.mesh)
     m_stages |= GfxShaderStage::eMesh;
-  }
 
-  if (desc.task) {
-    m_workgroupSize = desc.task->getWorkgroupSize();
+  if (desc.task)
     m_stages |= GfxShaderStage::eTask;
-  }
 
   if (desc.debugName) {
     m_debugName = desc.debugName;
@@ -328,8 +324,7 @@ GfxGraphicsPipelineIface::GfxGraphicsPipelineIface(
 
 
 GfxComputePipelineIface::GfxComputePipelineIface(
-  const GfxComputePipelineDesc&       desc)
-: m_workgroupSize(desc.compute->getWorkgroupSize()) {
+  const GfxComputePipelineDesc&       desc) {
   m_debugName = desc.debugName
     ? std::string(desc.debugName)
     : desc.compute->getDebugName();
