@@ -203,6 +203,10 @@ public:
     return m_data;
   }
 
+  char* data() {
+    return m_data;
+  }
+
   const char* c_str() const {
     return m_data;
   }

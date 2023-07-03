@@ -1,154 +1,359 @@
+#include <algorithm>
+#include <queue>
+#include <unordered_map>
+
 #include "gfx.h"
 #include "gfx_geometry.h"
 
 namespace as {
 
+const GfxMeshLodMetadata* GfxGeometry::getLod(
+  const GfxMeshMetadata*              mesh,
+        uint32_t                      lod) const {
+  if (lod >= mesh->info.lodCount)
+    return nullptr;
+
+  uint absoluteIndex = mesh->lodMetadataIndex + lod;
+
+  if (absoluteIndex >= lods.size())
+    return nullptr;
+
+  return &lods[absoluteIndex];
+}
+
+
+const GfxMeshletMetadata* GfxGeometry::getMeshlet(
+  const GfxMeshMetadata*              mesh,
+  const GfxMeshLodMetadata*           lod,
+        uint32_t                      meshlet) const {
+  if (meshlet >= lod->info.meshletCount)
+    return nullptr;
+
+  uint absoluteIndex = lod->firstMeshletIndex + meshlet;
+
+  if (absoluteIndex >= meshlets.size())
+    return nullptr;
+
+  return &meshlets[absoluteIndex];
+}
+
+
+const GfxJointMetadata* GfxGeometry::getJoint(
+        uint32_t                      joint) const {
+  if (joint >= joints.size())
+    return nullptr;
+
+  return &joints[joint];
+}
+
+
+const GfxMeshMetadata* GfxGeometry::findMesh(
+  const char*                         name) const {
+  for (const auto& mesh : meshes) {
+    if (mesh.name == name)
+      return &mesh;
+  }
+
+  return nullptr;
+}
+
+
+const GfxMeshInstanceMetadata* GfxGeometry::findInstance(
+  const char*                         name) const {
+  for (const auto& instance : instances) {
+    if (instance.name == name)
+      return &instance;
+  }
+
+  return nullptr;
+}
+
+
+const GfxMeshMaterialMetadata* GfxGeometry::findMaterial(
+  const char*                         name) const {
+  for (const auto& material : materials) {
+    if (material.name == name)
+      return &material;
+  }
+
+  return nullptr;
+}
+
+
+const GfxMeshletAttributeMetadata* GfxGeometry::findAttribute(
+  const GfxMeshMaterialMetadata*      material,
+  const char*                         name) const {
+  for (uint32_t i = 0; i < material->attributeCount; i++) {
+    const auto* attribute = &attributes[i + material->attributeIndex];
+
+    if (attribute->name == name)
+      return attribute;
+  }
+
+  return nullptr;
+}
+
+
+const GfxMeshletAttributeMetadata* GfxGeometry::findAttribute(
+  const GfxMeshMaterialMetadata*      material,
+        GfxMeshletAttributeSemantic   semantic,
+        uint16_t                      index) const {
+  for (uint32_t i = 0; i < material->attributeCount; i++) {
+    const auto* attribute = &attributes[i + material->attributeIndex];
+
+    if (attribute->semantic == semantic
+     && attribute->semanticIndex == index)
+      return attribute;
+  }
+
+  return nullptr;
+}
+
+
+const GfxJointMetadata* GfxGeometry::findJoint(
+  const char*                         name) const {
+  for (const auto& joint : joints) {
+    if (joint.name == name)
+      return &joint;
+  }
+
+  return nullptr;
+}
+
+
+const GfxMorphTargetMetadata* GfxGeometry::findMorphTarget(
+  const char*                         name) const {
+  for (const auto& morphTarget : morphTargets) {
+    if (morphTarget.name == name)
+      return &morphTarget;
+  }
+
+  return nullptr;
+}
+
+
 bool GfxGeometry::serialize(
         WrBufferedStream&             output) {
   WrStream stream(output);
+  bool success = true;
 
-  uint16_t version = 1;
-  bool success = stream.write(version);
+  // Version number, currently always 0.
+  uint16_t version = 0;
 
-  success &= stream.write(flags)
-          && stream.write(materialCount)
-          && stream.write(aabb)
-          && stream.write(meshletCount)
-          && stream.write(meshletOffset)
-          && stream.write(uint16_t(streams.size()))
-          && stream.write(uint16_t(meshes.size()))
-          && stream.write(uint16_t(lods.size()));
+  // Write out header
+  success &= stream.write(version)
+          && stream.write(info);
 
-  for (size_t i = 0; i < streams.size(); i++) {
-    const auto& streamDesc = streams[i];
-
-    success &= stream.write(streamDesc.indexFormat)
-            && stream.write(streamDesc.indexDataOffset)
-            && stream.write(streamDesc.indexDataSize)
-            && stream.write(streamDesc.primitiveDataOffset)
-            && stream.write(streamDesc.primitiveDataSize)
-            && stream.write(streamDesc.positionFormat)
-            && stream.write(streamDesc.vertexPositionOffset)
-            && stream.write(streamDesc.vertexDataOffset)
-            && stream.write(streamDesc.vertexDataStride)
-            && stream.write(streamDesc.vertexCount);
+  // Write out meshes. The mesh count can be inferred from the
+  // geometry metadata structure and is not explicitly stored.
+  for (const auto& mesh : meshes) {
+    success &= stream.write(mesh.name)
+            && stream.write(mesh.info)
+            && stream.write(uint16_t(mesh.lodMetadataIndex))
+            && stream.write(uint16_t(mesh.instanceDataIndex));
   }
 
-  for (size_t i = 0; i < meshes.size(); i++) {
-    const auto& meshDesc = meshes[i];
+  // Write out LOD array. We need to also store the total LOD count
+  // here if we don't want this to get annoying during deserialization.
+  success &= stream.write(uint16_t(lods.size()));
 
-    success &= stream.write(meshDesc.materialIndex)
-            && stream.write(meshDesc.streamIndex)
-            && stream.write(meshDesc.lodIndex)
-            && stream.write(meshDesc.lodCount)
-            && stream.write(meshDesc.maxMeshletCount);
+  for (const auto& lod : lods) {
+    success &= stream.write(lod.info)
+            && stream.write(lod.firstMeshletIndex);
   }
 
-  for (size_t i = 0; i < lods.size(); i++) {
-    const auto& lodDesc = lods[i];
+  // Write out instance data array. Same applies here, we need to
+  // explicitly store the length of the array.
+  success &= stream.write(uint16_t(instances.size()));
 
-    success &= stream.write(lodDesc.maxDistance)
-            && stream.write(lodDesc.indexCount)
-            && stream.write(lodDesc.firstIndex)
-            && stream.write(lodDesc.firstVertex)
-            && stream.write(lodDesc.meshletIndex)
-            && stream.write(lodDesc.meshletCount);
+  for (const auto& instance : instances) {
+    success &= stream.write(instance.name)
+            && stream.write(instance.info)
+            && stream.write(uint16_t(instance.meshIndex))
+            && stream.write(uint16_t(instance.instanceIndex));
   }
+
+  // Write out meshlet metadata in the order it occurs in the CPU array.
+  success &= stream.write(uint32_t(meshlets.size()));
+
+  for (const auto& meshlet : meshlets) {
+    success &= stream.write(meshlet.info)
+            && stream.write(meshlet.header);
+  }
+
+  // Write out material metadata. The material count can be
+  // inferred from the overall geometry metadata structure.
+  for (const auto& material : materials) {
+    success &= stream.write(material.name)
+            && stream.write(uint16_t(material.attributeIndex))
+            && stream.write(uint16_t(material.attributeCount))
+            && stream.write(uint16_t(material.vertexDataStride))
+            && stream.write(uint16_t(material.shadingDataStride))
+            && stream.write(uint16_t(material.morphDataStride));
+  }
+
+  // Write out attributes, as well as the count.
+  success &= stream.write(uint16_t(attributes.size()));
+
+  for (const auto& attribute : attributes) {
+    success &= stream.write(attribute.name)
+            && stream.write(uint16_t(attribute.dataFormat))
+            && stream.write(uint16_t(attribute.stream))
+            && stream.write(uint16_t(attribute.semantic))
+            && stream.write(uint16_t(attribute.semanticIndex))
+            && stream.write(uint16_t(attribute.dataOffset))
+            && stream.write(uint8_t(attribute.morph))
+            && stream.write(uint16_t(attribute.morphOffset));
+  }
+
+  // Write out joints. The number of joints can be
+  // inferred from the geometry metadata structure.
+  for (const auto& joint : joints) {
+    success &= stream.write(joint.name)
+            && stream.write(joint.info);
+  }
+
+  // Write out morph target names. The number of morph
+  // targets is stored in the geometry metadata structure.
+  for (const auto& morphTarget : morphTargets)
+    success &= stream.write(morphTarget.name);
 
   return success;
 }
 
 
-std::optional<GfxGeometry> GfxGeometry::deserialize(
+bool GfxGeometry::deserialize(
         RdMemoryView                  input) {
-  RdStream stream(input);
+  RdStream reader(input);
+
+  // Decode version number and error out if it is not supported
   uint16_t version = 0;
 
-  if (!stream.read(version) || version != 1)
-    return std::nullopt;
+  if (!reader.read(version) || version != 0)
+    return false;
 
-  uint16_t streamCount = 0;
-  uint16_t meshCount = 0;
-  uint16_t lodCount = 0;
+  // Read geometry metadata
+  if (!reader.read(info))
+    return false;
 
-  std::optional<GfxGeometry> result;
-  auto& desc = result.emplace();
+  // Read mesh metadata
+  meshes.resize(info.meshCount);
+  uint32_t meshIndex = 0;
 
-  if (!stream.read(desc.flags)
-   || !stream.read(desc.materialCount)
-   || !stream.read(desc.aabb)
-   || !stream.read(desc.meshletCount)
-   || !stream.read(desc.meshletOffset)
-   || !stream.read(streamCount)
-   || !stream.read(meshCount)
-   || !stream.read(lodCount))
-      return std::nullopt;
+  for (auto& mesh : meshes) {
+    if (!reader.read(mesh.name)
+     || !reader.read(mesh.info)
+     || !reader.readAs<uint16_t>(mesh.lodMetadataIndex)
+     || !reader.readAs<uint16_t>(mesh.instanceDataIndex))
+      return false;
 
-  desc.streams.resize(streamCount);
-
-  for (size_t i = 0; i < streamCount; i++) {
-    auto& streamDesc = desc.streams[i];
-
-    if (!stream.read(streamDesc.indexFormat)
-     || !stream.read(streamDesc.indexDataOffset)
-     || !stream.read(streamDesc.indexDataSize)
-     || !stream.read(streamDesc.primitiveDataOffset)
-     || !stream.read(streamDesc.primitiveDataSize)
-     || !stream.read(streamDesc.positionFormat)
-     || !stream.read(streamDesc.vertexPositionOffset)
-     || !stream.read(streamDesc.vertexDataOffset)
-     || !stream.read(streamDesc.vertexDataStride)
-     || !stream.read(streamDesc.vertexCount))
-      return std::nullopt;
+    mesh.meshIndex = meshIndex++;
   }
 
-  desc.meshes.resize(meshCount);
+  // Read LOD count and metadata
+  size_t lodCount = 0;
 
-  for (size_t i = 0; i < meshCount; i++) {
-    auto& meshDesc = desc.meshes[i];
+  if (!reader.readAs<uint16_t>(lodCount))
+    return false;
 
-    if (!stream.read(meshDesc.materialIndex)
-     || !stream.read(meshDesc.streamIndex)
-     || !stream.read(meshDesc.lodIndex)
-     || !stream.read(meshDesc.lodCount)
-     || !stream.read(meshDesc.maxMeshletCount))
-      return std::nullopt;
+  lods.resize(lodCount);
 
-    if (meshDesc.materialIndex >= desc.materialCount
-     || meshDesc.streamIndex >= streamCount
-     || meshDesc.lodIndex + meshDesc.lodCount > lodCount)
-      return std::nullopt;
+  for (auto& lod : lods) {
+    if (!reader.read(lod.info)
+     || !reader.read(lod.firstMeshletIndex))
+      return false;
   }
 
-  desc.lods.resize(lodCount);
+  // Read mesh instance data
+  size_t instanceCount = 0;
 
-  for (size_t i = 0; i < lodCount; i++) {
-    auto& lodDesc = desc.lods[i];
+  if (!reader.readAs<uint16_t>(instanceCount))
+    return false;
 
-    if (!stream.read(lodDesc.maxDistance)
-     || !stream.read(lodDesc.indexCount)
-     || !stream.read(lodDesc.firstIndex)
-     || !stream.read(lodDesc.firstVertex)
-     || !stream.read(lodDesc.meshletIndex)
-     || !stream.read(lodDesc.meshletCount))
-      return std::nullopt;
+  instances.resize(instanceCount);
 
-    if (lodDesc.meshletIndex + lodDesc.meshletCount > desc.meshletCount)
-      return std::nullopt;
+  for (auto& instance : instances) {
+    if (!reader.read(instance.name)
+     || !reader.read(instance.info)
+     || !reader.readAs<uint16_t>(instance.meshIndex)
+     || !reader.readAs<uint16_t>(instance.instanceIndex))
+      return false;
   }
 
-  for (size_t i = 0; i < meshCount; i++) {
-    const auto& meshDesc = desc.meshes[i];
+  // Read meshlet metadata
+  size_t meshletCount = 0;
 
-    for (size_t j = meshDesc.lodIndex; j < meshDesc.lodIndex + meshDesc.lodCount; j++) {
-      const auto& lodDesc = desc.lods[j];
+  if (!reader.readAs<uint32_t>(meshletCount))
+    return false;
 
-      if (lodDesc.meshletCount > meshDesc.maxMeshletCount)
-        return std::nullopt;
-    }
+  meshlets.resize(meshletCount);
+
+  for (auto& meshlet : meshlets) {
+    if (!reader.read(meshlet.info)
+     || !reader.read(meshlet.header))
+      return false;
   }
 
-  return result;
+  // Read material metadata
+  materials.resize(info.materialCount);
+  uint32_t materialIndex = 0;
+
+  for (auto& material : materials) {
+    if (!reader.read(material.name)
+     || !reader.readAs<uint16_t>(material.attributeIndex)
+     || !reader.readAs<uint16_t>(material.attributeCount)
+     || !reader.readAs<uint16_t>(material.vertexDataStride)
+     || !reader.readAs<uint16_t>(material.shadingDataStride)
+     || !reader.readAs<uint16_t>(material.morphDataStride))
+      return false;
+
+    material.materialIndex = materialIndex++;
+  }
+
+  // Read material attributes
+  size_t attributeCount = 0;
+
+  if (!reader.readAs<uint16_t>(attributeCount))
+    return false;
+
+  attributes.resize(attributeCount);
+
+  for (auto& attribute : attributes) {
+    if (!reader.read(attribute.name)
+     || !reader.readAs<uint16_t>(attribute.dataFormat)
+     || !reader.readAs<uint16_t>(attribute.stream)
+     || !reader.readAs<uint16_t>(attribute.semantic)
+     || !reader.readAs<uint16_t>(attribute.semanticIndex)
+     || !reader.readAs<uint16_t>(attribute.dataOffset)
+     || !reader.readAs<uint8_t>(attribute.morph)
+     || !reader.readAs<uint16_t>(attribute.morphOffset))
+      return false;
+  }
+
+  // Read joint metadata
+  joints.resize(info.jointCount);
+  uint32_t jointIndex = 0;
+
+  for (auto& joint : joints) {
+    if (!reader.read(joint.name)
+     || !reader.read(joint.info))
+      return false;
+
+    joint.jointIndex = jointIndex++;
+  }
+
+  // Read morph target metadata
+  morphTargets.resize(info.morphTargetCount);
+  uint32_t morphTargetIndex = 0;
+
+  for (auto& morphTarget : morphTargets) {
+    if (!reader.read(morphTarget.name))
+      return false;
+
+    morphTarget.morphTargetIndex = morphTargetIndex++;
+  }
+
+  return true;
 }
 
 }

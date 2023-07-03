@@ -32,11 +32,12 @@ using GfxRayTracingBvhFlags = Flags<GfxRayTracingBvhFlag>;
 /**
  * \brief Axis-aligned bounding box
  */
+template<typename T>
 struct GfxAabb {
   /** Minimum box coordinates */
-  Vector3D min;
+  Vector<T, 3> min;
   /** Maximum box coordinates */
-  Vector3D max;
+  Vector<T, 3> max;
 };
 
 

@@ -50,7 +50,7 @@ GfxVulkanRayTracingBvhInfo::GfxVulkanRayTracingBvhInfo(
         geometry.geometryType = VK_GEOMETRY_TYPE_AABBS_KHR;
         
         geometry.geometry.aabbs = { VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_AABBS_DATA_KHR };
-        geometry.geometry.aabbs.stride = sizeof(GfxAabb);
+        geometry.geometry.aabbs.stride = sizeof(GfxAabb<float>);
 
         rangeInfo.primitiveCount = geometryDesc.data.aabb.boundingBoxCount;
       } break;
