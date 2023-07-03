@@ -237,16 +237,23 @@ public:
         Log::err("SPIR-V: Workgroup size defined as constant, this is currently not supported");
         return std::nullopt;
       } else if (entryPoint->workgroup_size.id_x) {
-        result.workgroupSize = Extent3D(
-          get<spirv_cross::SPIRConstant>(entryPoint->workgroup_size.id_x).m.c[0].r[0].u32,
-          get<spirv_cross::SPIRConstant>(entryPoint->workgroup_size.id_y).m.c[0].r[0].u32,
-          get<spirv_cross::SPIRConstant>(entryPoint->workgroup_size.id_z).m.c[0].r[0].u32);
+        auto x = getWorkgroupSizeFromId(entryPoint->workgroup_size.id_x);
+        auto y = getWorkgroupSizeFromId(entryPoint->workgroup_size.id_y);
+        auto z = getWorkgroupSizeFromId(entryPoint->workgroup_size.id_z);
+
+        result.workgroupSize = Extent3D(x.first, y.first, z.first);
+        result.workgroupSpecIds = Extent3D(x.second, y.second, z.second);
       } else {
         result.workgroupSize = Extent3D(
           entryPoint->workgroup_size.x,
           entryPoint->workgroup_size.y,
           entryPoint->workgroup_size.z);
       }
+    }
+
+    if (result.stage == GfxShaderStage::eMesh) {
+      result.maxOutputVertices = entryPoint->output_vertices;
+      result.maxOutputPrimitives = entryPoint->output_primitives;
     }
 
     // Retrieve shader resources for the given entry point
@@ -473,6 +480,16 @@ private:
       default:
         return 0;
     }
+  }
+
+
+  std::pair<uint32_t, uint32_t> getWorkgroupSizeFromId(uint32_t id) const {
+    auto meta = ir.meta.find(id);
+
+    if (meta != ir.meta.end() && meta->second.decoration.decoration_flags.get(spv::DecorationSpecId))
+      return std::make_pair(0u, meta->second.decoration.spec_id);
+    else
+      return std::make_pair(get<spirv_cross::SPIRConstant>(id).m.c[0].r[0].u32, 0u);
   }
 
 
