@@ -70,3 +70,5 @@ subdir('third_party')
 
 lib_alseid = static_library('alseid', as_files,
   dependencies  : as_dependencies)
+
+subdir('gfx/shaders')

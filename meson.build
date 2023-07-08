@@ -5,6 +5,29 @@ glsl_generator = generator(glsl_compiler,
   output    : [ '@BASENAME@.h' ],
   arguments : [ '--target-env', 'vulkan1.3', '--vn', '@BASENAME@', '@INPUT@', '-o', '@OUTPUT@' ])
 
+spv_opt = find_program('spirv-opt', required : false)
+
+if (spv_opt.found())
+  spv_optimizer = generator(spv_opt,
+    output    : [ '@BASENAME@.spv' ],
+    arguments : [
+      '--skip-block-layout',
+      '--strip-debug',
+      '--eliminate-dead-branches',
+      '--eliminate-dead-functions',
+      '--strength-reduction',
+      '--eliminate-dead-code-aggressive',
+      '--eliminate-dead-branches',
+      '--eliminate-dead-functions',
+      '--eliminate-dead-variables',
+      '--eliminate-dead-const',
+      '--merge-blocks',
+      '--cfg-cleanup',
+      '--remove-duplicates',
+      '--compact-ids',
+      '-o', '@OUTPUT@', '@INPUT@' ])
+endif
+
 cpp_compiler = meson.get_compiler('cpp')
 
 cmake = import('cmake')
