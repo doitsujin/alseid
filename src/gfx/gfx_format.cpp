@@ -17,6 +17,10 @@ GfxFormatMetadataMap::GfxFormatMetadataMap() {
   addFormat(GfxFormat::eR8G8sn,             GfxImageAspect::eColor, g_1x1, 0, { 2u, g_1x1, GfxFormatType::eFloat });
   addFormat(GfxFormat::eR8G8ui,             GfxImageAspect::eColor, g_1x1, 0, { 2u, g_1x1, GfxFormatType::eUint });
   addFormat(GfxFormat::eR8G8si,             GfxImageAspect::eColor, g_1x1, 0, { 2u, g_1x1, GfxFormatType::eSint });
+  addFormat(GfxFormat::eR8G8B8un,           GfxImageAspect::eColor, g_1x1, 0, { 3u, g_1x1, GfxFormatType::eFloat });
+  addFormat(GfxFormat::eR8G8B8sn,           GfxImageAspect::eColor, g_1x1, 0, { 3u, g_1x1, GfxFormatType::eFloat });
+  addFormat(GfxFormat::eR8G8B8ui,           GfxImageAspect::eColor, g_1x1, 0, { 3u, g_1x1, GfxFormatType::eUint });
+  addFormat(GfxFormat::eR8G8B8si,           GfxImageAspect::eColor, g_1x1, 0, { 3u, g_1x1, GfxFormatType::eSint });
   addFormat(GfxFormat::eR8G8B8A8un,         GfxImageAspect::eColor, g_1x1, 0, { 4u, g_1x1, GfxFormatType::eFloat });
   addFormat(GfxFormat::eR8G8B8A8sn,         GfxImageAspect::eColor, g_1x1, 0, { 4u, g_1x1, GfxFormatType::eFloat });
   addFormat(GfxFormat::eR8G8B8A8ui,         GfxImageAspect::eColor, g_1x1, 0, { 4u, g_1x1, GfxFormatType::eUint });
@@ -29,7 +33,11 @@ GfxFormatMetadataMap::GfxFormatMetadataMap() {
   addFormat(GfxFormat::eB8G8R8A8srgb,       GfxImageAspect::eColor, g_1x1, GfxFormatFlag::eSrgb, { 4u, g_1x1, GfxFormatType::eFloat });
   addFormat(GfxFormat::eR9G9B9E5f,          GfxImageAspect::eColor, g_1x1, 0, { 4u, g_1x1, GfxFormatType::eFloat });
   addFormat(GfxFormat::eR10G10B10A2un,      GfxImageAspect::eColor, g_1x1, 0, { 4u, g_1x1, GfxFormatType::eFloat });
+  addFormat(GfxFormat::eR10G10B10A2sn,      GfxImageAspect::eColor, g_1x1, 0, { 4u, g_1x1, GfxFormatType::eFloat });
   addFormat(GfxFormat::eR10G10B10A2ui,      GfxImageAspect::eColor, g_1x1, 0, { 4u, g_1x1, GfxFormatType::eUint });
+  addFormat(GfxFormat::eB10G10R10A2un,      GfxImageAspect::eColor, g_1x1, 0, { 4u, g_1x1, GfxFormatType::eFloat });
+  addFormat(GfxFormat::eB10G10R10A2sn,      GfxImageAspect::eColor, g_1x1, 0, { 4u, g_1x1, GfxFormatType::eFloat });
+  addFormat(GfxFormat::eB10G10R10A2ui,      GfxImageAspect::eColor, g_1x1, 0, { 4u, g_1x1, GfxFormatType::eUint });
   addFormat(GfxFormat::eR11G11B10f,         GfxImageAspect::eColor, g_1x1, 0, { 4u, g_1x1, GfxFormatType::eFloat });
   addFormat(GfxFormat::eR16un,              GfxImageAspect::eColor, g_1x1, 0, { 2u, g_1x1, GfxFormatType::eFloat });
   addFormat(GfxFormat::eR16sn,              GfxImageAspect::eColor, g_1x1, 0, { 2u, g_1x1, GfxFormatType::eFloat });
@@ -41,6 +49,11 @@ GfxFormatMetadataMap::GfxFormatMetadataMap() {
   addFormat(GfxFormat::eR16G16ui,           GfxImageAspect::eColor, g_1x1, 0, { 4u, g_1x1, GfxFormatType::eUint });
   addFormat(GfxFormat::eR16G16si,           GfxImageAspect::eColor, g_1x1, 0, { 4u, g_1x1, GfxFormatType::eSint });
   addFormat(GfxFormat::eR16G16f,            GfxImageAspect::eColor, g_1x1, 0, { 4u, g_1x1, GfxFormatType::eFloat });
+  addFormat(GfxFormat::eR16G16B16un,        GfxImageAspect::eColor, g_1x1, 0, { 6u, g_1x1, GfxFormatType::eFloat });
+  addFormat(GfxFormat::eR16G16B16sn,        GfxImageAspect::eColor, g_1x1, 0, { 6u, g_1x1, GfxFormatType::eFloat });
+  addFormat(GfxFormat::eR16G16B16ui,        GfxImageAspect::eColor, g_1x1, 0, { 6u, g_1x1, GfxFormatType::eUint });
+  addFormat(GfxFormat::eR16G16B16si,        GfxImageAspect::eColor, g_1x1, 0, { 6u, g_1x1, GfxFormatType::eSint });
+  addFormat(GfxFormat::eR16G16B16f,         GfxImageAspect::eColor, g_1x1, 0, { 6u, g_1x1, GfxFormatType::eFloat });
   addFormat(GfxFormat::eR16G16B16A16un,     GfxImageAspect::eColor, g_1x1, 0, { 8u, g_1x1, GfxFormatType::eFloat });
   addFormat(GfxFormat::eR16G16B16A16sn,     GfxImageAspect::eColor, g_1x1, 0, { 8u, g_1x1, GfxFormatType::eFloat });
   addFormat(GfxFormat::eR16G16B16A16ui,     GfxImageAspect::eColor, g_1x1, 0, { 8u, g_1x1, GfxFormatType::eUint });
