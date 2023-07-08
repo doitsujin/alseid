@@ -459,4 +459,17 @@ inline Matrix4x4 computeTranslationMatrix(Vector3D v) {
 }
 
 
+/**
+ * \brief Packs transformation matrix
+ *
+ * Transposes the matrix and gets rid of the last row, which
+ * is implied to be the unit vector for that row. This format
+ * is useful when storing matrices in GPU memory.
+ * \param [in] matrix Input matrix
+ */
+inline Matrix4x3 packTransformMatrix(const Matrix4x4& matrix) {
+  return Matrix4x3(transpose(matrix));
+}
+
+
 }
