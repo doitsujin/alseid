@@ -135,8 +135,20 @@ struct float16_t {
     return f16tof32(data);
   }
 
+  float16_t operator - () {
+    float16_t result;
+    result.data = data
+      ? data ^= 0x8000
+      : data;
+    return result;
+  }
+
   uint16_t data;
 };
+
+inline float16_t operator ""_f16(long double d) {
+  return float16_t(d);
+}
 
 
 /**
