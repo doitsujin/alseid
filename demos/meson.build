@@ -5,3 +5,4 @@ spv_shader_generator = generator(glsl_compiler,
 subdir('01-initialization')
 subdir('02-cube')
 subdir('03-raytracing')
+subdir('04-meshlet')
