@@ -503,6 +503,14 @@ public:
     return *this;
   }
 
+  /**
+   * \brief Negates a specific set of components
+   */
+  template<size_t... Ix>
+  Vector negate() const {
+    return negate(std::make_index_sequence<N>(), std::integer_sequence<size_t, Ix...>());
+  }
+
   bool operator == (const Vector& vector) const = default;
   bool operator != (const Vector& vector) const = default;
 
@@ -513,6 +521,16 @@ private:
   : m_data { T(std::get<Indices>(args))... } { }
 
   T m_data[N];
+
+  template<size_t... Sequence, size_t... Ix>
+  Vector negate(std::integer_sequence<size_t, Sequence...>, std::integer_sequence<size_t, Ix...> ix) const {
+    return Vector(negateComponent<Sequence>(ix)...);
+  }
+
+  template<size_t S, size_t... Ix>
+  T negateComponent(std::integer_sequence<size_t, Ix...>) const {
+    return (... || (S == Ix)) ? -m_data[S] : m_data[S];
+  }
 
 };
 
@@ -650,6 +668,46 @@ Vector<float, N> normalize(Vector<float, N> a) {
 template<size_t N>
 Vector<double, N> normalize(Vector<double, N> a) {
   return a / length(a);
+}
+
+
+/**
+ * \brief Subtracts even components and adds odd ones
+ *
+ * \param [in] a First vector
+ * \param [in] b Second vector
+ * \returns Resulting vector
+ */
+template<typename T>
+Vector<T, 2> addsub(Vector<T, 2> a, Vector<T, 2> b) {
+  Vector<T, 2> x = a - b;
+  Vector<T, 2> y = a + b;
+
+  return Vector<T, 2>(x.template at<0>(), y.template at<1>());
+}
+
+template<typename T>
+Vector<T, 4> addsub(Vector<T, 4> a, Vector<T, 4> b) {
+  Vector<T, 4> x = a - b;
+  Vector<T, 4> y = a + b;
+
+  return Vector<T, 4>(
+    x.template at<0>(), y.template at<1>(),
+    x.template at<2>(), y.template at<3>());
+}
+
+
+/**
+ * \brief Multiply-adds and multiply-subtracts vectors
+ *
+ * \param [in] a First vector to multiply
+ * \param [in] b Second vector to multiply
+ * \param [in] c Vector to add or subtract
+ * \returns Resulting vector
+ */
+template<typename T, size_t N>
+Vector<T, N> fmaddsub(Vector<T, N> a, Vector<T, N> b, Vector<T, N> c) {
+  return addsub(a * b, c);
 }
 
 
@@ -828,6 +886,15 @@ public:
     return *this;
   }
 
+  template<size_t... Ix>
+  Vector negate() const {
+    __m128 mask = _mm_castsi128_ps(_mm_set_epi32(
+      getSignMask<3, Ix...>(), getSignMask<2, Ix...>(),
+      getSignMask<1, Ix...>(), getSignMask<0, Ix...>()));
+
+    return Vector(_mm_xor_ps(m_data, mask));
+  }
+
   bool operator == (Vector vector) const {
     __m128 compare = _mm_cmpeq_ps(m_data, vector.m_data);
     return _mm_movemask_ps(compare) == 0xF;
@@ -844,6 +911,11 @@ public:
 private:
 
   __m128  m_data;
+
+  template<size_t S, size_t... Ix>
+  static constexpr uint32_t getSignMask() {
+    return (... || (S == Ix)) ? 0x80000000u : 0u;
+  }
 
 };
 
@@ -862,6 +934,14 @@ inline Vector<float, 4> fmsub(Vector<float, 4> a, Vector<float, 4> b, Vector<flo
 
 inline Vector<float, 4> fnmsub(Vector<float, 4> a, Vector<float, 4> b, Vector<float, 4> c) {
   return Vector<float, 4>(fnmsub_packed(__m128(a), __m128(b), __m128(c)));
+}
+
+inline Vector<float, 4> addsub(Vector<float, 4> a, Vector<float, 4> b) {
+  return Vector<float, 4>(addsub_packed(__m128(a), __m128(b)));
+}
+
+inline Vector<float, 4> fmaddsub(Vector<float, 4> a, Vector<float, 4> b, Vector<float, 4> c) {
+  return Vector<float, 4>(fmaddsub_packed(__m128(a), __m128(b), __m128(c)));
 }
 
 inline Vector<float, 4> abs(Vector<float, 4> a) {
