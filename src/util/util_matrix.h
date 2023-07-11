@@ -340,22 +340,86 @@ using Matrix3x4 = Matrix<float, 3, 4>;
 
 
 /**
- * \brief Computes a projection matrix
+ * \brief Compact representation of a projection
  *
- * The resulting matrix will use reverse Z
- * and have an infinite far plane.
+ * Stores relevant data for an orthographic or perspective
+ * projection. In case of perspective projection, the Z
+ * factor for the W component is implied to be -1.
+ */
+struct Projection {
+  /** X scaling factor. For perspective projection, this is
+   *  the vertical FOV divided by the aspect ratio. Can have
+   *  arbitrary values for orthographic projections. */
+  float xScale;
+  /** Y scaling factor. For perspective projection, this is
+   *  the vertical FOV unmodified. Can have arbitrary values
+   *  for orthographic projections. */
+  float yScale;
+  /** Z scaling factor. If 0, the projection is a perspective
+   *  projection and the last row of the marix will be filled
+   *  out accordingly. */
+  float zScale;
+  /** Z bias. Equal to \c zNear for perspective projections. */
+  float zBias;
+};
+
+static_assert(sizeof(Projection) == 16);
+
+
+/**
+ * \brief Computes orthographic projection
+ *
+ * Z is linear here, but for consistency with perspective projection,
+ * this will still use inverse Z so that depth tests do not have to
+ * be adjusted depending on the projection used.
+ * \param [in] viewport Viewport size
+ * \param [in] zNear Near plane
+ * \param [in] zFar Far plane
+ */
+inline Projection computeOrthographicProjection(Vector2D viewport, float zNear, float zFar) {
+  Projection result;
+  result.xScale = 2.0f * approx_rcp(viewport.at<0>());
+  result.yScale = 2.0f * approx_rcp(viewport.at<1>());
+  result.zScale = approx_rcp(zFar - zNear);
+  result.zBias = zFar * result.zScale;
+  return result;
+}
+
+
+/**
+ * \brief Computes perspective projection
+ *
+ * The resulting matrix will use inverse Z and have an infinite far
+ * plane. The w component of any projected vertex will be equal to
+ * the negative z component of the input vector.
  * \param [in] viewport Viewport size
  * \param [in] f Vertical field of view
  * \param [in] zNear Near plane
  */
-inline Matrix4x4 computeProjectionMatrix(Vector2D viewport, float f, float zNear) {
-  float a = approx_div(viewport.at<1>(), viewport.at<0>());
+inline Projection computePerspectiveProjection(Vector2D viewport, float f, float zNear) {
+  float aspect = approx_div(viewport.at<1>(), viewport.at<0>());
 
+  Projection result;
+  result.xScale = f * aspect;
+  result.yScale = f;
+  result.zScale = 0.0f;
+  result.zBias = zNear;
+  return result;
+}
+
+
+/**
+ * \brief Computes projection from compact projection
+ *
+ * \param [in] p Compact projection
+ * \returns Equivalent projection matrix
+ */
+inline Matrix4x4 computeProjectionMatrix(const Projection& p) {
   return Matrix4x4(
-    Vector4D(f * a, 0.0f,  0.0f,  0.0f),
-    Vector4D( 0.0f,    f,  0.0f,  0.0f),
-    Vector4D( 0.0f, 0.0f,  0.0f, -1.0f),
-    Vector4D( 0.0f, 0.0f, zNear,  0.0f));
+    Vector4D(p.xScale,   0.0f,     0.0f,     0.0f),
+    Vector4D(  0.0f,   p.yScale,   0.0f,     0.0f),
+    Vector4D(  0.0f,     0.0f,   p.zScale, p.zScale == 0.0f ? -1.0f : 0.0f),
+    Vector4D(  0.0f,     0.0f,   p.zBias,  p.zScale == 0.0f ?  0.0f : 1.0f));
 }
 
 
@@ -398,16 +462,16 @@ inline Matrix4x4 computeTransformMatrix(Vector3D u, float th, Vector3D v) {
  * \brief Computes camera matrix
  *
  * \param [in] eye Camera position
- * \param [in] dir Normalized directional vector
- * \param [in] up Normalized vector pointing upwards
+ * \param [in] dir Directional vector
+ * \param [in] up Vector pointing upwards
  * \returns Resulting matrix
  */
 inline Matrix4x4 computeViewMatrix(Vector4D eye, Vector4D dir, Vector4D up) {
   eye.set<3>(-1.0f);
   dir.set<3>(0.0f);
 
-  Vector4D zaxis = dir;
-  Vector4D xaxis = cross(up, zaxis);
+  Vector4D zaxis = normalize(dir);
+  Vector4D xaxis = normalize(cross(up, zaxis));
   Vector4D yaxis = cross(zaxis, xaxis);
   Vector4D wpart = Vector4D(0.0f, 0.0f, 0.0f, 1.0f);
 

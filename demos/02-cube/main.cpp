@@ -277,7 +277,8 @@ public:
 
     VertexGlobalConstants constants = { };
     constants.projMatrix = computeProjectionMatrix(
-      Vector2D(m_renderTargetSize), f, zNear);
+      computePerspectiveProjection(
+        Vector2D(m_renderTargetSize), f, zNear));
     constants.viewMatrix = computeViewMatrix(
       Vector3D(0.0f, 2.0f, 3.0f),
       normalize(Vector3D(0.0f, 0.5f, 1.0f)),

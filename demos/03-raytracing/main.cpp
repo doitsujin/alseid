@@ -243,7 +243,8 @@ void run_app() {
         Vector3D(0.0f, 1.0f, 0.0f));
 
       Matrix4x4 projMatrix = computeProjectionMatrix(
-        Vector2D(image->getDesc().extent), f, zNear);
+        computePerspectiveProjection(
+          Vector2D(image->getDesc().extent), f, zNear));
 
       // Initialize swap chain image and prepare it for rendering
       context->imageBarrier(image, image->getAvailableSubresources(),
