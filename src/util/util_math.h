@@ -289,6 +289,36 @@ T abs(T a) {
 }
 
 
+/**
+ * \brief Computes minimum
+ * \returns a < b ? a : b
+ */
+template<typename T>
+T min(T a, T b) {
+  return a < b ? a : b;
+}
+
+
+/**
+ * \brief Computes maximum
+ * \returns a > b ? a : b
+ */
+template<typename T>
+T max(T a, T b) {
+  return a > b ? a : b;
+}
+
+
+/**
+ * \brief Clamps value
+ * \returns min(max(a, lo), hi)
+ */
+template<typename T>
+T clamp(T a, T lo, T hi) {
+  return min(max(a, lo), hi);
+}
+
+
 #ifdef AS_HAS_X86_INTRINSICS
 
 /**
@@ -357,6 +387,35 @@ force_inline __m128 fnmsub_packed(__m128 a, __m128 b, __m128 c) {
   return _mm_fnmsub_ps(a, b, c);
   #else
   return _mm_sub_ps(_mm_sub_ps(_mm_setzero_ps(), _mm_mul_ps(a, b)), c);
+  #endif
+}
+
+
+/**
+ * \brief Computes packed addsub reesult
+ * \returns a ± b
+ */
+force_inline __m128 addsub_packed(__m128 a, __m128 b) {
+  #ifdef __SSE3__
+  return _mm_addsub_ps(a, b);
+  #else
+  __m128 x = _mm_sub_ps(a, b);
+  __m128 y = _mm_add_ps(a, b);
+  __m128 r = _mm_shuffle_ps(x, y, _MM_SHUFFLE(3, 1, 2, 0));
+  return _mm_shuffle_ps(r, r, _MM_SHUFFLE(3, 1, 2, 0));
+  #endif
+}
+
+
+/**
+ * \brief Computes packed multiply-addsub
+ * \returns a * b ± c
+ */
+force_inline __m128 fmaddsub_packed(__m128 a, __m128 b, __m128 c) {
+  #ifdef __FMA__
+  return _mm_fmaddsub_ps(a, b, c);
+  #else
+  return addsub_packed(_mm_mul_ps(a, b), c);
   #endif
 }
 
