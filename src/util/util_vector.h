@@ -672,6 +672,24 @@ Vector<double, N> normalize(Vector<double, N> a) {
 
 
 /**
+ * \brief Normalizes a plane equation
+ *
+ * Divides all components by the
+ * length of the normal vector.
+ * \param [in] plane Plane equation
+ * \returns Normalized plane
+ */
+template<typename T>
+Vector<T, 4> normalizePlane(
+        Vector<T, 4>                  plane) {
+  Vector<T, 4> normal = plane;
+  normal.template set<3>(0.0f);
+
+  return plane * approx_rsqrt(dot(normal, normal));
+}
+
+
+/**
  * \brief Subtracts even components and adds odd ones
  *
  * \param [in] a First vector

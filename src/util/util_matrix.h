@@ -367,6 +367,24 @@ static_assert(sizeof(Projection) == 16);
 
 
 /**
+ * \brief View frustum
+ *
+ * Stores frustum planes in view space and provides convenience
+ * methods to perform culling. Note that this does not include
+ * a far plane since zFar is infinite for perspective projection,
+ * and orthographic projections should not need z culling.
+ */
+struct ViewFrustum {
+  Vector4D xNeg;
+  Vector4D xPos;
+  Vector4D yNeg;
+  Vector4D yPos;
+  Vector4D zNear;
+  Vector4D zFar;
+};
+
+
+/**
  * \brief Computes orthographic projection
  *
  * Z is linear here, but for consistency with perspective projection,
@@ -404,6 +422,48 @@ inline Projection computePerspectiveProjection(Vector2D viewport, float f, float
   result.yScale = f;
   result.zScale = 0.0f;
   result.zBias = zNear;
+  return result;
+}
+
+
+/**
+ * \brief Computes view frustum for projection
+ *
+ * Note that the zFar plane is only meaningful for orthographic
+ * projections.
+ */
+inline ViewFrustum computeViewFrustum(
+  const Projection&                     projection) {
+  ViewFrustum result;
+
+  bool isPerspective = projection.zScale == 0.0f;
+
+  float wz = isPerspective ? -1.0f : 0.0f;
+  float ww = isPerspective ?  0.0f : 1.0f;
+
+  float zNear = projection.zBias;
+  float zFar = 0.0f;
+
+  if (!isPerspective) {
+    // Need to reconstruct the z components manually
+    float invScale = approx_rcp(projection.zScale);
+
+    zFar = projection.zBias * invScale;
+    zNear = zFar - invScale;
+  }
+
+  result.xNeg = normalizePlane(Vector4D(-projection.xScale, 0.0f, wz, ww));
+  result.xPos = normalizePlane(Vector4D( projection.xScale, 0.0f, wz, ww));
+  result.yNeg = normalizePlane(Vector4D(0.0f, -projection.yScale, wz, ww));
+  result.yPos = normalizePlane(Vector4D(0.0f,  projection.yScale, wz, ww));
+  result.zNear = Vector4D(0.0f, 0.0f, -1.0f, -zNear);
+
+  // zFar is infinitely far away for perspective projections,
+  // just set everything to 0 so that culling always passes.
+  result.zFar  = isPerspective
+    ? Vector4D(0.0f)
+    : Vector4D(0.0f, 0.0f, 1.0f, zFar);
+
   return result;
 }
 
