@@ -14,9 +14,10 @@
 
 namespace as {
 
-static const std::array<VkSpecializationMapEntry, 4> g_specConstantMap = {{
+static const std::array<VkSpecializationMapEntry, 5> g_specConstantMap = {{
   { uint32_t(GfxSpecConstantId::eMinSubgroupSize),          offsetof(GfxVulkanSpecConstantData, minSubgroupSize),         sizeof(uint32_t) },
   { uint32_t(GfxSpecConstantId::eMaxSubgroupSize),          offsetof(GfxVulkanSpecConstantData, maxSubgroupSize),         sizeof(uint32_t) },
+  { uint32_t(GfxSpecConstantId::eTaskShaderWorkgroupSize),  offsetof(GfxVulkanSpecConstantData, taskShaderWorkgroupSize), sizeof(uint32_t) },
   { uint32_t(GfxSpecConstantId::eMeshShaderWorkgroupSize),  offsetof(GfxVulkanSpecConstantData, meshShaderWorkgroupSize), sizeof(uint32_t) },
   { uint32_t(GfxSpecConstantId::eMeshShaderFlags),          offsetof(GfxVulkanSpecConstantData, meshShaderFlags),         sizeof(uint32_t) },
 }};
@@ -1449,6 +1450,9 @@ GfxVulkanSpecConstantData GfxVulkanPipelineManager::getDefaultSpecConstants() co
   GfxVulkanSpecConstantData result = { };
   result.minSubgroupSize = properties.vk13.minSubgroupSize;
   result.maxSubgroupSize = properties.vk13.maxSubgroupSize;
+  result.taskShaderWorkgroupSize = clamp(min(
+    properties.extMeshShader.maxPreferredTaskWorkGroupInvocations,
+    properties.vk13.maxSubgroupSize), 16u, 64u);
   result.meshShaderWorkgroupSize = properties.extMeshShader.maxPreferredMeshWorkGroupInvocations;
   result.meshShaderFlags = uint32_t(meshShaderFlags);
   return result;

@@ -45,16 +45,22 @@ enum class GfxSpecConstantId : uint32_t {
   eMinSubgroupSize            = 0,
   /** Maximum subgroup size supported by the device */
   eMaxSubgroupSize            = 1,
+  /** Preferred task shader workgroup size. This will try
+   *  to respect vendor preferences and is the same for
+   *  all task shaders created on a device, so that any
+   *  shaders producing indirect task shader draws do not
+   *  need to be aware of each pipeline's workgroup size. */
+  eTaskShaderWorkgroupSize    = 2,
   /** Preferred mesh shader workgroup size. This will try
    *  to respect vendor preferences as well as the maximum
    *  primitive and vertex count that the shader can emit.
    *  May not be a power of two if the maximum vertex and
    *  primitive count is not a power of two. */
-  eMeshShaderWorkgroupSize    = 2,
+  eMeshShaderWorkgroupSize    = 3,
   /** Preferred mesh shader behaviour flags. This may
    *  affect the way mesh shaders cull individual
    *  primitives, if necessary. */
-  eMeshShaderFlags            = 3,
+  eMeshShaderFlags            = 4,
 };
 
 

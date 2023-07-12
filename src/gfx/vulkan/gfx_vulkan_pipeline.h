@@ -56,6 +56,7 @@ using GfxVulkanDynamicStates = Flags<GfxVulkanDynamicState>;
 struct GfxVulkanSpecConstantData {
   uint32_t minSubgroupSize;
   uint32_t maxSubgroupSize;
+  uint32_t taskShaderWorkgroupSize;
   uint32_t meshShaderWorkgroupSize;
   uint32_t meshShaderFlags;
 };
