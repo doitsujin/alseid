@@ -442,6 +442,10 @@ private:
         return 8;
 
       case spirv_cross::SPIRType::Struct: {
+        // Handle buffer references correctly
+        if (type.storage == spv::StorageClassPhysicalStorageBuffer)
+          return 8;
+
         uint32_t structSize = 0;
 
         for (uint32_t i = 0; i < type.member_types.size(); i++) {
