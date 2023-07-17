@@ -8,6 +8,7 @@
 
 #include "util_common.h"
 #include "util_likely.h"
+#include "util_types.h"
 
 namespace as {
 
@@ -103,6 +104,23 @@ public:
   }
 
   /**
+   * \brief Reads short string data
+   *
+   * The length of the string is stored as an 8-bit value.
+   * \param [in] value String to read from the stream
+   * \returns \c true on success, \c false if some data was missed
+   */
+  template<size_t N, std::enable_if_t<(N < 256), bool> = true>
+  bool read(ShortString<N>& value) {
+    uint8_t length;
+
+    if (!read(length))
+      return false;
+
+    return read(value.data(), length);
+  }
+
+  /**
    * \brief Accesses base object
    * \returns Pointer to base object
    */
@@ -170,6 +188,20 @@ public:
   template<typename T, size_t N, std::enable_if_t<std::is_standard_layout_v<T> && std::is_trivial_v<T>, bool> = true>
   bool write(const std::array<T, N>& value) {
     return write(value.data(), value.size() * sizeof(T));
+  }
+
+  /**
+   * \brief Writes short string data
+   *
+   * The length of the string is stored as an 8-bit
+   * value. The terminating null byte is not included.
+   * \param [in] value String to read from the stream
+   * \returns \c true on success, \c false if some data was missed
+   */
+  template<size_t N, std::enable_if_t<(N < 256), bool> = true>
+  bool write(const ShortString<N>& value) {
+    return write(uint8_t(value.size()))
+        && write(value.data(), value.size());
   }
 
   /**
