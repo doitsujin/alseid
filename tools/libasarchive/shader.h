@@ -1,3 +1,5 @@
+#pragma once
+
 #include "../../src/gfx/gfx_shader.h"
 #include "../../src/gfx/gfx_spirv.h"
 

@@ -1,3 +1,5 @@
+#pragma once
+
 #include "../../src/gfx/gfx.h"
 #include "../../src/gfx/gfx_format.h"
 #include "../../src/gfx/gfx_image.h"

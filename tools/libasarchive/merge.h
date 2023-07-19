@@ -1,3 +1,5 @@
+#pragma once
+
 #include "archive.h"
 
 namespace asarchive {
