@@ -40,6 +40,9 @@ spirv_cross_hlsl_dep = spirv_cross_proj.dependency('spirv-cross-hlsl')
 nlohmann_json_proj = subproject('nlohmann')
 nlohmann_json_dep = nlohmann_json_proj.get_variable('nlohmann_json_dep')
 
+meshoptimizer_proj = cmake.subproject('meshoptimizer')
+meshoptimizer_dep = meshoptimizer_proj.dependency('meshoptimizer')
+
 subdir('src')
 subdir('tools')
 subdir('demos')

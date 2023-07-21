@@ -7,3 +7,6 @@
 [submodule "subprojects/nlohmann"]
 	path = subprojects/nlohmann
 	url = https://github.com/nlohmann/json.git
+[submodule "subprojects/meshoptimizer"]
+	path = subprojects/meshoptimizer
+	url = https://github.com/zeux/meshoptimizer
