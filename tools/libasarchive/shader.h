@@ -5,7 +5,7 @@
 
 #include "archive.h"
 
-namespace asarchive {
+namespace as::archive {
 
 struct ShaderDesc {
 

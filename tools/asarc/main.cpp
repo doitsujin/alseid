@@ -10,7 +10,7 @@
 #include "../libasarchive/texture.h"
 
 using namespace as;
-using namespace asarchive;
+using namespace as::archive;
 using nlohmann::json;
 
 Environment g_env;
@@ -20,19 +20,6 @@ struct TextureArgs {
   TextureDesc desc;
   std::vector<std::string> inputs;
 };
-
-void to_json(json& j, const TextureArgs& args) {
-  j = json{
-    {"name", args.desc.name},
-    {"format", textureFormatToString(args.desc.format)},
-    {"mips", args.desc.enableMips},
-    {"cube", args.desc.enableCube},
-    {"array", args.desc.enableLayers},
-    {"allowCompression", args.desc.allowCompression},
-    {"allowBc7", args.desc.allowBc7},
-    {"inputs", args.inputs}
-  };
-}
 
 void from_json(const json& j, TextureArgs& args) {
   std::string format;
@@ -74,10 +61,6 @@ struct ShaderArgs {
   std::vector<std::string> inputs;
 };
 
-void to_json(json& j, const ShaderArgs& args) {
-  j = json{{"inputs", args.inputs}};
-}
-
 void from_json(const json& j, ShaderArgs& args) {
   if (j.count("inputs"))
     j.at("inputs").get_to(args.inputs);
@@ -88,13 +71,6 @@ struct ArchiveArgs {
   std::vector<TextureArgs> textures;
   std::vector<ShaderArgs> shaders;
 };
-
-void to_json(json& j, const ArchiveArgs& args) {
-  j = json{
-    {"textures", args.textures},
-    {"shaders", args.shaders}
-  };
-}
 
 void from_json(const json& j, ArchiveArgs& args) {
   if (j.count("textures"))

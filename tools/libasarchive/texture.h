@@ -8,7 +8,7 @@
 
 #include "archive.h"
 
-namespace asarchive {
+namespace as::archive {
 
 GfxFormat textureFormatFromString(const std::string& str);
 

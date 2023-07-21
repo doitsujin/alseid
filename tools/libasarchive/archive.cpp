@@ -2,7 +2,7 @@
 
 #include "archive.h"
 
-namespace asarchive {
+namespace as::archive {
 
 ArchiveFile::ArchiveFile() {
 

@@ -1,6 +1,6 @@
 #include "merge.h"
 
-namespace asarchive {
+namespace as::archive {
 
 MergeBuildJob::MergeBuildJob(
         Environment                   env,
@@ -21,9 +21,8 @@ MergeBuildJob::~MergeBuildJob() {
 std::pair<BuildResult, BuildProgress> MergeBuildJob::getProgress() {
   BuildResult status = m_result.load(std::memory_order_acquire);
 
-  BuildProgress prog;
-  prog.itemsCompleted = (m_job && m_job->isDone()) ? 1 : 0;
-  prog.itemsTotal = 1;
+  BuildProgress prog = { };
+  prog.addJob(m_job);
 
   if (status == BuildResult::eSuccess && !prog.itemsCompleted)
     status = BuildResult::eInProgress;

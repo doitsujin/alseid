@@ -8,7 +8,7 @@
 
 #include "common.h"
 
-namespace asarchive {
+namespace as::archive {
 
 using ArchiveData = std::vector<char>;
 
@@ -157,6 +157,18 @@ struct BuildProgress {
   uint32_t itemsCompleted = 0;
   /** Total number of work items */
   uint32_t itemsTotal = 0;
+
+  void addJob(const Job& job) {
+    if (job) {
+      uint32_t jobComplete = 0;
+      uint32_t jobTotal = 0;
+
+      job->getProgress(jobComplete, jobTotal);
+
+      itemsCompleted += jobComplete;
+      itemsTotal += jobTotal;
+    }
+  }
 };
 
 

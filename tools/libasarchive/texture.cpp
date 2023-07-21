@@ -7,7 +7,7 @@
 
 #include "texture.h"
 
-namespace asarchive {
+namespace as::archive {
 
 std::mutex g_globalMutex;
 
@@ -177,24 +177,17 @@ TextureBuildJob::~TextureBuildJob() {
 std::pair<BuildResult, BuildProgress> TextureBuildJob::getProgress() {
   BuildResult status = m_result.load(std::memory_order_acquire);
 
-  BuildProgress prog;
-  prog.itemsCompleted = 0;
-  prog.itemsTotal = 1;
+  BuildProgress prog = { };
+  prog.addJob(m_ioJob);
 
   if (m_ioJob->isDone()) {
-    prog.itemsCompleted += 1;
-    prog.itemsTotal += m_mipmapJobs.size() + m_encodeJobs.size();
-
     for (auto& job : m_mipmapJobs)
-      prog.itemsCompleted += (job && job->isDone()) ? 1 : 0;
+      prog.addJob(job);
 
     for (auto& job : m_encodeJobs)
-      prog.itemsCompleted += (job && job->isDone()) ? 1 : 0;
+      prog.addJob(job);
 
-    if (m_compressJob) {
-      prog.itemsCompleted += m_compressJob->isDone() ? 1 : 0;
-      prog.itemsTotal += 1;
-    }
+    prog.addJob(m_compressJob);
   }
 
   if (status == BuildResult::eSuccess && prog.itemsCompleted < prog.itemsTotal)
