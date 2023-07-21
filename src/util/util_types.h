@@ -182,7 +182,11 @@ public:
   ShortString(const std::string& str)
   : ShortString(str.c_str()) { }
 
-  char operator [] (size_t idx) const {
+  const char& operator [] (size_t idx) const {
+    return m_data[idx];
+  }
+
+  char& operator [] (size_t idx) {
     return m_data[idx];
   }
 
