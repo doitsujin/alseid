@@ -126,6 +126,8 @@ enum class GfxFormatType : uint32_t {
   eFloat          = 0,  ///< Sampling the format returns floats
   eUint           = 1,  ///< Sampling the format returns unsigned ints
   eSint           = 2,  ///< Sampling the format returns signed ints
+  eUnorm          = 3,  ///< Sampling the format returns unsigned floats from normalized data
+  eSnorm          = 4,  ///< Sampling the format returns signed floats from normalized data
 };
 
 
@@ -144,6 +146,16 @@ struct GfxFormatAspectInfo {
   Extent2D subsample;
   /** Format data type */
   GfxFormatType type;
+  /** First component bit count. Despite the name, this may refer
+   *  to depth, stencil, or even the blue channel for BGRA formats.
+   *  Undefined for compressed formats. */
+  uint8_t rBits;
+  /** Second component bit count. */
+  uint8_t gBits;
+  /** Blue bit count. May refer to red for BGRA formats. */
+  uint8_t bBits;
+  /** Alpha bit count. */
+  uint8_t aBits;
 };
 
 
@@ -249,14 +261,24 @@ public:
 
 private:
 
+  struct PlaneDesc {
+    uint32_t elementSize;
+    Extent2D subsampleLog2;
+    GfxFormatType type;
+    uint8_t rBits;
+    uint8_t gBits;
+    uint8_t bBits;
+    uint8_t aBits;
+  };
+
   void addFormat(
           GfxFormat         format,
           GfxImageAspects   aspects,
           Extent2D          blockExtentLog2,
           GfxFormatFlags    flags,
-          std::tuple<uint32_t, Extent2D, GfxFormatType> plane0Info,
-          std::tuple<uint32_t, Extent2D, GfxFormatType> plane1Info = { },
-          std::tuple<uint32_t, Extent2D, GfxFormatType> plane2Info = { });
+          PlaneDesc         plane0Info,
+          PlaneDesc         plane1Info = PlaneDesc(),
+          PlaneDesc         plane2Info = PlaneDesc());
 
 };
 

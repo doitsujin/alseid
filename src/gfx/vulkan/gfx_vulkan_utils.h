@@ -316,13 +316,13 @@ inline VkResolveModeFlagBits getVkResolveMode(
   if (aspect == GfxImageAspect::eDepth || aspect == GfxImageAspect::eStencil)
     return VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
 
-  // Resolve color images based on their format: Float images
-  // with AVERAGE, integer images with SAMPLE_ZERO.
-  const auto& formatInfo = Gfx::getFormatInfo(format);
+  // Resolve color images based on their format: Normalized and
+  // float formats with AVERAGE, integer images with SAMPLE_ZERO.
+  GfxFormatType formatType = Gfx::getFormatInfo(format).getAspectInfo(aspect).type;
 
-  return (formatInfo.getAspectInfo(aspect).type == GfxFormatType::eFloat)
-    ? VK_RESOLVE_MODE_AVERAGE_BIT
-    : VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
+  return (formatType == GfxFormatType::eUint || formatType == GfxFormatType::eSint)
+    ? VK_RESOLVE_MODE_SAMPLE_ZERO_BIT
+    : VK_RESOLVE_MODE_AVERAGE_BIT;
 }
 
 
