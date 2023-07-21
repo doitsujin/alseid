@@ -53,7 +53,23 @@ public:
    * \returns \c true if job has finished executing
    */
   bool isDone() const {
-    return m_done.load() == m_itemCount;
+    return m_done.load(std::memory_order_acquire) == m_itemCount;
+  }
+
+  /**
+   * \brief Gets progress of the job
+   *
+   * The result may be immediately out of date.
+   * \param [out] completed Completed work items
+   * \param [out] total Total number of work items
+   * \returns \c true if the job has finished execution
+   */
+  bool getProgress(
+          uint32_t&                     completed,
+          uint32_t&                     total) const {
+    completed = m_done.load(std::memory_order_acquire);
+    total = m_itemCount;
+    return completed == total;
   }
 
   /**

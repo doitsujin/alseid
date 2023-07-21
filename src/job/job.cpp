@@ -38,7 +38,7 @@ bool JobIface::getWorkItems(
 bool JobIface::notifyWorkItems(
         uint32_t                      count) {
   uint32_t done = m_done.fetch_add(count,
-    std::memory_order_release) + count;
+    std::memory_order_acq_rel) + count;
   return done == m_itemCount;
 }
 
