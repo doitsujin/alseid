@@ -2,10 +2,12 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <queue>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -46,7 +48,7 @@ public:
    */
   virtual void execute(
           uint32_t                      index,
-          uint32_t                      count) const = 0;
+          uint32_t                      count) = 0;
 
   /**
    * \brief Checks whether job is done
@@ -150,6 +152,27 @@ using Job = IfaceRef<JobIface>;
 
 
 /**
+ * \brief Dummy job
+ *
+ * A job object that does not do any work on its own, but
+ * may in some situations be useful for resolving dependencies.
+ */
+template<typename Fn>
+class NullJob : public JobIface {
+
+public:
+
+  NullJob(Fn&& proc)
+  : JobIface(0, 0) { }
+
+  void execute(uint32_t index, uint32_t count) {
+
+  }
+
+};
+
+
+/**
  * \brief Simple job
  *
  * Executes one single invocation.
@@ -162,7 +185,7 @@ public:
   SimpleJob(Fn&& proc)
   : JobIface(1, 1), m_proc(std::move(proc)) { }
 
-  void execute(uint32_t index, uint32_t count) const {
+  void execute(uint32_t index, uint32_t count) {
     m_proc();
   }
 
@@ -189,7 +212,7 @@ public:
   BatchJob(Fn&& proc, uint32_t itemCount, uint32_t itemGroup)
   : JobIface(itemCount, itemGroup), m_proc(std::move(proc)) { }
 
-  void execute(uint32_t index, uint32_t count) const {
+  void execute(uint32_t index, uint32_t count) {
     for (uint32_t i = index; i < index + count; i++)
       m_proc(i);
   }
@@ -217,13 +240,51 @@ public:
   ComplexJob(Fn&& proc, uint32_t itemCount, uint32_t itemGroup)
   : JobIface(itemCount, itemGroup), m_proc(std::move(proc)) { }
 
-  void execute(uint32_t index, uint32_t count) const {
+  void execute(uint32_t index, uint32_t count) {
     m_proc(index, count);
   }
 
 private:
 
   Fn m_proc;
+
+};
+
+
+/**
+ * \brief Cooperative job
+ *
+ * Extends the complex job interface with a shared
+ * payload that is passed to the function as the
+ * first parameter.
+ */
+template<typename Fn>
+class CooperativeJob : public JobIface {
+  template<typename Proc>
+  struct PayloadType;
+
+  template<typename Ret, typename Arg, typename... Args>
+  struct PayloadType<std::function<Ret (Arg, Args...)>> {
+    using Type = std::remove_cv_t<std::remove_reference_t<Arg>>;
+  };
+
+  using Payload = typename PayloadType<decltype(std::function(Fn()))>::Type;
+public:
+
+  template<typename... Args>
+  CooperativeJob(Fn&& proc, uint32_t itemCount, uint32_t itemGroup, Args&&... args)
+  : JobIface  (itemCount, itemGroup)
+  , m_proc    (std::move(proc))
+  , m_payload (std::forward<Args>(args)...) { }
+
+  void execute(uint32_t index, uint32_t count) {
+    m_proc(m_payload, index, count);
+  }
+
+private:
+
+  Fn      m_proc;
+  Payload m_payload;
 
 };
 
