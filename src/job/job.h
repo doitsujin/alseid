@@ -50,10 +50,14 @@ public:
 
   /**
    * \brief Checks whether job is done
+   *
+   * For jobs with dependencies, this checks whether
+   * all dependencies are satisfied as well.
    * \returns \c true if job has finished executing
    */
   bool isDone() const {
-    return m_done.load(std::memory_order_acquire) == m_itemCount;
+    return m_done.load(std::memory_order_acquire) == m_itemCount
+        && m_deps.load() == 0u;
   }
 
   /**
@@ -70,6 +74,19 @@ public:
     completed = m_done.load(std::memory_order_acquire);
     total = m_itemCount;
     return completed == total;
+  }
+
+  /**
+   * \brief Sets work item count
+   *
+   * This should only be called from another job that is
+   * a dependency of this job. Useful if the number of
+   * work items is not known in advance.
+   * \param [in] count New work item count
+   */
+  void setWorkItemCount(
+          uint32_t                      count) {
+    m_itemCount = count;
   }
 
   /**
@@ -118,13 +135,13 @@ public:
 
 private:
 
-  const uint32_t m_itemCount;
-  const uint32_t m_itemGroup;
+  uint32_t m_itemCount = 0u;
+  uint32_t m_itemGroup = 0u;
 
   std::atomic<uint32_t> m_next = { 0u };
   std::atomic<uint32_t> m_done = { 0u };
 
-  uint32_t m_deps = 0u;
+  std::atomic<uint32_t> m_deps = 0u;
 
 };
 

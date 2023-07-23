@@ -1,5 +1,7 @@
 #include <algorithm>
 
+#include "../util/util_small_vector.h"
+
 #include "job.h"
 
 namespace as {
@@ -98,7 +100,13 @@ bool JobsIface::registerDependency(
 
 void JobsIface::enqueueJob(
         Job                           job) {
-  m_queue.push(std::move(job));
+  // If a job has a work item count of zero, do not hand
+  // it off to the worker threads since they cannot handle
+  // empty jobs. Instead, notify dependent jobs immediately.
+  if (!job->isDone())
+    m_queue.push(std::move(job));
+  else
+    notifyJob(job);
 }
 
 
@@ -108,14 +116,22 @@ void JobsIface::notifyJob(
   bool notify = false;
 
   if (range.first != range.second) {
+    // Cache jobs to enqueue in a temporary array so that any
+    // possible recursion does not invalidate our iterators
+    small_vector<Job, 16> jobs;
+
     for (auto i = range.first; i != range.second; i++) {
       if (i->second->notifyDependency()) {
-        enqueueJob(std::move(i->second));
+        jobs.push_back(std::move(i->second));
         notify = true; 
       }
     }
 
     m_dependencies.erase(range.first, range.second);
+
+    // Process dependent jobs now
+    for (size_t i = 0; i < jobs.size(); i++)
+      enqueueJob(std::move(jobs[i]));
   }
 
   if (notify)
