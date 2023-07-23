@@ -5,6 +5,7 @@
 #include "../../src/gfx/gfx_format.h"
 
 #include "../libasarchive/archive.h"
+#include "../libasarchive/geometry.h"
 #include "../libasarchive/merge.h"
 #include "../libasarchive/shader.h"
 #include "../libasarchive/texture.h"
@@ -205,6 +206,21 @@ bool buildTextures(ConsoleArgs& args, ArchiveBuilder& builder, TextureDesc desc)
 }
 
 
+void buildGeometry(ArchiveBuilder& builder, const GeometryDesc& desc, const std::filesystem::path& path) {
+  builder.addBuildJob(std::make_shared<GeometryBuildJob>(g_env, desc, path));
+}
+
+
+bool buildGeometries(ConsoleArgs& args, ArchiveBuilder& builder, const GeometryDesc& desc) {
+  std::vector<std::filesystem::path> paths = getInputList(args);
+
+  for (const auto& path : paths)
+    buildGeometry(builder, desc, path);
+
+  return true;
+}
+
+
 bool buildJson(ConsoleArgs& args, ArchiveBuilder& builder) {
   std::vector<std::filesystem::path> paths = getInputList(args);
 
@@ -255,6 +271,8 @@ int executeBuild(ConsoleArgs& args) {
   // is required for build system integration.
   ShaderDesc shaderDesc = { };
   TextureDesc textureDesc = { };
+  GeometryDesc geometryDesc = { };
+  geometryDesc.layoutMap = std::make_shared<GltfPackedVertexLayoutMap>();
 
   while (args.has(1)) {
     std::string arg = args.next();
@@ -268,7 +286,12 @@ int executeBuild(ConsoleArgs& args) {
       status = buildShaders(args, builder, shaderDesc);
     } else if (arg == "-t") {
       status = buildTextures(args, builder, textureDesc);
+    } else if (arg == "-g") {
+      status = buildGeometries(args, builder, geometryDesc);
       textureDesc.name = std::string();
+    } else if (arg == "-g-layout") {
+      arg = args.next();
+      geometryDesc.layoutMap->emplace(json::parse(arg));
     } else if (arg == "-t-allow-bc7") {
       arg = args.next();
       textureDesc.allowBc7 = arg == "on";
