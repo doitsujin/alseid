@@ -112,8 +112,25 @@ public:
   GfxScratchBuffer writeScratch(
           GfxUsageFlags                 usage,
     const T&                            data) {
-    GfxScratchBuffer slice = allocScratch(usage | GfxUsage::eCpuWrite, sizeof(data));
-    std::memcpy(slice.map(GfxUsage::eCpuWrite, 0), &data, sizeof(data));
+    return writeScratch(usage, sizeof(data), &data);
+  }
+
+  /**
+   * \brief Allocates and writes scratch memory
+   *
+   * Convenience overload to upload array data.
+   * \param [in] usage Scratch buffer usage. The necessary CPU access
+   *    bits are implied and need not be set.
+   * \param [in] size Number of bytes to allocate
+   * \param [in] data Data to write to the allocated slice
+   * \returns Allocated buffer slice
+   */
+  GfxScratchBuffer writeScratch(
+          GfxUsageFlags                 usage,
+          size_t                        size,
+    const void*                         data) {
+    GfxScratchBuffer slice = allocScratch(usage | GfxUsage::eCpuWrite, size);
+    std::memcpy(slice.map(GfxUsage::eCpuWrite, 0), data, size);
     return slice;
   }
 
