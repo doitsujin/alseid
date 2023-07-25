@@ -414,9 +414,12 @@ force_inline __m128 approx_rsqrt_packed(__m128 a) {
  * \returns sqrt(a) (approx)
  */
 force_inline __m128 approx_sqrt_packed(__m128 a) {
+  __m128 zero = _mm_setzero_ps();
+  __m128 mask = _mm_cmpeq_ps(a, zero);
   __m128 half = _mm_set1_ps(0.5f);
   __m128 three = _mm_set1_ps(3.0f);
   __m128 x = _mm_rsqrt_ps(a);
+         x = _mm_andnot_ps(mask, x);
   __m128 ax = _mm_mul_ps(a, x);
 
   return _mm_mul_ps(_mm_mul_ps(half, ax),
