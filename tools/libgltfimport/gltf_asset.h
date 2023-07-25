@@ -455,6 +455,63 @@ private:
 
 
 /**
+ * \brief GLTF morph target
+ */
+class GltfMorphTarget {
+
+public:
+
+  GltfMorphTarget(
+    const std::vector<std::shared_ptr<GltfAccessor>>& accessors,
+    const std::string&                  name,
+    const json&                         j);
+
+  ~GltfMorphTarget();
+
+  /**
+   * \brief Queries morph target name
+   * \returns Morph target name
+   */
+  std::string getName() const {
+    return m_name;
+  }
+
+  /**
+   * \brief Finds attribute accessor by name
+   *
+   * \param [in] name Attribute name
+   * \returns Morph data accessor for that attribute
+   */
+  std::shared_ptr<GltfAccessor> findAttribute(
+    const char*                         name) const {
+    auto e = m_attributes.find(name);
+
+    if (e == m_attributes.end())
+      return nullptr;
+
+    return e->second;
+  }
+
+  /**
+   * \brief Queries attributes
+   * \returns Pair of attribute iterators
+   */
+  auto getAttributes() const {
+    return std::make_pair(
+      m_attributes.begin(),
+      m_attributes.end());
+  }
+
+private:
+
+  std::string m_name;
+
+  std::unordered_map<std::string, std::shared_ptr<GltfAccessor>> m_attributes;
+
+};
+
+
+/**
  * \brief GLTF mesh primitive
  */
 class GltfMeshPrimitive {
@@ -467,10 +524,12 @@ public:
     uint32_t indices;
     uint32_t material;
     GltfPrimitiveTopology topology;
+    std::vector<json> targets;
   };
 
   GltfMeshPrimitive(
     const std::vector<std::shared_ptr<GltfAccessor>>& accessors,
+    const std::vector<std::string>&     targetNames,
           std::shared_ptr<GltfMaterial> material,
     const Desc&                         desc);
 
@@ -536,6 +595,16 @@ public:
       m_attributes.end());
   }
 
+  /**
+   * \brief Queries morph targets
+   * \returns Pair of morph target iterators
+   */
+  auto getMorphTargets() const {
+    return std::make_pair(
+      m_targets.begin(),
+      m_targets.end());
+  }
+
 private:
 
   std::string                   m_name;
@@ -545,6 +614,8 @@ private:
   std::shared_ptr<GltfAccessor> m_indices;
 
   std::unordered_map<std::string, std::shared_ptr<GltfAccessor>> m_attributes;
+
+  std::vector<std::shared_ptr<GltfMorphTarget>> m_targets;
 
   uint32_t remapIndex(
           uint32_t                      index) const;
@@ -565,6 +636,7 @@ public:
     std::string asMesh;
     float asMinDistance;
     float asMaxDistance;
+    std::vector<std::string> targetNames;
   };
 
   GltfMesh(

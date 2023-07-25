@@ -360,6 +360,26 @@ GltfMaterial::~GltfMaterial() {
 
 
 
+GltfMorphTarget::GltfMorphTarget(
+  const std::vector<std::shared_ptr<GltfAccessor>>& accessors,
+  const std::string&                  name,
+  const json&                         j)
+: m_name(name) {
+  std::unordered_map<std::string, uint32_t> attributes;
+  j.get_to(attributes);
+
+  for (const auto& a : attributes) {
+    std::shared_ptr<GltfAccessor> accessor = accessors.at(a.second);
+    m_attributes.emplace(a.first, std::move(accessor));
+  }
+}
+
+
+GltfMorphTarget::~GltfMorphTarget() {
+
+}
+
+
 void from_json(const json& j, GltfMeshPrimitive::Desc& desc) {
   desc = GltfMeshPrimitive::Desc();
   desc.topology = GltfPrimitiveTopology::eTriangleList;
@@ -378,12 +398,16 @@ void from_json(const json& j, GltfMeshPrimitive::Desc& desc) {
 
   if (j.count("mode"))
     j.at("mode").get_to(desc.topology);
+
+  if (j.count("targets"))
+    j.at("targets").get_to(desc.targets);
 }
 
 
 
 GltfMeshPrimitive::GltfMeshPrimitive(
   const std::vector<std::shared_ptr<GltfAccessor>>& accessors,
+  const std::vector<std::string>&     targetNames,
         std::shared_ptr<GltfMaterial> material,
   const Desc&                         desc)
 : m_name              (desc.name)
@@ -396,6 +420,11 @@ GltfMeshPrimitive::GltfMeshPrimitive(
   for (const auto& a : attributes) {
     std::shared_ptr<GltfAccessor> accessor = accessors.at(a.second);
     m_attributes.emplace(a.first, std::move(accessor));
+  }
+
+  for (size_t i = 0; i < desc.targets.size(); i++) {
+    std::string name = i < targetNames.size() ? targetNames.at(i) : strcat("target_", i);
+    m_targets.emplace_back(std::make_shared<GltfMorphTarget>(accessors, name, desc.targets.at(i)));
   }
 }
 
@@ -425,6 +454,9 @@ void from_json(const json& j, GltfMesh::Desc& desc) {
 
     if (extras.count("asMaxDistance"))
       extras.at("asMaxDistance").get_to(desc.asMaxDistance);
+
+    if (extras.count("targetNames"))
+      extras.at("targetNames").get_to(desc.targetNames);
   }
 }
 
@@ -448,7 +480,7 @@ GltfMesh::GltfMesh(
       : materials.back();
 
     m_primitives.emplace_back(std::make_shared<GltfMeshPrimitive>(
-      accessors, material, primitive));
+      accessors, desc.targetNames, material, primitive));
   }
 }
 
