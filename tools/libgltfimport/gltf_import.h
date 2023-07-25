@@ -157,14 +157,38 @@ public:
   void readVertices(
           GltfVertex*                   dst) const;
 
+  /**
+   * \brief Reads set of vertices from a morph target
+   *
+   * If any resulting vertex is entirely zero after
+   * format conversion, it should be ignored.
+   * \param [in] target Morph target
+   * \param [in] vertexCount Number of vertices to read
+   * \param [in] vertexIndices Vertex indices to read
+   * \param [out] dst Vertex data
+   */
+  void readMorphedVertices(
+    const std::shared_ptr<GltfMorphTarget>& target,
+          uint32_t                      vertexCount,
+    const uint32_t*                     vertexIndices,
+          GltfVertex*                   dst) const;
+
 private:
 
   std::shared_ptr<GltfMeshPrimitive>  m_primitive;
   GltfVertexLayout                    m_layout;
 
-  static uint32_t readIndex(
+  uint32_t readIndex(
     const std::shared_ptr<GltfAccessor>& accessor,
-          uint32_t                      index);
+          uint32_t                      index) const;
+
+  void readVertexRange(
+    const GltfVertexAttribute&          attribute,
+    const std::shared_ptr<GltfAccessor>& accessor,
+          uint32_t                      vFirst,
+          uint32_t                      vLast,
+    const uint32_t*                     indices,
+          GltfVertex*                   dst) const;
 
 };
 
@@ -245,6 +269,22 @@ public:
   }
 
   /**
+   * \brief Finds attribute by name
+   *
+   * \param [in] name Attribute name
+   * \returns Pointer to attribute, if any
+   */
+  const GfxMeshletAttributeMetadata* findAttribute(
+    const char*                         name) const {
+    for (const auto& attribute : m_attributes) {
+      if (attribute.name == name)
+        return &attribute;
+    }
+
+    return nullptr;
+  }
+
+  /**
    * \brief Computes data stride for given stream
    *
    * \param [in] streamType Output stream type
@@ -319,7 +359,7 @@ public:
    * \param [in] desc Vertex layout description
    * \returns Pointer to vertex layout if successful.
    *    If a layout with the same name already exists,
-   *    this will fail and return \c nullptr.
+   *    it will be replaced.
    */
   std::shared_ptr<GltfPackedVertexLayout> emplace(
     const GltfPackedVertexLayoutDesc&   desc);
@@ -342,6 +382,12 @@ private:
 
 
 /**
+ * \brief Morph target lookup table
+ */
+using GltfMorphTargetMap = std::unordered_map<std::string, uint32_t>;
+
+
+/**
  * \brief Meshlet builder
  *
  * Provides metadata and buffer storage for a single
@@ -355,6 +401,7 @@ public:
           std::shared_ptr<GltfMeshPrimitive> primitive,
           GltfVertexLayout                inputLayout,
           std::shared_ptr<GltfPackedVertexLayout> packedLayout,
+          std::shared_ptr<GltfMorphTargetMap> morphTargetMap,
     const meshopt_Meshlet&                meshlet);
 
   ~GltfMeshletBuilder();
@@ -391,6 +438,7 @@ private:
 
   std::shared_ptr<GltfMeshPrimitive>      m_primitive;
   std::shared_ptr<GltfPackedVertexLayout> m_packedLayout;
+  std::shared_ptr<GltfMorphTargetMap>     m_morphTargetMap;
 
   GltfVertexLayout                        m_inputLayout;
 
@@ -424,11 +472,18 @@ private:
   bool processJoints(
           GltfVertex*                   vertices);
 
+  uint32_t processMorphTargets(
+          std::vector<GfxMeshletMorphTargetInfo>& morphTargets,
+          std::vector<char>&            morphBuffer,
+    const uint32_t*                     vertexIndices);
+
   void buildMeshletBuffer(
     const uint8_t*                      primitiveIndices,
     const char*                         vertexData,
     const char*                         shadingData,
-    const std::pair<uint8_t, uint8_t>*  dualIndexData);
+    const std::pair<uint8_t, uint8_t>*  dualIndexData,
+    const std::vector<GfxMeshletMorphTargetInfo>& morphTargets,
+    const std::vector<char>&            morphBuffer);
 
   static uint16_t allocateStorage(
           uint16_t&                       allocator,
@@ -452,7 +507,8 @@ public:
 
   GltfMeshPrimitiveConverter(
           std::shared_ptr<GltfPackedVertexLayout> layout,
-          std::shared_ptr<GltfMeshPrimitive> primitive);
+          std::shared_ptr<GltfMeshPrimitive> primitive,
+          std::shared_ptr<GltfMorphTargetMap> morphTargetMap);
 
   ~GltfMeshPrimitiveConverter();
 
@@ -495,6 +551,7 @@ private:
 
   std::shared_ptr<GltfPackedVertexLayout> m_layout;
   std::shared_ptr<GltfMeshPrimitive>      m_primitive;
+  std::shared_ptr<GltfMorphTargetMap>     m_morphTargetMap;
 
   GltfVertexLayout                        m_inputLayout;
 
@@ -607,10 +664,13 @@ public:
 
   /**
    * \brief Adds a primitive
+   *
    * \param [in] primitive Primitive to add
+   * \param [in] morphTargetMap Morph target map
    */
   void addPrimitive(
-          std::shared_ptr<GltfMeshPrimitive> primitive);
+          std::shared_ptr<GltfMeshPrimitive> primitive,
+          std::shared_ptr<GltfMorphTargetMap> morphTargetMap);
 
   /**
    * \brief Dispatches conversion job
@@ -735,10 +795,12 @@ public:
    * from the same mesh will be assigned to the same LOD.
    * \param [in] mesh Containing mesh
    * \param [in] primitive Mesh primitive
+   * \param [in] morphTargetMap Morph target map
    */
   void addPrimitive(
     const std::shared_ptr<GltfMesh>&    mesh,
-          std::shared_ptr<GltfMeshPrimitive> primitive);
+          std::shared_ptr<GltfMeshPrimitive> primitive,
+          std::shared_ptr<GltfMorphTargetMap> morphTargetMap);
 
   /**
    * \brief Adds instance node
@@ -859,6 +921,8 @@ private:
 
   std::unordered_map<
     std::shared_ptr<GltfNode>, uint32_t>      m_jointIndices;
+
+  std::shared_ptr<GltfMorphTargetMap>         m_morphTargetMap;
 
   std::vector<std::shared_ptr<GltfMeshConverter>> m_meshConverters;
   std::vector<GfxJointMetadata>               m_jointMetadata;

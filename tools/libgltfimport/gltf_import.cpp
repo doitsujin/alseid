@@ -207,99 +207,29 @@ void GltfVertexDataReader::readVertices(
 
     for (const auto& a : m_layout.attributes) {
       std::shared_ptr<GltfAccessor> accessor = m_primitive->findAttribute(a.name.c_str());
-      GltfDataType srcType = accessor->getDataType();
-
-      uint32_t offset = a.offset;
-
-      switch (srcType.componentType) {
-        case GltfComponentType::eU8: {
-          std::array<uint8_t, 4> data = { };
-
-          for (uint32_t v = vFirst; v < vLast; v++) {
-            accessor->getElementData(v, data.data());
-
-            if (srcType.normalized) {
-              const float scale = 1.0f / 255.0f;
-
-              for (uint32_t c = 0; c < a.components; c++)
-                dst[v].f32[offset + c] = std::min(float(data[c]) * scale, 1.0f);
-            } else {
-              for (uint32_t c = 0; c < a.components; c++)
-                dst[v].u32[offset + c] = uint32_t(data[c]);
-            }
-          }
-        } break;
-
-        case GltfComponentType::eS8: {
-          std::array<int8_t, 4> data = { };
-
-          for (uint32_t v = vFirst; v < vLast; v++) {
-            accessor->getElementData(v, data.data());
-
-            if (srcType.normalized) {
-              const float scale = 1.0f / 127.0f;
-
-              for (uint32_t c = 0; c < a.components; c++)
-                dst[v].f32[offset + c] = std::max(std::min(float(data[c]) * scale, 1.0f), -1.0f);
-            } else {
-              for (uint32_t c = 0; c < a.components; c++)
-                dst[v].i32[offset + c] = int32_t(data[c]);
-            }
-          }
-        } break;
-
-        case GltfComponentType::eU16: {
-          std::array<uint16_t, 4> data = { };
-
-          for (uint32_t v = vFirst; v < vLast; v++) {
-            accessor->getElementData(v, data.data());
-
-            if (srcType.normalized) {
-              const float scale = 1.0f / 65535.0f;
-
-              for (uint32_t c = 0; c < a.components; c++)
-                dst[v].f32[offset + c] = std::min(float(data[c]) * scale, 1.0f);
-            } else {
-              for (uint32_t c = 0; c < a.components; c++)
-                dst[v].u32[offset + c] = uint32_t(data[c]);
-            }
-          }
-        } break;
-
-        case GltfComponentType::eS16: {
-          std::array<int16_t, 4> data = { };
-
-          for (uint32_t v = vFirst; v < vLast; v++) {
-            accessor->getElementData(v, data.data());
-
-            if (srcType.normalized) {
-              const float scale = 1.0f / 32767.0f;
-
-              for (uint32_t c = 0; c < a.components; c++)
-                dst[v].f32[offset + c] = std::max(std::min(float(data[c]) * scale, 1.0f), -1.0f);
-            } else {
-              for (uint32_t c = 0; c < a.components; c++)
-                dst[v].i32[offset + c] = int32_t(data[c]);
-            }
-          }
-        } break;
-
-        case GltfComponentType::eU32:
-        case GltfComponentType::eS32:
-        case GltfComponentType::eF32: {
-          // Trivial case that does not require conversion
-          for (uint32_t v = vFirst; v < vLast; v++)
-            accessor->getElementData(v, &dst[v].u32[offset]);
-        } break;
-      }
+      readVertexRange(a, accessor, vFirst, vLast, nullptr, dst);
     }
+  }
+}
+
+
+void GltfVertexDataReader::readMorphedVertices(
+  const std::shared_ptr<GltfMorphTarget>& target,
+        uint32_t                      vertexCount,
+  const uint32_t*                     vertexIndices,
+        GltfVertex*                   dst) const {
+  for (const auto& a : m_layout.attributes) {
+    std::shared_ptr<GltfAccessor> accessor = target->findAttribute(a.name.c_str());
+
+    if (accessor != nullptr)
+      readVertexRange(a, accessor, 0, vertexCount, vertexIndices, dst);
   }
 }
 
 
 uint32_t GltfVertexDataReader::readIndex(
   const std::shared_ptr<GltfAccessor>& accessor,
-        uint32_t                      index) {
+        uint32_t                      index) const {
   if (accessor == nullptr)
     return index;
 
@@ -308,7 +238,6 @@ uint32_t GltfVertexDataReader::readIndex(
     uint16_t  u16;
     uint32_t  u32;
   } srcData;
-
 
   if (accessor->getElementData(index, &srcData)) {
     GltfComponentType type = accessor->getDataType().componentType;
@@ -327,6 +256,119 @@ uint32_t GltfVertexDataReader::readIndex(
   } else {
     Log::err("Failed to read index ", index);
     return 0u;
+  }
+}
+
+
+void GltfVertexDataReader::readVertexRange(
+  const GltfVertexAttribute&          attribute,
+  const std::shared_ptr<GltfAccessor>& accessor,
+        uint32_t                      vFirst,
+        uint32_t                      vLast,
+  const uint32_t*                     indices,
+        GltfVertex*                   dst) const {
+  GltfDataType srcType = accessor->getDataType();
+
+  uint32_t offset = attribute.offset;
+
+  switch (srcType.componentType) {
+    case GltfComponentType::eU8: {
+      std::array<uint8_t, 4> data = { };
+
+      for (uint32_t i = vFirst; i < vLast; i++) {
+        uint32_t v = indices ? indices[i] : i;
+        accessor->getElementData(v, data.data());
+
+        if (srcType.normalized) {
+          const float scale = 1.0f / 255.0f;
+
+          for (uint32_t c = 0; c < attribute.components; c++)
+            dst[i].f32[offset + c] = std::min(float(data[c]) * scale, 1.0f);
+        } else {
+          for (uint32_t c = 0; c < attribute.components; c++)
+            dst[i].u32[offset + c] = uint32_t(data[c]);
+        }
+      }
+    } break;
+
+    case GltfComponentType::eS8: {
+      std::array<int8_t, 4> data = { };
+
+      for (uint32_t i = vFirst; i < vLast; i++) {
+        uint32_t v = indices ? indices[i] : i;
+        accessor->getElementData(v, data.data());
+
+        if (srcType.normalized) {
+          const float scale = 1.0f / 127.0f;
+
+          for (uint32_t c = 0; c < attribute.components; c++)
+            dst[i].f32[offset + c] = std::max(std::min(float(data[c]) * scale, 1.0f), -1.0f);
+        } else {
+          for (uint32_t c = 0; c < attribute.components; c++)
+            dst[i].i32[offset + c] = int32_t(data[c]);
+        }
+      }
+    } break;
+
+    case GltfComponentType::eU16: {
+      std::array<uint16_t, 4> data = { };
+
+      for (uint32_t i = vFirst; i < vLast; i++) {
+        uint32_t v = indices ? indices[i] : i;
+        accessor->getElementData(v, data.data());
+
+        if (srcType.normalized) {
+          const float scale = 1.0f / 65535.0f;
+
+          for (uint32_t c = 0; c < attribute.components; c++)
+            dst[i].f32[offset + c] = std::min(float(data[c]) * scale, 1.0f);
+        } else {
+          for (uint32_t c = 0; c < attribute.components; c++)
+            dst[i].u32[offset + c] = uint32_t(data[c]);
+        }
+      }
+    } break;
+
+    case GltfComponentType::eS16: {
+      std::array<int16_t, 4> data = { };
+
+      for (uint32_t i = vFirst; i < vLast; i++) {
+        uint32_t v = indices ? indices[i] : i;
+        accessor->getElementData(v, data.data());
+
+        if (srcType.normalized) {
+          const float scale = 1.0f / 32767.0f;
+
+          for (uint32_t c = 0; c < attribute.components; c++)
+            dst[i].f32[offset + c] = std::max(std::min(float(data[c]) * scale, 1.0f), -1.0f);
+        } else {
+          for (uint32_t c = 0; c < attribute.components; c++)
+            dst[i].i32[offset + c] = int32_t(data[c]);
+        }
+      }
+    } break;
+
+    case GltfComponentType::eU32:
+    case GltfComponentType::eS32: {
+      // Trivial case that does not require conversion
+      for (uint32_t i = vFirst; i < vLast; i++) {
+        uint32_t v = indices ? indices[i] : i;
+        accessor->getElementData(v, &dst[i].u32[offset]);
+      }
+    } break;
+
+    case GltfComponentType::eF32: {
+      // Replace denorms, negative zero etc with zero
+      std::array<float, 4> data = { };
+
+      for (uint32_t i = vFirst; i < vLast; i++) {
+        uint32_t v = indices ? indices[i] : i;
+        accessor->getElementData(v, data.data());
+
+        for (uint32_t c = 0; c < attribute.components; c++)
+          dst[i].f32[offset + c] = std::isnormal(data[c]) ? data[c] : 0.0f;
+      }
+    } break;
   }
 }
 
@@ -718,10 +760,10 @@ GltfPackedVertexLayoutMap::~GltfPackedVertexLayoutMap() {
 std::shared_ptr<GltfPackedVertexLayout> GltfPackedVertexLayoutMap::emplace(
   const GltfPackedVertexLayoutDesc&   desc) {
   auto layout = std::make_shared<GltfPackedVertexLayout>(desc);
-  auto result = m_map.emplace(desc.name, std::move(layout));
+  auto result = m_map.emplace(desc.name, layout);
 
   if (!result.second)
-    return nullptr;
+    result.first->second = layout;
 
   return layout;
 }
@@ -743,9 +785,11 @@ GltfMeshletBuilder::GltfMeshletBuilder(
         std::shared_ptr<GltfMeshPrimitive> primitive,
         GltfVertexLayout                inputLayout,
         std::shared_ptr<GltfPackedVertexLayout> packedLayout,
+        std::shared_ptr<GltfMorphTargetMap> morphTargetMap,
   const meshopt_Meshlet&                meshlet)
 : m_primitive     (std::move(primitive))
 , m_packedLayout  (std::move(packedLayout))
+, m_morphTargetMap(std::move(morphTargetMap))
 , m_inputLayout   (std::move(inputLayout))
 , m_meshlet       (meshlet) {
 
@@ -792,12 +836,21 @@ void GltfMeshletBuilder::buildMeshlet(
   std::vector<std::pair<uint8_t, uint8_t>> dualIndexData =
     computeDualIndexBuffer(vertexBuffer, shadingBuffer);
 
+  // Generate morph target data. If the meshlet has any morph targets,
+  // this will also adjust any culling parameters as necessary.
+  std::vector<GfxMeshletMorphTargetInfo> morphTargets;
+  std::vector<char> morphBuffer;
+
+  m_metadata.header.morphTargetMask = processMorphTargets(
+    morphTargets, morphBuffer, vertexIndices);
+
   // Build the actual meshlet buffer
   buildMeshletBuffer(
     primitiveIndices,
     vertexBuffer.data(),
     shadingBuffer.data(),
-    dualIndexData.data());
+    dualIndexData.data(),
+    morphTargets, morphBuffer);
 }
 
 
@@ -1077,11 +1130,130 @@ bool GltfMeshletBuilder::processJoints(
 }
 
 
+uint32_t GltfMeshletBuilder::processMorphTargets(
+        std::vector<GfxMeshletMorphTargetInfo>& morphTargets,
+        std::vector<char>&            morphBuffer,
+  const uint32_t*                     vertexIndices) {
+  // Exit early if the final output does not store morph targets
+  size_t morphDataStride = m_packedLayout->getStreamDataStride(
+    GltfPackedVertexStream::eMorphData);
+
+  if (!morphDataStride)
+    return 0;
+
+  // Initialize vertex data reader
+  GltfVertexDataReader reader(m_primitive);
+  GltfVertexLayout inputLayout = reader.getLayout();
+
+  // Dummy buffer we can compare vertex data against. There are
+  // more efficient solutions, but this way we can just memcmp.
+  std::vector<char> zeroVertex(morphDataStride);
+
+  // On input, morph targets may occur in any order so use this
+  // fixed-size array as a reorder buffer. We only support 32
+  // morph targets due to the morph target bit mask existing.
+  std::array<GfxMeshletMorphTargetInfo, 32> targetList = { };
+
+  // If positions are morphed, we will have to enlarge the bounding sphere
+  float sphereRadiusDelta = 0.0f;
+
+  // Iterate over morph targets for the current primitive, convert
+  // their vertex data and check whether any of the deltas are zero.
+  auto targets = m_primitive->getMorphTargets();
+
+  for (auto t = targets.first; t != targets.second; t++) {
+    auto target = *t;
+
+    // Read morphed vertex attributes from the GLTF accessor
+    std::vector<GltfVertex> vertices(m_meshlet.vertex_count);
+
+    reader.readMorphedVertices(target,
+      m_meshlet.vertex_count, vertexIndices, vertices.data());
+
+    // Check whether the position attribute is morphed, and if so, find
+    // the maximum vertex position delta to adjust the bounding sphere
+    auto srcPosition = inputLayout.findAttribute("POSITION");
+    auto dstPosition = m_packedLayout->findAttribute("POSITION");
+
+    if (srcPosition && dstPosition && dstPosition->morph) {
+      uint32_t o = srcPosition->offset;
+      float maxDelta = 0.0f;
+
+      for (const auto& v : vertices) {
+        maxDelta = max(maxDelta, length(
+          Vector3D(v.f32[o], v.f32[o + 1], v.f32[o + 2])));
+      }
+
+      sphereRadiusDelta += maxDelta;
+    }
+
+    // Find index of the current morph target
+    auto entry = m_morphTargetMap->find(target->getName());
+    dbg_assert(entry != m_morphTargetMap->end());
+    auto& metadata = targetList.at(entry->second);
+    metadata.dataIndex = morphBuffer.size() / morphDataStride;
+
+    // Pack morphed vertex data and append all vertices
+    // which have any non-zero data to the output.
+    std::vector<char> morphData = packVertices(
+      GltfPackedVertexStream::eMorphData, vertices.data());
+
+    for (uint32_t v = 0; v < m_meshlet.vertex_count; v++) {
+      if (!std::memcmp(&morphData[v * morphDataStride], &zeroVertex[0], morphDataStride))
+        continue;
+
+      metadata.vertexMask.at(v / 32) |= (1u << (v % 32));
+
+      size_t offset = morphBuffer.size();
+      morphBuffer.resize(offset + morphDataStride);
+
+      std::memcpy(&morphBuffer[offset],
+        &morphData[v * morphDataStride], morphDataStride);
+    }
+  }
+
+  // Add morph targets with a non-zero vertex mask to the output
+  // array in the correct order, and compute the morph target mask.
+  uint32_t targetMask = 0u;
+
+  for (uint32_t i = 0; i < targetList.size(); i++) {
+    uint32_t vertexMaskAccum = 0;
+
+    for (auto mask : targetList.at(i).vertexMask)
+      vertexMaskAccum |= mask;
+
+    if (vertexMaskAccum) {
+      targetMask |= 1u << i;
+      morphTargets.push_back(targetList.at(i));
+    }
+  }
+
+  // Disable cone culling if any morph targets are enabled and
+  // vertex positions are morphed, since face normals may change
+  // significantly. Also enlarge bounding sphere as necessary.
+  if (targetMask && sphereRadiusDelta > 0.0f) {
+    m_metadata.info.flags -= GfxMeshletCullFlag::eCullCone;
+    m_metadata.info.coneOrigin = Vector<float16_t, 3>(0.0_f16);
+    m_metadata.info.coneAxis = Vector<float16_t, 2>(0.0_f16);
+    m_metadata.info.coneCutoff = float16_t(1.0f);
+
+    if (m_metadata.info.flags & GfxMeshletCullFlag::eCullSphere) {
+      float sphereRadius = float(m_metadata.info.sphereRadius);
+      m_metadata.info.sphereRadius = float16_t(sphereRadius + sphereRadiusDelta);
+    }
+  }
+
+  return targetMask;
+}
+
+
 void GltfMeshletBuilder::buildMeshletBuffer(
   const uint8_t*                      primitiveIndices,
   const char*                         vertexData,
   const char*                         shadingData,
-  const std::pair<uint8_t, uint8_t>*  dualIndexData) {
+  const std::pair<uint8_t, uint8_t>*  dualIndexData,
+  const std::vector<GfxMeshletMorphTargetInfo>& morphTargets,
+  const std::vector<char>&            morphBuffer) {
   uint16_t offset = 0;
   allocateStorage(offset, sizeof(m_metadata.header));
 
@@ -1112,6 +1284,15 @@ void GltfMeshletBuilder::buildMeshletBuffer(
   if (shadingStride) {
     m_metadata.header.shadingDataOffset = allocateStorage(
       offset, m_metadata.header.shadingDataCount * shadingStride);
+  }
+
+  // Allocate storage for morph target metadata, as well as
+  // the morph data buffer.
+  if (!morphTargets.empty()) {
+    m_metadata.header.morphTargetOffset = allocateStorage(
+      offset, morphTargets.size() * sizeof(GfxMeshletMorphTargetInfo));
+    m_metadata.header.morphDataOffset = allocateStorage(
+      offset, morphBuffer.size());
   }
 
   // Allocate buffer and write the header
@@ -1152,6 +1333,18 @@ void GltfMeshletBuilder::buildMeshletBuffer(
       primitiveIndices[3 * i + 1],
       primitiveIndices[3 * i + 2]);
   }
+
+  // Write out morph target data
+  if (!morphTargets.empty()) {
+    auto dstMorphTargetMetadata = reinterpret_cast<GfxMeshletMorphTargetInfo*>(
+      &m_buffer[m_metadata.header.morphTargetOffset * 16]);
+    auto dstMorphTargetData = &m_buffer[m_metadata.header.morphDataOffset * 16];
+
+    for (size_t i = 0; i < morphTargets.size(); i++)
+      dstMorphTargetMetadata[i] = morphTargets.at(i);
+
+    std::memcpy(dstMorphTargetData, morphBuffer.data(), morphBuffer.size());
+  }
 }
 
 
@@ -1169,9 +1362,11 @@ uint16_t GltfMeshletBuilder::allocateStorage(
 
 GltfMeshPrimitiveConverter::GltfMeshPrimitiveConverter(
         std::shared_ptr<GltfPackedVertexLayout> layout,
-        std::shared_ptr<GltfMeshPrimitive> primitive)
-: m_layout    (std::move(layout))
-, m_primitive (std::move(primitive)) {
+        std::shared_ptr<GltfMeshPrimitive> primitive,
+        std::shared_ptr<GltfMorphTargetMap> morphTargetMap)
+: m_layout          (std::move(layout))
+, m_primitive       (std::move(primitive))
+, m_morphTargetMap  (std::move(morphTargetMap)) {
 
 }
 
@@ -1252,7 +1447,7 @@ void GltfMeshPrimitiveConverter::buildMeshlet(
   meshopt_Meshlet m = m_meshletMetadata[meshlet];
 
   auto builder = std::make_shared<GltfMeshletBuilder>(
-    m_primitive, m_inputLayout, m_layout, m);
+    m_primitive, m_inputLayout, m_layout, m_morphTargetMap, m);
 
   builder->buildMeshlet(
     &m_meshletIndexBuffer[m.triangle_offset],
@@ -1289,9 +1484,11 @@ GfxMeshLodMetadata GltfMeshLodConverter::getMetadata() const {
 
 
 void GltfMeshLodConverter::addPrimitive(
-        std::shared_ptr<GltfMeshPrimitive> primitive) {
+        std::shared_ptr<GltfMeshPrimitive> primitive,
+        std::shared_ptr<GltfMorphTargetMap> morphTargetMap) {
   m_primitives.push_back(
-    std::make_shared<GltfMeshPrimitiveConverter>(m_layout, std::move(primitive)));
+    std::make_shared<GltfMeshPrimitiveConverter>(
+      m_layout, std::move(primitive), std::move(morphTargetMap)));
 }
 
 
@@ -1383,19 +1580,20 @@ bool GltfMeshConverter::isSameMeshMaterial(
 
 void GltfMeshConverter::addPrimitive(
   const std::shared_ptr<GltfMesh>&    mesh,
-        std::shared_ptr<GltfMeshPrimitive> primitive) {
+        std::shared_ptr<GltfMeshPrimitive> primitive,
+        std::shared_ptr<GltfMorphTargetMap> morphTargetMap) {
   // Scan existing LODs for one that uses the same maximum
   // view distance as the primitive's parent mesh
   for (const auto& lod : m_lods) {
     if (lod->isSameLod(mesh)) {
-      lod->addPrimitive(std::move(primitive));
+      lod->addPrimitive(std::move(primitive), std::move(morphTargetMap));
       return;
     }
   }
 
   // Create new LOD for the parent mesh as necessary
   auto lod = std::make_shared<GltfMeshLodConverter>(mesh, m_layout);
-  lod->addPrimitive(std::move(primitive));
+  lod->addPrimitive(std::move(primitive), std::move(morphTargetMap));
 
   m_lods.push_back(std::move(lod));
 }
@@ -1520,9 +1718,10 @@ GltfConverter::GltfConverter(
         Jobs                          jobs,
         std::shared_ptr<Gltf>         asset,
         std::shared_ptr<GltfPackedVertexLayoutMap> layouts)
-: m_jobs    (std::move(jobs))
-, m_asset   (std::move(asset))
-, m_layouts (std::move(layouts)) {
+: m_jobs            (std::move(jobs))
+, m_asset           (std::move(asset))
+, m_layouts         (std::move(layouts))
+, m_morphTargetMap  (std::make_shared<GltfMorphTargetMap>()) {
 
 }
 
@@ -1695,6 +1894,18 @@ void GltfConverter::buildGeometry() {
 
       m_geometry->instances.push_back(instanceMetadata);
     }
+  }
+
+  // Add morph target metadata to the geometry object
+  m_geometry->info.morphTargetCount = uint8_t(m_morphTargetMap->size());
+  m_geometry->morphTargets.resize(m_geometry->info.morphTargetCount);
+
+  for (const auto& t : *m_morphTargetMap) {
+    GfxMorphTargetMetadata morphTarget;
+    morphTarget.name = t.first;
+    morphTarget.morphTargetIndex = t.second;
+
+    m_geometry->morphTargets.at(morphTarget.morphTargetIndex) = morphTarget;
   }
 
   // At this point, all non-meshlet metadata is accounted
@@ -1877,8 +2088,14 @@ void GltfConverter::addMesh(
     std::shared_ptr<GltfMeshPrimitive> primitive = *p;
     auto converter = getMeshConverter(mesh, primitive->getMaterial());
 
-    if (converter != nullptr)
-      converter->addPrimitive(mesh, std::move(primitive));
+    if (converter != nullptr) {
+      auto morphTargets = primitive->getMorphTargets();
+
+      for (auto t = morphTargets.first; t != morphTargets.second; t++)
+        m_morphTargetMap->emplace((*t)->getName(), m_morphTargetMap->size());
+
+      converter->addPrimitive(mesh, std::move(primitive), m_morphTargetMap);
+    }
   }
 }
 
