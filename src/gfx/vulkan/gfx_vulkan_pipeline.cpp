@@ -1450,7 +1450,7 @@ GfxVulkanSpecConstantData GfxVulkanPipelineManager::getDefaultSpecConstants() co
   GfxVulkanSpecConstantData result = { };
   result.minSubgroupSize = properties.vk13.minSubgroupSize;
   result.maxSubgroupSize = properties.vk13.maxSubgroupSize;
-  result.taskShaderWorkgroupSize = clamp(min(
+  result.taskShaderWorkgroupSize = clamp(std::min(
     properties.extMeshShader.maxPreferredTaskWorkGroupInvocations,
     properties.vk13.maxSubgroupSize), 16u, 64u);
   result.meshShaderWorkgroupSize = properties.extMeshShader.maxPreferredMeshWorkGroupInvocations;

@@ -541,6 +541,12 @@ auto apply(std::integer_sequence<size_t, Idx...>, const Vector<T, N>& v, const F
 }
 
 
+template<typename T, size_t N, typename Fn, size_t... Idx>
+auto apply(std::integer_sequence<size_t, Idx...>, const Vector<T, N>& a, const Vector<T, N>& b, const Fn& fn) {
+  return Vector<decltype(fn.operator () (T(), T())), N>(fn(a.template at<Idx>(), b.template at<Idx>())...);
+}
+
+
 template<typename T, size_t N, typename V, typename Fn>
 V foldr(std::integer_sequence<size_t>, const Vector<T, N>& v, const Fn& fn, V init) {
   return init;
@@ -554,7 +560,7 @@ V foldr(std::integer_sequence<size_t, I, Idx...>, const Vector<T, N>& v, const F
 
 
 /**
- * \brief Applies a function to all vector elements
+ * \brief Applies unary function to all vector elements
  *
  * \param [in] vector Input vector
  * \param [in] fn Function
@@ -563,6 +569,19 @@ V foldr(std::integer_sequence<size_t, I, Idx...>, const Vector<T, N>& v, const F
 template<typename T, size_t N, typename Fn>
 auto apply(Vector<T, N> v, const Fn& fn) {
   return apply(std::make_index_sequence<N>(), v, fn);
+}
+
+
+/**
+ * \brief Applies binary function to all vector elements
+ *
+ * \param [in] vector Input vector
+ * \param [in] fn Function
+ * \returns Vector of transformed elements
+ */
+template<typename T, size_t N, typename Fn>
+auto apply(Vector<T, N> a, Vector<T, N> b, const Fn& fn) {
+  return apply(std::make_index_sequence<N>(), a, b, fn);
 }
 
 
@@ -586,6 +605,26 @@ V foldr(Vector<T, N> v, const Fn& fn, V init) {
 template<typename T, size_t N>
 Vector<T, N> abs(Vector<T, N> v) {
   return apply(v, [] (T x) { return T(std::abs(x)); });
+}
+
+
+/**
+ * \brief Computes component-wise minimum
+ * \returns Minimum of two vectors
+ */
+template<typename T, size_t N>
+Vector<T, N> min(Vector<T, N> a, Vector<T, N> b) {
+  return apply(a, b, [] (T x, T y) { return T(std::min(x, y)); });
+}
+
+
+/**
+ * \brief Computes component-wise maximum
+ * \returns Maximum of two vectors
+ */
+template<typename T, size_t N>
+Vector<T, N> max(Vector<T, N> a, Vector<T, N> b) {
+  return apply(a, b, [] (T x, T y) { return T(std::max(x, y)); });
 }
 
 
@@ -1018,6 +1057,18 @@ inline float length(Vector<float, 4> a) {
 inline Vector<float, 4> normalize(Vector<float, 4> a) {
   return Vector<float, 4>(_mm_mul_ps(__m128(a),
     approx_rsqrt_packed(dot_packed(__m128(a), __m128(a)))));
+}
+
+inline Vector<float, 4> min(Vector<float, 4> a, Vector<float, 4> b) {
+  return Vector<float, 4>(_mm_min_ps(__m128(a), __m128(b)));
+}
+
+inline Vector<float, 4> max(Vector<float, 4> a, Vector<float, 4> b) {
+  return Vector<float, 4>(_mm_max_ps(__m128(a), __m128(b)));
+}
+
+inline Vector<float, 4> clamp(Vector<float, 4> a, Vector<float, 4> lo, Vector<float, 4> hi) {
+  return Vector<float, 4>(_mm_max_ps(_mm_min_ps(__m128(a), __m128(hi)), __m128(lo)));
 }
 
 #endif

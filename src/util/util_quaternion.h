@@ -430,7 +430,7 @@ inline QuatTransform computeTransformFromMatrix(const Matrix4x4& matrix) {
       (zaxis.at<0>() - xaxis.at<2>()),
       (xaxis.at<1>() - yaxis.at<0>()),
       r) * s;
-  } else if (xaxis.at<0>() > max(yaxis.at<1>(), zaxis.at<2>())) {
+  } else if (xaxis.at<0>() > std::max(yaxis.at<1>(), zaxis.at<2>())) {
     float r = 1.0f + xaxis.at<0>() - (yaxis.at<1>() + zaxis.at<2>());
     float s = 0.5f * approx_rsqrt(r);
 

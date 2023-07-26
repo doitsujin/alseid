@@ -290,32 +290,12 @@ T abs(T a) {
 
 
 /**
- * \brief Computes minimum
- * \returns a < b ? a : b
- */
-template<typename T>
-T min(T a, T b) {
-  return a < b ? a : b;
-}
-
-
-/**
- * \brief Computes maximum
- * \returns a > b ? a : b
- */
-template<typename T>
-T max(T a, T b) {
-  return a > b ? a : b;
-}
-
-
-/**
  * \brief Clamps value
  * \returns min(max(a, lo), hi)
  */
 template<typename T>
 T clamp(T a, T lo, T hi) {
-  return min(max(a, lo), hi);
+  return std::min(std::max(a, lo), hi);
 }
 
 
