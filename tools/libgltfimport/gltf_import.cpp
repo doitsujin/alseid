@@ -1399,45 +1399,75 @@ Job GltfMeshPrimitiveConverter::dispatchConvert(
 }
 
 
-GfxAabb<float> GltfMeshPrimitiveConverter::computeAabb(
+Job GltfMeshPrimitiveConverter::dispatchComputeAabb(
+  const Jobs&                         jobs,
+  const Job&                          dependency,
+        std::shared_ptr<GltfSharedAabb> aabb,
         QuatTransform                 transform) const {
-  Vector4D lo = Vector4D(0.0f);
-  Vector4D hi = Vector4D(0.0f);
+  Job processVertexJob = jobs->create<ComplexJob>([
+    cThis       = shared_from_this(),
+    cAabb       = aabb,
+    cTransform  = transform
+  ] (uint32_t first, uint32_t count) {
+    Vector4D lo = Vector4D(0.0f);
+    Vector4D hi = Vector4D(0.0f);
 
-  // Compute tight bounding box for transformed vertices
-  auto position = m_inputLayout.findAttribute("POSITION");
+    auto position = cThis->m_inputLayout.findAttribute("POSITION");
 
-  for (size_t i = 0; i < m_sourceVertexBuffer.size(); i++) {
-    const float* f = &m_sourceVertexBuffer[i].f32[position->offset];
+    for (uint32_t i = 0; i < count; i++) {
+      const float* f = &cThis->m_sourceVertexBuffer[first + i].f32[position->offset];
+      Vector4D pos = cTransform.apply(Vector4D(f[0], f[1], f[2], 0.0f));
 
-    Vector4D pos = transform.apply(Vector4D(f[0], f[1], f[2], 0.0f));
-
-    if (i) {
-      lo = min(lo, pos);
-      hi = max(hi, pos);
-    } else {
-      lo = pos;
-      hi = pos;
+      if (i) {
+        lo = min(lo, pos);
+        hi = max(hi, pos);
+      } else {
+        lo = pos;
+        hi = pos;
+      }
     }
-  }
 
-  // If necessary, expand bounding box by including the
-  // full bounding spheres or morphed meshlets.
-  for (const auto& meshlet : m_meshlets) {
-    auto metadata = meshlet->getMetadata();
+    cAabb->accumulate(lo, hi);
+  }, 0, 1024);
 
-    if (metadata.header.morphTargetMask) {
-      float radius = transform.getRotation().scaling() * float(metadata.info.sphereRadius);
-      Vector4D pos = transform.apply(Vector4D(metadata.info.sphereCenter, 0.0f));
+  Job dispatchVertexJob = jobs->create<SimpleJob>([
+    cThis       = shared_from_this(),
+    cAabb       = aabb,
+    cTransform  = transform,
+    cVertexJob  = processVertexJob
+  ] {
+    cVertexJob->setWorkItemCount(cThis->m_sourceVertexBuffer.size());
 
-      lo = min(lo, pos - radius);
-      hi = max(hi, pos + radius);
+    Vector4D lo = Vector4D(0.0f);
+    Vector4D hi = Vector4D(0.0f);
+
+    bool first = true;
+
+    for (const auto& meshlet : cThis->m_meshlets) {
+      auto metadata = meshlet->getMetadata();
+
+      if (metadata.header.morphTargetMask) {
+        float radius = cTransform.getRotation().scaling() * float(metadata.info.sphereRadius);
+        Vector4D pos = cTransform.apply(Vector4D(metadata.info.sphereCenter, 0.0f));
+
+        if (!first) {
+          lo = min(lo, pos - radius);
+          hi = max(hi, pos + radius);
+        } else {
+          lo = pos - radius;
+          hi = pos + radius;
+          first = false;
+        }
+      }
     }
-  }
 
-  return GfxAabb<float>(
-    lo.get<0, 1, 2>(),
-    hi.get<0, 1, 2>());
+    if (!first)
+      cAabb->accumulate(lo, hi);
+  });
+
+  jobs->dispatch(dispatchVertexJob, dependency);
+  jobs->dispatch(processVertexJob, dispatchVertexJob);
+  return processVertexJob;
 }
 
 
@@ -1552,20 +1582,19 @@ Job GltfMeshLodConverter::dispatchConvert(
 }
 
 
-GfxAabb<float> GltfMeshLodConverter::computeAabb(
+Job GltfMeshLodConverter::dispatchComputeAabb(
+  const Jobs&                         jobs,
+  const Job&                          dependency,
+        std::shared_ptr<GltfSharedAabb> aabb,
         QuatTransform                 transform) const {
-  if (m_primitives.empty())
-    return GfxAabb<float>();
+  std::vector<Job> deps;
+  deps.reserve(m_primitives.size());
 
-  auto result = m_primitives[0]->computeAabb(transform);
+  for (const auto& primitive : m_primitives)
+    deps.emplace_back(primitive->dispatchComputeAabb(jobs, dependency, aabb, transform));
 
-  for (size_t i = 1; i < m_primitives.size(); i++) {
-    auto aabb = m_primitives[i]->computeAabb(transform);
-    result.min = min(result.min, aabb.min);
-    result.max = max(result.max, aabb.max);
-  }
-
-  return result;
+  return jobs->dispatch(jobs->create<NullJob>([]{}),
+    std::make_pair(deps.begin(), deps.end()));
 }
 
 
@@ -1720,31 +1749,28 @@ Job GltfMeshConverter::dispatchConvert(
 }
 
 
-GfxAabb<float> GltfMeshConverter::computeAabb() const {
-  auto result = GfxAabb<float>();
+Job GltfMeshConverter::dispatchComputeAabb(
+  const Jobs&                         jobs,
+  const Job&                          dependency,
+        std::shared_ptr<GltfSharedAabb> aabb) const {
+  std::vector<Job> deps;
+  deps.reserve(std::max<size_t>(1, m_instances.size()) * m_lods.size());
 
   for (size_t i = 0; i < m_instances.size() || !i; i++) {
-    QuatTransform instanceTransform = QuatTransform::identity();
+    QuatTransform transform = QuatTransform::identity();
 
     if (i < m_instances.size()) {
-      instanceTransform = QuatTransform(
+      transform = QuatTransform(
         Vector4D(m_instances[i].info.transform),
         Vector4D(m_instances[i].info.translate, 0.0f));
     }
 
-    for (size_t j = 0; j < m_lods.size(); j++) {
-      auto aabb = m_lods[j]->computeAabb(instanceTransform);
-
-      if (i + j) {
-        result.min = min(result.min, aabb.min);
-        result.max = max(result.max, aabb.max);
-      } else {
-        result = aabb;
-      }
-    }
+    for (const auto& lod : m_lods)
+      deps.emplace_back(lod->dispatchComputeAabb(jobs, dependency, aabb, transform));
   }
 
-  return result;
+  return jobs->dispatch(jobs->create<NullJob>([]{}),
+    std::make_pair(deps.begin(), deps.end()));
 }
 
 
@@ -1808,7 +1834,8 @@ GltfConverter::GltfConverter(
 : m_jobs            (std::move(jobs))
 , m_asset           (std::move(asset))
 , m_layouts         (std::move(layouts))
-, m_morphTargetMap  (std::make_shared<GltfMorphTargetMap>()) {
+, m_morphTargetMap  (std::make_shared<GltfMorphTargetMap>())
+, m_aabb            (std::make_shared<GltfSharedAabb>()) {
 
 }
 
@@ -1851,11 +1878,15 @@ Job GltfConverter::dispatchConvert() {
   for (const auto& converter : m_meshConverters)
     converter->applySkins(m_jointIndices);
 
-  // Dispatch actual mesh conversion jobs
+  // Dispatch actual mesh conversion jobs, as well
+  // as the jobs to compute the object's AABB.
   std::vector<Job> dependencies;
 
-  for (const auto& converter : m_meshConverters)
-    dependencies.push_back(converter->dispatchConvert(m_jobs));
+  for (const auto& converter : m_meshConverters) {
+    Job converterJob = converter->dispatchConvert(m_jobs);
+    dependencies.push_back(converterJob);
+    dependencies.push_back(converter->dispatchComputeAabb(m_jobs, converterJob, m_aabb));
+  }
 
   // Dispatch final job that creates the geometry
   // object as well as all the mesh buffers.
@@ -1874,7 +1905,7 @@ void GltfConverter::buildGeometry() {
   std::vector<GfxMeshletMetadata> meshlets;
 
   // Compute bounding box from source vertex data
-  GfxAabb<float> aabb = computeAabb();
+  GfxAabb<float> aabb = m_aabb->getAabb();
 
   m_geometry = std::make_shared<GfxGeometry>();
   m_geometry->info.aabb = GfxAabb<float16_t>(
@@ -2115,22 +2146,6 @@ void GltfConverter::buildBuffers(
       sizeof(jointMetatata.info) * i,
       &jointMetatata.info, sizeof(jointMetatata.info));
   }
-}
-
-
-GfxAabb<float> GltfConverter::computeAabb() const {
-  if (m_meshConverters.empty())
-    return GfxAabb<float>();
-
-  auto result = m_meshConverters[0]->computeAabb();
-
-  for (size_t i = 1; i < m_meshConverters.size(); i++) {
-    auto aabb = m_meshConverters[i]->computeAabb();
-    result.min = min(result.min, aabb.min);
-    result.max = max(result.max, aabb.max);
-  }
-
-  return result;
 }
 
 

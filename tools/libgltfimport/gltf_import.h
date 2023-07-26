@@ -382,6 +382,57 @@ private:
 
 
 /**
+ * \brief Shared axis-aligned bounding box
+ *
+ * Convenience class to let multiple threads work
+ * on computing geometry AABBs concurrently.
+ */
+class GltfSharedAabb {
+
+public:
+
+  /**
+   * \brief Retrieves axis-aligned bounding box
+   * \returns Final bounding box
+   */
+  GfxAabb<float> getAabb() const {
+    return GfxAabb<float>(
+      m_lo.get<0, 1, 2>(),
+      m_hi.get<0, 1, 2>());
+  }
+
+  /**
+   * \brief Accumulates bounds
+   *
+   * Expands the bounding box with the
+   * given parameters as necessary.
+   * \param [in] lo Minimum vertex coordinates
+   * \param [in] hi Maximum vertex coordinates
+   */
+  void accumulate(Vector4D lo, Vector4D hi) {
+    std::lock_guard lock(m_mutex);
+
+    if (m_initialized) {
+      m_lo = min(m_lo, lo);
+      m_hi = max(m_hi, hi);
+    } else {
+      m_initialized = true;
+      m_lo = lo;
+      m_hi = hi;
+    }
+  }
+
+private:
+
+  std::mutex      m_mutex;
+  bool            m_initialized = false;
+  Vector4D        m_lo = Vector4D(0.0f);
+  Vector4D        m_hi = Vector4D(0.0f);
+
+};
+
+
+/**
  * \brief Morph target lookup table
  */
 using GltfMorphTargetMap = std::unordered_map<std::string, uint32_t>;
@@ -548,15 +599,21 @@ public:
     const Jobs&                         jobs);
 
   /**
-   * \brief Computes axis-aligned bounding box
+   * \brief Dispatches job to compute AABB
    *
    * Depending on whether morph targets are present, this will
    * compute the AABB either based on vertex data or meshlet
    * bounding spheres.
+   * \param [in] jobs Job manager instance
+   * \param [in] dependency Job to wait for
+   * \param [in] aabb Shared AABB instance
    * \param [in] transform Instance transform
-   * \returns Axis-aligned bounding box
+   * \returns Job to synchronize with
    */
-  GfxAabb<float> computeAabb(
+  Job dispatchComputeAabb(
+    const Jobs&                         jobs,
+    const Job&                          dependency,
+          std::shared_ptr<GltfSharedAabb> aabb,
           QuatTransform                 transform) const;
 
 private:
@@ -696,12 +753,19 @@ public:
     const Jobs&                         jobs);
 
   /**
-   * \brief Computes axis-aligned bounding box
+   * \brief Dispatches jobs to compute bounding box
    *
+   * Dispatches jobs for each individual primitive.
+   * \param [in] jobs Job manager instance
+   * \param [in] dependency Job to wait for
+   * \param [in] aabb Shared AABB instance
    * \param [in] transform Instance transform
-   * \returns Axis-aligned bounding box
+   * \returns Job to synchronize with
    */
-  GfxAabb<float> computeAabb(
+  Job dispatchComputeAabb(
+    const Jobs&                         jobs,
+    const Job&                          dependency,
+          std::shared_ptr<GltfSharedAabb> aabb,
           QuatTransform                 transform) const;
 
 private:
@@ -855,12 +919,18 @@ public:
     const Jobs&                         jobs);
 
   /**
-   * \brief Computes axis-aligned bounding box
+   * \brief Dispatches jobs to compute bounding box
    *
-   * Computes the bounding box for all local mesh instances.
-   * \returns Axis-aligned bounding box
+   * Dispatches jobs for each individual LOD and instance.
+   * \param [in] jobs Job manager instance
+   * \param [in] dependency Job to wait for
+   * \param [in] aabb Shared AABB instance
+   * \returns Job to synchronize with
    */
-  GfxAabb<float> computeAabb() const;
+  Job dispatchComputeAabb(
+    const Jobs&                         jobs,
+    const Job&                          dependency,
+          std::shared_ptr<GltfSharedAabb> aabb) const;
 
 private:
 
@@ -956,12 +1026,12 @@ private:
   std::vector<std::shared_ptr<GltfMeshConverter>> m_meshConverters;
   std::vector<GfxJointMetadata>               m_jointMetadata;
 
+  std::shared_ptr<GltfSharedAabb>             m_aabb;
+
   void buildGeometry();
 
   void buildBuffers(
     const std::vector<GfxMeshletMetadata>& meshlets);
-
-  GfxAabb<float> computeAabb() const;
 
   std::shared_ptr<GltfPackedVertexLayout> getMaterialLayout(
     const std::shared_ptr<GltfMaterial>& material);
