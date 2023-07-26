@@ -547,6 +547,18 @@ public:
   Job dispatchConvert(
     const Jobs&                         jobs);
 
+  /**
+   * \brief Computes axis-aligned bounding box
+   *
+   * Depending on whether morph targets are present, this will
+   * compute the AABB either based on vertex data or meshlet
+   * bounding spheres.
+   * \param [in] transform Instance transform
+   * \returns Axis-aligned bounding box
+   */
+  GfxAabb<float> computeAabb(
+          QuatTransform                 transform) const;
+
 private:
 
   std::shared_ptr<GltfPackedVertexLayout> m_layout;
@@ -682,6 +694,15 @@ public:
    */
   Job dispatchConvert(
     const Jobs&                         jobs);
+
+  /**
+   * \brief Computes axis-aligned bounding box
+   *
+   * \param [in] transform Instance transform
+   * \returns Axis-aligned bounding box
+   */
+  GfxAabb<float> computeAabb(
+          QuatTransform                 transform) const;
 
 private:
 
@@ -833,6 +854,14 @@ public:
   Job dispatchConvert(
     const Jobs&                         jobs);
 
+  /**
+   * \brief Computes axis-aligned bounding box
+   *
+   * Computes the bounding box for all local mesh instances.
+   * \returns Axis-aligned bounding box
+   */
+  GfxAabb<float> computeAabb() const;
+
 private:
 
   std::shared_ptr<GltfMesh>                           m_mesh;
@@ -930,6 +959,8 @@ private:
   void buildGeometry();
 
   void buildBuffers();
+
+  GfxAabb<float> computeAabb() const;
 
   std::shared_ptr<GltfPackedVertexLayout> getMaterialLayout(
     const std::shared_ptr<GltfMaterial>& material);

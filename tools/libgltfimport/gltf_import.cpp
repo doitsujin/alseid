@@ -1180,7 +1180,7 @@ uint32_t GltfMeshletBuilder::processMorphTargets(
       float maxDelta = 0.0f;
 
       for (const auto& v : vertices) {
-        maxDelta = max(maxDelta, length(
+        maxDelta = std::max(maxDelta, length(
           Vector3D(v.f32[o], v.f32[o + 1], v.f32[o + 2])));
       }
 
@@ -1399,6 +1399,48 @@ Job GltfMeshPrimitiveConverter::dispatchConvert(
 }
 
 
+GfxAabb<float> GltfMeshPrimitiveConverter::computeAabb(
+        QuatTransform                 transform) const {
+  Vector4D lo = Vector4D(0.0f);
+  Vector4D hi = Vector4D(0.0f);
+
+  // Compute tight bounding box for transformed vertices
+  auto position = m_inputLayout.findAttribute("POSITION");
+
+  for (size_t i = 0; i < m_sourceVertexBuffer.size(); i++) {
+    const float* f = &m_sourceVertexBuffer[i].f32[position->offset];
+
+    Vector4D pos = transform.apply(Vector4D(f[0], f[1], f[2], 0.0f));
+
+    if (i) {
+      lo = min(lo, pos);
+      hi = max(hi, pos);
+    } else {
+      lo = pos;
+      hi = pos;
+    }
+  }
+
+  // If necessary, expand bounding box by including the
+  // full bounding spheres or morphed meshlets.
+  for (const auto& meshlet : m_meshlets) {
+    auto metadata = meshlet->getMetadata();
+
+    if (metadata.header.morphTargetMask) {
+      float radius = transform.getRotation().scaling() * float(metadata.info.sphereRadius);
+      Vector4D pos = transform.apply(Vector4D(metadata.info.sphereCenter, 0.0f));
+
+      lo = min(lo, pos - radius);
+      hi = max(hi, pos + radius);
+    }
+  }
+
+  return GfxAabb<float>(
+    lo.get<0, 1, 2>(),
+    hi.get<0, 1, 2>());
+}
+
+
 void GltfMeshPrimitiveConverter::readPrimitiveData() {
   GltfVertexDataReader reader(m_primitive);
 
@@ -1507,6 +1549,23 @@ Job GltfMeshLodConverter::dispatchConvert(
 
   return jobs->dispatch(accumulateJob,
     std::make_pair(primitiveJobs.begin(), primitiveJobs.end()));
+}
+
+
+GfxAabb<float> GltfMeshLodConverter::computeAabb(
+        QuatTransform                 transform) const {
+  if (m_primitives.empty())
+    return GfxAabb<float>();
+
+  auto result = m_primitives[0]->computeAabb(transform);
+
+  for (size_t i = 1; i < m_primitives.size(); i++) {
+    auto aabb = m_primitives[i]->computeAabb(transform);
+    result.min = min(result.min, aabb.min);
+    result.max = max(result.max, aabb.max);
+  }
+
+  return result;
 }
 
 
@@ -1661,6 +1720,34 @@ Job GltfMeshConverter::dispatchConvert(
 }
 
 
+GfxAabb<float> GltfMeshConverter::computeAabb() const {
+  auto result = GfxAabb<float>();
+
+  for (size_t i = 0; i < m_instances.size() || !i; i++) {
+    QuatTransform instanceTransform = QuatTransform::identity();
+
+    if (i < m_instances.size()) {
+      instanceTransform = QuatTransform(
+        Vector4D(m_instances[i].info.transform),
+        Vector4D(m_instances[i].info.translate, 0.0f));
+    }
+
+    for (size_t j = 0; j < m_lods.size(); j++) {
+      auto aabb = m_lods[j]->computeAabb(instanceTransform);
+
+      if (i + j) {
+        result.min = min(result.min, aabb.min);
+        result.max = max(result.max, aabb.max);
+      } else {
+        result = aabb;
+      }
+    }
+  }
+
+  return result;
+}
+
+
 void GltfMeshConverter::accumulateLods() {
   // Just order LODs by distance, not much else to do here
   std::sort(m_lods.begin(), m_lods.end(), [] (
@@ -1783,7 +1870,12 @@ Job GltfConverter::dispatchConvert() {
 
 
 void GltfConverter::buildGeometry() {
+  GfxAabb<float> aabb = computeAabb();
+
   m_geometry = std::make_shared<GfxGeometry>();
+  m_geometry->info.aabb = GfxAabb<float16_t>(
+    Vector<float16_t, 3>(aabb.min),
+    Vector<float16_t, 3>(aabb.max));
   m_geometry->info.meshCount = uint8_t(m_meshConverters.size());
   m_geometry->info.bufferCount = 1;
 
@@ -2012,6 +2104,22 @@ void GltfConverter::buildBuffers() {
       sizeof(jointMetatata.info) * i,
       &jointMetatata.info, sizeof(jointMetatata.info));
   }
+}
+
+
+GfxAabb<float> GltfConverter::computeAabb() const {
+  if (m_meshConverters.empty())
+    return GfxAabb<float>();
+
+  auto result = m_meshConverters[0]->computeAabb();
+
+  for (size_t i = 1; i < m_meshConverters.size(); i++) {
+    auto aabb = m_meshConverters[i]->computeAabb();
+    result.min = min(result.min, aabb.min);
+    result.max = max(result.max, aabb.max);
+  }
+
+  return result;
 }
 
 
