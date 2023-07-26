@@ -474,6 +474,28 @@ public:
   }
 
   /**
+   * \brief Computes joint bounding volumes
+   *
+   * For each joint that affects the meshlet, computes the maximum
+   * distance to any vertex within the meshlet in model space. The
+   * idea is that rotations will not affect the distance regardless
+   * of the weight applied, so every vertex will always be within
+   * the bounding sphere of at least one joint.
+   *
+   * Instance bounding volumes can then be applied by computing a
+   * superset of joint bounding volumes using the transformed joint
+   * positions in model space as a pivot point, and adjusting the
+   * sphere for scaling and translation as necessary.
+   * \param [in] joints Joint metadata array
+   * \param [in] skins Joint remapping buffer
+   * \param [in] instance Mesh instance
+   */
+  void computeJointBoundingVolumes(
+          std::vector<GfxJointMetadata>& joints,
+    const std::vector<uint16_t>&        skins,
+    const GfxMeshInstance&              instance) const;
+
+  /**
    * \brief Builds meshlet
    *
    * \param [in] primitiveIndices Meshlet index buffer
@@ -497,6 +519,8 @@ private:
 
   GfxMeshletMetadata                      m_metadata;
   std::vector<char>                       m_buffer;
+
+  std::vector<uint32_t>                   m_localJoints;
 
   std::vector<GltfVertex> loadVertices(
     const uint32_t*                     indices,
@@ -615,6 +639,18 @@ public:
     const Job&                          dependency,
           std::shared_ptr<GltfSharedAabb> aabb,
           QuatTransform                 transform) const;
+
+  /**
+   * \brief Computes joint bounding volumes
+   *
+   * \param [in] joints Joint metadata array
+   * \param [in] skins Joint remapping buffer
+   * \param [in] instance Mesh instance
+   */
+  void computeJointBoundingVolumes(
+          std::vector<GfxJointMetadata>& joints,
+    const std::vector<uint16_t>&        skins,
+    const GfxMeshInstance&              instance) const;
 
 private:
 
@@ -767,6 +803,18 @@ public:
     const Job&                          dependency,
           std::shared_ptr<GltfSharedAabb> aabb,
           QuatTransform                 transform) const;
+
+  /**
+   * \brief Computes joint bounding volumes
+   *
+   * \param [in] joints Joint metadata array
+   * \param [in] skins Joint remapping buffer
+   * \param [in] instance Mesh instance
+   */
+  void computeJointBoundingVolumes(
+          std::vector<GfxJointMetadata>& joints,
+    const std::vector<uint16_t>&        skins,
+    const GfxMeshInstance&              instance) const;
 
 private:
 
@@ -932,6 +980,16 @@ public:
     const Job&                          dependency,
           std::shared_ptr<GltfSharedAabb> aabb) const;
 
+  /**
+   * \brief Computes joint bounding volumes
+   *
+   * Computes the bounding sphere for all joints
+   * that affect any instances of this mesh.
+   * \param [in] joints Joint metadata array
+   */
+  void computeJointBoundingVolumes(
+          std::vector<GfxJointMetadata>& joints) const;
+
 private:
 
   std::shared_ptr<GltfMesh>                           m_mesh;
@@ -1032,6 +1090,8 @@ private:
 
   void buildBuffers(
     const std::vector<GfxMeshletMetadata>& meshlets);
+
+  void computeJointBoundingVolumes();
 
   std::shared_ptr<GltfPackedVertexLayout> getMaterialLayout(
     const std::shared_ptr<GltfMaterial>& material);

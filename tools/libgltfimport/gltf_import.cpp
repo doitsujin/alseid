@@ -801,6 +801,30 @@ GltfMeshletBuilder::~GltfMeshletBuilder() {
 }
 
 
+void GltfMeshletBuilder::computeJointBoundingVolumes(
+        std::vector<GfxJointMetadata>& joints,
+  const std::vector<uint16_t>&        skins,
+  const GfxMeshInstance&              instance) const {
+  QuatTransform instanceTransform(
+    Vector4D(instance.transform),
+    Vector4D(instance.translate, 0.0f));
+
+  Vector4D sphereCenter = instanceTransform.apply(
+    Vector4D(m_metadata.info.sphereCenter, 0.0f));
+  float sphereRadius = float(m_metadata.info.sphereRadius);
+
+  for (const auto& localIndex : m_localJoints) {
+    uint16_t jointIndex = skins.at(instance.jointIndex + localIndex);
+
+    if (jointIndex != 0xffffu) {
+      auto& joint = joints.at(jointIndex);
+      joint.info.radius = float16_t(std::max(float(joint.info.radius),
+        sphereRadius + length(sphereCenter - Vector4D(joint.info.position, 0.0f))));
+    }
+  }
+}
+
+
 void GltfMeshletBuilder::buildMeshlet(
   const uint8_t*                      primitiveIndices,
   const uint32_t*                     vertexIndices,
@@ -818,10 +842,10 @@ void GltfMeshletBuilder::buildMeshlet(
 
   // If possible, use local joint indices for the meshlet
   // and also assign a dominant joint for culling.
-  bool canCull = processJoints(inputVertices.data());
+  computeMeshletBounds(inputVertices.data(), primitiveIndices);
 
-  if (canCull)
-    computeMeshletBounds(inputVertices.data(), primitiveIndices);
+  if (!processJoints(inputVertices.data()))
+    m_metadata.info.flags -= GfxMeshletCullFlag::eCullSphere | GfxMeshletCullFlag::eCullCone;
 
   // Read both shading and vertex data into local arrays
   std::vector<char> vertexBuffer = packVertices(
@@ -1003,7 +1027,6 @@ bool GltfMeshletBuilder::processJoints(
   // Joint map and local joint indices. If the number of unique joints
   // used within the meshlet is small, we can use local joints.
   std::unordered_map<uint32_t, uint32_t> jointMap;
-  std::vector<uint32_t> localJoints;
 
   // List of candidates for the dominant joint. A dominant joint is a
   // joint with a weight close to 1.0 for all vertices. If it is the
@@ -1024,8 +1047,8 @@ bool GltfMeshletBuilder::processJoints(
       }
 
       // Allocate a local joint index if necessary
-      if (jointMap.emplace(j, localJoints.size()).second)
-        localJoints.push_back(j);
+      if (jointMap.emplace(j, m_localJoints.size()).second)
+        m_localJoints.push_back(j);
 
       if (w >= DominantJointThreshold)
         dominantJoints.emplace(j);
@@ -1034,7 +1057,7 @@ bool GltfMeshletBuilder::processJoints(
 
   // If there are no joints with a non-zero index, treat the
   // meshlet as entirely static.
-  if (localJoints.empty())
+  if (m_localJoints.empty())
     return true;
 
   // For each dominant joint candidate, check whether it is truly
@@ -1079,12 +1102,12 @@ bool GltfMeshletBuilder::processJoints(
   // Also, if the number of unique joints is sufficiently small,
   // enable local indexing for the meshlet. Set an invalid joint
   // index for any unused entry.
-  if (localJoints.size() <= m_metadata.header.jointIndices.size()) {
+  if (m_localJoints.size() <= m_metadata.header.jointIndices.size()) {
     m_metadata.header.flags |= GfxMeshletFlag::eLocalJoints;
 
     for (size_t i = 0; i < m_metadata.header.jointIndices.size(); i++) {
-      m_metadata.header.jointIndices[i] = (i < localJoints.size())
-        ? uint16_t(localJoints[i])
+      m_metadata.header.jointIndices[i] = (i < m_localJoints.size())
+        ? uint16_t(m_localJoints[i])
         : uint16_t(0xffffu);
     }
   }
@@ -1126,7 +1149,7 @@ bool GltfMeshletBuilder::processJoints(
   // TODO: Find a way to allow culling anyway as long as a dominant
   //    joint could be found (animation keyframes or something?)
   m_metadata.info.jointIndex = uint16_t(dominantJoint);
-  return dominantJoint != ~0u && localJoints.size() == 1;
+  return dominantJoint != ~0u && m_localJoints.size() == 1;
 }
 
 
@@ -1232,15 +1255,10 @@ uint32_t GltfMeshletBuilder::processMorphTargets(
   // vertex positions are morphed, since face normals may change
   // significantly. Also enlarge bounding sphere as necessary.
   if (targetMask && sphereRadiusDelta > 0.0f) {
-    m_metadata.info.flags -= GfxMeshletCullFlag::eCullCone;
-    m_metadata.info.coneOrigin = Vector<float16_t, 3>(0.0_f16);
-    m_metadata.info.coneAxis = Vector<float16_t, 2>(0.0_f16);
-    m_metadata.info.coneCutoff = float16_t(1.0f);
+    float sphereRadius = float(m_metadata.info.sphereRadius);
 
-    if (m_metadata.info.flags & GfxMeshletCullFlag::eCullSphere) {
-      float sphereRadius = float(m_metadata.info.sphereRadius);
-      m_metadata.info.sphereRadius = float16_t(sphereRadius + sphereRadiusDelta);
-    }
+    m_metadata.info.flags -= GfxMeshletCullFlag::eCullCone;
+    m_metadata.info.sphereRadius = float16_t(sphereRadius + sphereRadiusDelta);
   }
 
   return targetMask;
@@ -1471,6 +1489,15 @@ Job GltfMeshPrimitiveConverter::dispatchComputeAabb(
 }
 
 
+void GltfMeshPrimitiveConverter::computeJointBoundingVolumes(
+        std::vector<GfxJointMetadata>& joints,
+  const std::vector<uint16_t>&        skins,
+  const GfxMeshInstance&              instance) const {
+  for (const auto& meshlet : m_meshlets)
+    meshlet->computeJointBoundingVolumes(joints, skins, instance);
+}
+
+
 void GltfMeshPrimitiveConverter::readPrimitiveData() {
   GltfVertexDataReader reader(m_primitive);
 
@@ -1595,6 +1622,15 @@ Job GltfMeshLodConverter::dispatchComputeAabb(
 
   return jobs->dispatch(jobs->create<NullJob>([]{}),
     std::make_pair(deps.begin(), deps.end()));
+}
+
+
+void GltfMeshLodConverter::computeJointBoundingVolumes(
+        std::vector<GfxJointMetadata>& joints,
+  const std::vector<uint16_t>&        skins,
+  const GfxMeshInstance&              instance) const {
+  for (const auto& primitive : m_primitives)
+    primitive->computeJointBoundingVolumes(joints, skins, instance);
 }
 
 
@@ -1774,6 +1810,15 @@ Job GltfMeshConverter::dispatchComputeAabb(
 }
 
 
+void GltfMeshConverter::computeJointBoundingVolumes(
+        std::vector<GfxJointMetadata>& joints) const {
+  for (const auto& lod : m_lods) {
+    for (const auto& instance : m_instances)
+      lod->computeJointBoundingVolumes(joints, m_jointIndices, instance.info);
+  }
+}
+
+
 void GltfMeshConverter::accumulateLods() {
   // Just order LODs by distance, not much else to do here
   std::sort(m_lods.begin(), m_lods.end(), [] (
@@ -1892,6 +1937,7 @@ Job GltfConverter::dispatchConvert() {
   // object as well as all the mesh buffers.
   Job buildGeometryJob = m_jobs->create<SimpleJob>(
     [cThis = shared_from_this()] {
+      cThis->computeJointBoundingVolumes();
       cThis->buildGeometry();
     });
 
@@ -2146,6 +2192,12 @@ void GltfConverter::buildBuffers(
       sizeof(jointMetatata.info) * i,
       &jointMetatata.info, sizeof(jointMetatata.info));
   }
+}
+
+
+void GltfConverter::computeJointBoundingVolumes() {
+  for (const auto& mesh : m_meshConverters)
+    mesh->computeJointBoundingVolumes(m_jointMetadata);
 }
 
 
