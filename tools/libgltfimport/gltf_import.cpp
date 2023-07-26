@@ -1870,6 +1870,10 @@ Job GltfConverter::dispatchConvert() {
 
 
 void GltfConverter::buildGeometry() {
+  // Meshlet metadata buffer
+  std::vector<GfxMeshletMetadata> meshlets;
+
+  // Compute bounding box from source vertex data
   GfxAabb<float> aabb = computeAabb();
 
   m_geometry = std::make_shared<GfxGeometry>();
@@ -1957,7 +1961,7 @@ void GltfConverter::buildGeometry() {
       auto lod = converter->getLodConverter(i);
 
       GfxMeshLodMetadata lodMetadata = lod->getMetadata();
-      lodMetadata.firstMeshletIndex = m_geometry->meshlets.size();
+      lodMetadata.firstMeshletIndex = meshlets.size();
       lodMetadata.info.meshletIndex = bufferMeshletCount.at(lodMetadata.info.bufferIndex);
 
       bufferMeshletCount.at(lodMetadata.info.bufferIndex) += lodMetadata.info.meshletCount;
@@ -1975,7 +1979,7 @@ void GltfConverter::buildGeometry() {
           bufferDataSizes.at(lodMetadata.info.bufferIndex),
           meshlet->getBuffer().getSize());
 
-        m_geometry->meshlets.push_back(meshletMetadata);
+        meshlets.push_back(meshletMetadata);
       }
     }
 
@@ -2018,6 +2022,8 @@ void GltfConverter::buildGeometry() {
   // At this point, we know the total size of the metadata
   // buffer as well as all meshlet data buffers. Do another
   // pass over all meshlets and fix up the data offsets.
+  m_geometry->meshletOffsets.resize(meshlets.size());
+
   for (size_t i = 0; i < m_geometry->info.meshCount; i++) {
     const auto& meshMetadata = m_geometry->meshes.at(i);
 
@@ -2026,8 +2032,12 @@ void GltfConverter::buildGeometry() {
       uint32_t lodBufferOffset = bufferMetadataSizes.at(lodMetadata.info.bufferIndex);
 
       for (size_t k = 0; k < lodMetadata.info.meshletCount; k++) {
-        auto& meshletMetadata = m_geometry->meshlets.at(lodMetadata.firstMeshletIndex + k);
+        auto& meshletMetadata = meshlets.at(lodMetadata.firstMeshletIndex + k);
         meshletMetadata.info.dataOffset += lodBufferOffset;
+
+        m_geometry->meshletOffsets.at(lodMetadata.firstMeshletIndex + k) =
+          meshletMetadata.info.dataOffset + meshletMetadata.header.vertexDataOffset +
+          (lodMetadata.info.bufferIndex ? 0u : m_geometry->info.meshletDataOffset);
       }
     }
   }
@@ -2040,11 +2050,12 @@ void GltfConverter::buildGeometry() {
     m_buffers.at(i).resize(headerSize + bufferDataSizes.at(i));
   }
 
-  buildBuffers();
+  buildBuffers(meshlets);
 }
 
 
-void GltfConverter::buildBuffers() {
+void GltfConverter::buildBuffers(
+  const std::vector<GfxMeshletMetadata>& meshlets) {
   writeBufferData(0, 0, &m_geometry->info, sizeof(m_geometry->info));
 
   for (size_t i = 0; i < m_geometry->info.meshCount; i++) {
@@ -2068,7 +2079,7 @@ void GltfConverter::buildBuffers() {
 
       for (size_t k = 0; k < lodMetadata.info.meshletCount; k++) {
         const auto& meshletConverter = lodConverter->getMeshlet(k);
-        const auto& meshletMetadata = m_geometry->meshlets.at(lodMetadata.firstMeshletIndex + k);
+        const auto& meshletMetadata = meshlets.at(lodMetadata.firstMeshletIndex + k);
 
         writeBufferData(lodMetadata.info.bufferIndex, meshletDataOffset +
           sizeof(meshletMetadata.info) * (lodMetadata.info.meshletIndex + k),

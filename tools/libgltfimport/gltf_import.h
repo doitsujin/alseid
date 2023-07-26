@@ -958,7 +958,8 @@ private:
 
   void buildGeometry();
 
-  void buildBuffers();
+  void buildBuffers(
+    const std::vector<GfxMeshletMetadata>& meshlets);
 
   GfxAabb<float> computeAabb() const;
 

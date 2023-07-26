@@ -22,19 +22,19 @@ const GfxMeshLodMetadata* GfxGeometry::getLod(
 }
 
 
-const GfxMeshletMetadata* GfxGeometry::getMeshlet(
+uint32_t GfxGeometry::getMeshletVertexDataOffset(
   const GfxMeshMetadata*              mesh,
   const GfxMeshLodMetadata*           lod,
         uint32_t                      meshlet) const {
   if (meshlet >= lod->info.meshletCount)
-    return nullptr;
+    return 0;
 
   uint absoluteIndex = lod->firstMeshletIndex + meshlet;
 
-  if (absoluteIndex >= meshlets.size())
-    return nullptr;
+  if (absoluteIndex >= meshletOffsets.size())
+    return 0;
 
-  return &meshlets[absoluteIndex];
+  return meshletOffsets[absoluteIndex];
 }
 
 
@@ -174,12 +174,10 @@ bool GfxGeometry::serialize(
   }
 
   // Write out meshlet metadata in the order it occurs in the CPU array.
-  success &= stream.write(uint32_t(meshlets.size()));
+  success &= stream.write(uint32_t(meshletOffsets.size()));
 
-  for (const auto& meshlet : meshlets) {
-    success &= stream.write(meshlet.info)
-            && stream.write(meshlet.header);
-  }
+  for (uint32_t meshlet : meshletOffsets)
+    success &= stream.write(meshlet);
 
   // Write out material metadata. The material count can be
   // inferred from the overall geometry metadata structure.
@@ -286,11 +284,10 @@ bool GfxGeometry::deserialize(
   if (!reader.readAs<uint32_t>(meshletCount))
     return false;
 
-  meshlets.resize(meshletCount);
+  meshletOffsets.resize(meshletCount);
 
-  for (auto& meshlet : meshlets) {
-    if (!reader.read(meshlet.info)
-     || !reader.read(meshlet.header))
+  for (auto& meshlet : meshletOffsets) {
+    if (!reader.read(meshlet))
       return false;
   }
 

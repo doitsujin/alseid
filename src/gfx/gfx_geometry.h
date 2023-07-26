@@ -625,8 +625,10 @@ struct GfxGeometry {
   std::vector<GfxMeshMetadata> meshes;
   /** List of mesh instances */
   std::vector<GfxMeshInstanceMetadata> instances;
-  /** List of meshlet descriptions */
-  std::vector<GfxMeshletMetadata> meshlets;
+  /** List of meshlet vertex data offsets within their
+   *  respective data buffers. Useful when creating ray
+   *  tracing BVHs. */
+  std::vector<uint32_t> meshletOffsets;
   /** List of material descriptions. */
   std::vector<GfxMeshMaterialMetadata> materials;
   /** List of vertex attribute descriptions. */
@@ -657,15 +659,15 @@ struct GfxGeometry {
           uint32_t                      lod) const;
 
   /**
-   * \brief Looks up meshlet metadata within an LOD
+   * \brief Looks up meshlet within an LOD
    *
    * \param [in] mesh Mesh to look at
    * \param [in] lod Mesh LOD to look at
    * \param [in] meshlet Meshlet index within the LOD
-   * \returns Pointer to meshlet metadata, or \c nullptr
-   *    if the given meshlet index is out of bounds.
+   * \returns Offset of meshlet vertex data within
+   *    the data buffer that the LOD is stored in.
    */
-  const GfxMeshletMetadata* getMeshlet(
+  uint32_t getMeshletVertexDataOffset(
     const GfxMeshMetadata*              mesh,
     const GfxMeshLodMetadata*           lod,
           uint32_t                      meshlet) const;
