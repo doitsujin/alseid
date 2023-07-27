@@ -560,6 +560,161 @@ struct GfxMorphTargetMetadata {
 
 
 /**
+ * \brief Animation buffer header
+ *
+ * Stores the data layout of the animation buffer. The
+ * animation buffer stores flat arrays of all data with
+ * indices into those arrays provided by animation groups.
+ */
+struct GfxAnimationInfo {
+  /** Number of animation groups in the buffer */
+  uint32_t groupCount;
+  /** Offset of keyframe data within the buffer,
+   *  in bytes, relative to the animation header. */
+  uint32_t keyframeDataOffset;
+  /** Offset of joint transform data within the buffer */
+  uint32_t jointDataOffset;
+  /** Offset of morph target weights within the buffer */
+  uint32_t weightDataOffset;
+};
+
+static_assert(sizeof(GfxAnimationInfo) == 16);
+
+
+/**
+ * \brief Animation group flags
+ */
+enum class GfxAnimationGroupFlag : uint32_t {
+  /** Use Slerp for quaternion interpolation rather than
+   *  normalized linear interpolation. Recommended only
+   *  when angles between quaternions are very large. */
+  eSlerp    = (1u << 0),
+
+  eFlagEnum = 0
+};
+
+using GfxAnimationGroupFlags = Flags<GfxAnimationGroupFlag>;
+
+
+/**
+ * \brief Animation group metadata
+ *
+ * An animation group points to key frame data, both time
+ * stamps and actual transforms, and can handle up to 32
+ * joints and morph targets at once.
+ *
+ * Having multiple animation groups per animation is useful
+ * if more than 32 joints are affected by an animation, or
+ * if some joints are animated with a different set of time
+ * stamps.
+ *
+ * Since interpolation between keyframes is generally linear, it
+ * is useful to have a large number of equally spaced keyframes
+ * for each animation in order to reach a high level of quality.
+ * This is especially true since lookup can be performed in
+ * O(log n) time within the animation shader.
+ */
+struct GfxAnimationGroup {
+  /** Animation group flags. Determines interpolation modes. */
+  GfxAnimationGroupFlags flags;
+  /** Animation duration in an arbitrary unit. All animation
+   *  groups within an animation must set this to the same value. */
+  float duration;
+  /** Index of the first keyframe node for this group. */
+  uint32_t keyframeIndex;
+  /** Number of top-level keyframe nodes in this group. */
+  uint32_t keyframeCount;
+  /** Index of the first morph target weight for the first keyframe
+   *  within this animation group. For each keyframe, an array of
+   *  \c popcnt(morphTargetMask) weights is stored at this location. */
+  uint32_t morphTargetWeightIndex;
+  /** Number of morph targets within the animation group. */
+  uint32_t morphTargetCount;
+  /** Index of the first joint transform for the first keyframe
+   *  within this animation group. For each keyframe, an array of
+   *  \c jointCount transforms is stored at this location. */
+  uint32_t jointTransformIndex;
+  /** Number of joint transforms provided by each keyframe.
+   *  At most 32 joints are supported per animation group. */
+  uint32_t jointCount;
+  /** Fixed-size joint index buffer. Used to map the joints affected
+   *  by this animation group back to absolute model joint indices. */
+  std::array<uint16_t, 32> jointIndices;
+  /** Fixed-size morph target index buffer. */
+  std::array<uint8_t, 32> morphTargetIndices;
+};
+
+static_assert(sizeof(GfxAnimationGroup) == 128);
+
+
+/**
+ * \brief Animation keyframe data
+ *
+ * Keyframe data is stored as a broad tree in order to facilitate
+ * fast lookup on the GPU. Each layer can have up to 32 child nodes,
+ * which means that animations with up to 1024 keyframes only need
+ * two lookup iterations.
+ */
+struct GfxAnimationKeyframe {
+  /** Timestamp represented by this keyframe. If this is not a leaf
+   *  node, this must be equal to the timestamp of the first child. */
+  float timestamp;
+  /** Keyframe data index. For leaf nodes, this is the keyframe index
+   *  for the joint transform and morph target weight indices, which
+   *  must then be multiplied by the respective count. Otherwise, this
+   *  is an index into the keyframe array of where the first child node
+   *  of this node is stored, relative to the animation group's root node. */
+  uint24_t nextIndex;
+  /** Child node count. For leaf nodes, this is always 0, otherwise this
+   *  stores the number of child nodes and must be between 2 and 32. */
+  uint8_t nextCount;
+};
+
+static_assert(sizeof(GfxAnimationKeyframe) == 8);
+
+
+/**
+ * \brief Animation joint transform
+ *
+ * Stores a padded joint transform.
+ */
+struct GfxAnimationJoint {
+  /** Transform quaternion */
+  Vector<float, 4> transform;
+  /** Translation vector */
+  Vector<float, 3> translate;
+  /** Reserved for future use */
+  uint32_t reserved;
+};
+
+static_assert(sizeof(GfxAnimationJoint) == 32);
+
+
+/**
+ * \brief Animation metadata
+ *
+ * Stores the name of an animation as well as the range
+ * of internal animation groups needed to apply it.
+ */
+struct GfxAnimationMetadata {
+  /** Unique name of the animation */
+  GfxSemanticName name = "";
+  /** Animation index within the CPU array. Potentially
+   *  useful after looking up the animation by name. */
+  uint32_t animationIndex = 0;
+  /** First animation group index. */
+  uint32_t groupIndex = 0;
+  /** Number of animation groups. Needed to dispatch the
+   *  correct number of workgroups of the animation shader. */
+  uint32_t groupCount = 0;
+  /** Total duration of the animation in an arbitrary unit,
+   *  usually seconds. Can be used to implement looping
+   *  animations by wrapping the time stamp around. */
+  float duration = 0.0f;
+};
+
+
+/**
  * \brief Geometry info
  *
  * Stores culling info for the mesh as well as general
@@ -637,6 +792,8 @@ struct GfxGeometry {
   std::vector<GfxJointMetadata> joints;
   /** List of morph targets */
   std::vector<GfxMorphTargetMetadata> morphTargets;
+  /** List of animations */
+  std::vector<GfxAnimationMetadata> animations;
 
   /**
    * \brief Computes constant buffer data size

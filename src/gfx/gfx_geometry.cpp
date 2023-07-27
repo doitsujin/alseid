@@ -216,6 +216,16 @@ bool GfxGeometry::serialize(
   for (const auto& morphTarget : morphTargets)
     success &= stream.write(morphTarget.name);
 
+  // Write out animation metadata.
+  success &= stream.write(uint16_t(animations.size()));
+
+  for (const auto& animation : animations) {
+    success &= stream.write(animation.name)
+            && stream.write(uint16_t(animation.groupIndex))
+            && stream.write(uint16_t(animation.groupCount))
+            && stream.write(animation.duration);
+  }
+
   return success;
 }
 
@@ -348,6 +358,25 @@ bool GfxGeometry::deserialize(
       return false;
 
     morphTarget.morphTargetIndex = morphTargetIndex++;
+  }
+
+  // Read animation metadata
+  uint32_t animationCount = 0u;
+
+  if (!reader.readAs<uint16_t>(animationCount))
+    return false;
+
+  animations.resize(animationCount);
+  uint32_t animationIndex = 0;
+
+  for (auto& animation : animations) {
+    if (!reader.read(animation.name)
+     || !reader.readAs<uint16_t>(animation.groupIndex)
+     || !reader.readAs<uint16_t>(animation.groupCount)
+     || !reader.read(animation.duration))
+      return false;
+
+    animation.animationIndex = animationIndex++;
   }
 
   return true;
