@@ -14,14 +14,19 @@
 #extension GL_EXT_mesh_shader : enable
 #endif
 
-// Enable subgroup extensions for all workgroup-based stages
-#if defined(STAGE_TASK) || defined(STAGE_MESH) || defined(STAGE_COMP)
+// Enable subgroup extensions where they make sense
 #extension GL_KHR_shader_subgroup_arithmetic : enable
 #extension GL_KHR_shader_subgroup_basic : enable
 #extension GL_KHR_shader_subgroup_ballot : enable
+#extension GL_KHR_shader_subgroup_vote : enable
+
+#if defined(STAGE_TASK) || defined(STAGE_MESH) || defined(STAGE_COMP)
 #extension GL_KHR_shader_subgroup_clustered : enable
 #extension GL_KHR_shader_subgroup_shuffle : enable
-#extension GL_KHR_shader_subgroup_vote : enable
+#endif
+
+#if defined(STAGE_FRAG)
+#extension GL_KHR_shader_subgroup_quad : enable
 #endif
 
 // Common includes

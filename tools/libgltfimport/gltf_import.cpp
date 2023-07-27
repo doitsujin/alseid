@@ -1730,7 +1730,7 @@ void GltfMeshConverter::addInstance(
 
 
 void GltfMeshConverter::applySkins(
-  const std::unordered_map<std::shared_ptr<GltfNode>, uint32_t>& jointIndexMap) {
+  const GltfJointMap&                 jointMap) {
   for (const auto& node : m_nodes) {
     std::shared_ptr<GltfSkin> skin = node->getSkin();
 
@@ -1744,8 +1744,8 @@ void GltfMeshConverter::applySkins(
     auto joints = skin->getJoints();
 
     for (auto j = joints.first; j != joints.second; j++) {
-      auto entry = jointIndexMap.find(*j);
-      dbg_assert(entry != jointIndexMap.end());
+      auto entry = jointMap.find(*j);
+      dbg_assert(entry != jointMap.end());
 
       m_jointIndices.push_back(entry->second);
 
@@ -1835,7 +1835,7 @@ void GltfMeshConverter::processInstances() {
   uint16_t dummySkinOffset = 0;
 
   for (const auto& node : m_nodes) {
-    QuatTransform transform = node->computeTransform();
+    QuatTransform transform = node->computeAbsoluteTransform();
 
     GfxMeshInstanceMetadata& instance = m_instances.emplace_back();
     instance.name = node->getName();
@@ -1866,6 +1866,504 @@ void GltfMeshConverter::processInstances() {
         instance.info.jointIndex = dummySkinOffset;
       }
     }
+  }
+}
+
+
+
+
+GltfAnimationInterpolator::GltfAnimationInterpolator(
+        std::shared_ptr<GltfAnimationSampler> sampler)
+: m_sampler(std::move(sampler)) {
+
+}
+
+
+GltfAnimationInterpolator::~GltfAnimationInterpolator() {
+
+}
+
+
+void GltfAnimationInterpolator::readData() {
+  // Read input sampler
+  auto timestamps = m_sampler->getInput();
+  m_timestamps.resize(timestamps->getElementCount());
+
+  for (size_t i = 0; i < m_timestamps.size(); i++)
+    timestamps->getElementData(i, &m_timestamps[i]);
+
+  // Read output sampler and convert to vec4
+  std::array<float, 16> floats = { };
+
+  auto keyframes = m_sampler->getOutput();
+  m_keyframes.resize(keyframes->getElementCount());
+
+  for (size_t i = 0; i < m_keyframes.size(); i++) {
+    keyframes->getElementData(i, floats.data());
+    m_keyframes[i] = Vector4D(floats[0], floats[1], floats[2], floats[3]);
+  }
+}
+
+
+float GltfAnimationInterpolator::interpolateScalar(
+        float                         timestamp) const {
+  Vector4D a, b;
+  float t = getKeyframePair(timestamp, a, b);
+  return (a + (b - a) * t).at<0>();
+}
+
+
+Vector3D GltfAnimationInterpolator::interpolateVec3(
+        float                         timestamp) const {
+  Vector4D a, b;
+  float t = getKeyframePair(timestamp, a, b);
+  return (a + (b - a) * t).get<0, 1, 2>();
+}
+
+
+Quat GltfAnimationInterpolator::interpolateQuaternion(
+        float                         timestamp) const {
+  // TODO actually slerp.
+  Vector4D a, b;
+  float t = getKeyframePair(timestamp, a, b);
+  a = normalize(a);
+  b = normalize(b);
+  return Quat(normalize(a + (b - a) * t));
+}
+
+
+uint32_t GltfAnimationInterpolator::findKeyframe(
+        float                         timestamp) const {
+  size_t lo = 0;
+  size_t hi = m_timestamps.size();
+
+  while (lo < hi) {
+    size_t pivot = (lo + hi) / 2;
+    float t = m_timestamps[pivot];
+
+    if (timestamp >= t)
+      lo = pivot + 1;
+    else
+      hi = pivot;
+  }
+
+  return lo;
+}
+
+
+float GltfAnimationInterpolator::getKeyframePair(
+        float                         timestamp,
+        Vector4D&                     a,
+        Vector4D&                     b) const {
+  uint32_t hi = findKeyframe(timestamp);
+
+  if (hi == 0) {
+    a = m_keyframes.front();
+    b = m_keyframes.front();
+    return 0.0f;
+  } else if (hi == m_keyframes.size()) {
+    a = m_keyframes.back();
+    b = m_keyframes.back();
+    return 0.0f;
+  } else {
+    a = m_keyframes.at(hi - 1);
+    b = m_keyframes.at(hi);
+
+    float loTime = m_timestamps.at(hi - 1);
+    float hiTime = m_timestamps.at(hi);
+
+    return (timestamp - loTime) / (hiTime - loTime);
+  }
+}
+
+
+
+
+GltfAnimationConverter::GltfAnimationConverter(
+  const GltfJointMap&                 jointMap,
+        std::shared_ptr<GltfAnimation> animation)
+: m_animation(std::move(animation)) {
+  // Gather unique nodes, timestamp accessors etc.
+  auto channels = m_animation->getChannels();
+
+  for (auto c = channels.first; c != channels.second; c++) {
+    auto sampler = (*c)->getSampler();
+
+    if (sampler->getInterpolation() != GltfAnimationInterpolation::eLinear) {
+      Log::err("Interpolation mode ", uint32_t(sampler->getInterpolation()), " not supported");
+      continue;
+    }
+
+    auto interpolator = std::make_shared<GltfAnimationInterpolator>(sampler);
+
+    m_inputAccessors.insert(sampler->getInput());
+
+    auto node = (*c)->getNode();
+
+    if (node != nullptr) {
+      // Check whether the node represents a valid joint first
+      auto entry = jointMap.find(node);
+
+      if (entry != jointMap.end()) {
+        // Inverse bind matrices in GLTF transform from one node
+        // to another, but we need it to be in model space so just
+        // invert the absolute transform.
+        auto& info = m_joints.emplace(node, JointInfo()).first->second;
+        info.index = entry->second;
+        info.inverseBind = entry->first->computeAbsoluteTransform().inverse();
+
+        switch ((*c)->getPath()) {
+          case GltfAnimationPath::eRotation:
+            info.rotation = interpolator;
+            break;
+
+          case GltfAnimationPath::eTranslation:
+            info.translation = interpolator;
+            break;
+
+          case GltfAnimationPath::eScale:
+            info.scale = interpolator;
+            break;
+
+          case GltfAnimationPath::eWeights:
+            break;
+        }
+      }
+
+      // If the node has a mesh, this must be a morph target animation
+      auto mesh = node->getMesh();
+
+      if (mesh != nullptr) {
+        Log::err("Morph target animations TODO.");
+      }
+    }
+  }
+}
+
+
+GltfAnimationConverter::~GltfAnimationConverter() {
+
+}
+
+
+GfxAnimationMetadata GltfAnimationConverter::getMetadata() const {
+  GfxAnimationMetadata result;
+  result.name = m_animation->getName();
+  result.groupCount = m_animationGroups.size();
+
+  if (!m_keyframeArray.empty())
+    result.duration = m_keyframeArray.back().timestamp;
+
+  return result;
+}
+
+
+void GltfAnimationConverter::pushArrays(
+        std::vector<GfxAnimationGroup>& groups,
+        std::vector<GfxAnimationKeyframe>& keyframes,
+        std::vector<GfxAnimationJoint>& joints,
+        std::vector<float>&           weights) const {
+  for (auto group : m_animationGroups) {
+    group.keyframeIndex += keyframes.size();
+    group.morphTargetWeightIndex += weights.size();
+    group.jointTransformIndex += joints.size();
+    groups.push_back(group);
+  }
+
+  keyframes.insert(keyframes.end(), m_keyframeArray.begin(), m_keyframeArray.end());
+  joints.insert(joints.end(), m_jointArray.begin(), m_jointArray.end());
+  weights.insert(weights.end(), m_weightArray.begin(), m_weightArray.end());
+}
+
+
+Job GltfAnimationConverter::dispatchConvert(
+  const Jobs&                         jobs) {
+  return jobs->dispatch(jobs->create<SimpleJob>(
+    [cThis = shared_from_this()] {
+      cThis->loadInterpolatorData();
+      cThis->buildKeyframeTree();
+      cThis->buildAnimationGroups();
+    }));
+}
+
+
+void GltfAnimationConverter::loadInterpolatorData() {
+  for (auto& j : m_joints) {
+    if (j.second.translation != nullptr)
+      j.second.translation->readData();
+
+    if (j.second.rotation != nullptr)
+      j.second.rotation->readData();
+
+    if (j.second.scale != nullptr)
+      j.second.scale->readData();
+  }
+}
+
+
+void GltfAnimationConverter::buildKeyframeTree() {
+  // Use only one set of key frames so that we can minimize the number
+  // of animation groups, and don't have to worry about mismatches
+  // between GLTF animation concepts and ours since we can just sample
+  // all animated nodes at all keyframes at build time. While this
+  // approach will use more memory, it likely results in the fastest
+  // shader execution time.
+
+  // Create a linear array of input (timestamp) accessors
+  // paired with the index that we're reading from next
+  std::vector<std::pair<std::shared_ptr<GltfAccessor>, uint32_t>> accessors;
+
+  for (const auto& a : m_inputAccessors)
+    accessors.push_back(std::make_pair(a, 0u));
+
+  // Array of accessors to advance
+  std::vector<size_t> accessorAdvance;
+
+  // Build array of keyframe leaf nodes by iterating over
+  // all input accessor and finding the one that has the
+  // smallest timestamp.
+  std::vector<GfxAnimationKeyframe> keyframes;
+
+  while (true) {
+    bool allAtEnd = true;
+
+    // Do initial pass to find the smallest timestamp
+    float minTimestamp = 0.0f;
+
+    for (size_t i = 0; i < accessors.size(); i++) {
+      const auto& s = accessors.at(i);
+
+      if (s.second == s.first->getElementCount())
+        continue;
+
+      float timestamp = 0.0f;
+
+      if (!s.first->getElementData(s.second, &timestamp))
+        continue;
+
+      if (timestamp < minTimestamp)
+        accessorAdvance.clear();
+
+      if (allAtEnd || timestamp <= minTimestamp) {
+        accessorAdvance.push_back(i);
+        minTimestamp = timestamp;
+        allAtEnd = false;
+      }
+    }
+
+    // Exit if we couldn't read a single sampler, there
+    // are simply no more keyframes left to process.
+    if (allAtEnd)
+      break;
+
+    // Advance all samplers with the minimum timestamp
+    for (auto i : accessorAdvance)
+      accessors.at(i).second += 1;
+
+    accessorAdvance.clear();
+
+    // Add keyframe as a leaf node to the array
+    auto& keyframe = keyframes.emplace_back();
+    keyframe.timestamp = minTimestamp;
+    keyframe.nextIndex = uint24_t(keyframes.size() - 1);
+    keyframe.nextCount = 0;
+  }
+
+  // If there are more keyframes than a shader can reasonably
+  // process in one iteration, add more layers.
+  size_t layerSize = keyframes.size();
+
+  while (layerSize > NodesPerLayer) {
+    // Build the tree in such a way that the last child of one node is the
+    // first child of the next node within the same layer. This is necessary
+    // to avoid gaps, and also means that all nodes intrinsically fulfill
+    // the condition of having two or more child nodes.
+    size_t nextSize = ((NodesPerLayer - 3) + layerSize)
+                    / ((NodesPerLayer - 1));
+
+    // Since we're essentially going to shift all nodes right within the
+    // array, increment node indices for all non-leaf nodes as necessaey.
+    for (auto& k : keyframes) {
+      if (k.nextCount)
+        k.nextIndex = uint24_t(uint32_t(k.nextIndex) + nextSize);
+      else
+        break;
+    }
+
+    // Compute keyframe nodes for the current layer
+    std::vector<GfxAnimationKeyframe> layerNodes;
+    layerNodes.reserve(nextSize);
+
+    for (size_t i = 0; i < nextSize; i++) {
+      size_t index = i * (NodesPerLayer - 1);
+      size_t count = std::min(NodesPerLayer, layerSize - index);
+
+      auto& layer = layerNodes.emplace_back();
+      layer.timestamp = keyframes.at(index).timestamp;
+      layer.nextIndex = uint24_t(index + nextSize);
+      layer.nextCount = uint8_t(count);
+    }
+
+    // Insert layer at the start of the array. Inefficient, but the number
+    // of keyframes won't generally be high enough to warrant a significant
+    // amount of extra complexity here.
+    keyframes.insert(keyframes.begin(),
+      layerNodes.begin(), layerNodes.end());
+
+    layerSize = nextSize;
+  }
+
+  // Set up metadata and assign keyframe array
+  m_keyframeTopLevelNodes = uint32_t(layerSize);
+  m_keyframeArray = std::move(keyframes);
+}
+
+
+void GltfAnimationConverter::buildAnimationGroups() {
+  // Linearize node sets so we can more easily iterate over them
+  std::vector<std::pair<std::shared_ptr<GltfNode>, JointInfo>> joints;
+
+  for (auto& j : m_joints)
+    joints.push_back(j);
+
+  // Order by joint ID since we need to process them in order.
+  std::sort(joints.begin(), joints.end(), [] (const auto& a, const auto& b) {
+    return a.second.index < b.second.index;
+  });
+
+  // Compute global transforms for each joint separately. This is
+  // necessary because GLTF animations store joints as a mess of
+  // global transforms and inverse bind matrices, but we require
+  // transforms to be relative to the parent joint instad.
+  std::unordered_map<std::shared_ptr<GltfNode>, std::vector<QuatTransform>> jointTransforms;
+  std::unordered_map<std::shared_ptr<GltfNode>, std::vector<QuatTransform>> absTransforms;
+  std::unordered_map<std::shared_ptr<GltfNode>, std::vector<QuatTransform>> relTransforms;
+
+  for (const auto& joint : joints) {
+    auto globalParent = jointTransforms.find(joint.first->getParent());
+    auto absParent = absTransforms.find(joint.first->getParent());
+
+    auto& global = jointTransforms.emplace(std::piecewise_construct,
+      std::tuple(joint.first), std::tuple()).first->second;
+    auto& abs = absTransforms.emplace(std::piecewise_construct,
+      std::tuple(joint.first), std::tuple()).first->second;
+    auto& rel = relTransforms.emplace(std::piecewise_construct,
+      std::tuple(joint.first), std::tuple()).first->second;
+
+    QuatTransform rootTransform = QuatTransform::identity();
+    
+    if (joint.first->getParent() != nullptr)
+      rootTransform = joint.first->getParent()->computeAbsoluteTransform();
+
+    for (size_t k = 0; k < m_keyframeArray.size(); k++) {
+      // Compute local transform by sampling key frames
+      const auto& keyframe = m_keyframeArray.at(k);
+
+      Vector3D translation = joint.second.translation != nullptr
+        ? joint.second.translation->interpolateVec3(keyframe.timestamp)
+        : Vector3D(0.0f);
+
+      Quat rotation = joint.second.rotation != nullptr
+        ? joint.second.rotation->interpolateQuaternion(keyframe.timestamp)
+        : Quat::identity();
+
+      Vector3D scale = joint.second.scale != nullptr
+        ? joint.second.scale->interpolateVec3(keyframe.timestamp)
+        : Vector3D(1.0f);
+
+      float uniformScale = std::max(std::abs(scale.at<0>()),
+        std::max(std::abs(scale.at<1>()), std::abs(scale.at<2>())));
+
+      QuatTransform globalTransform(
+        rotation * approx_rsqrt(uniformScale),
+        Vector4D(translation, 0.0f));
+
+      // Compute global transform by applying parent transforms
+      if (globalParent != jointTransforms.end())
+        globalTransform = globalParent->second.at(k).chain(globalTransform);
+      else
+        globalTransform = rootTransform.chain(globalTransform);
+
+      global.push_back(globalTransform);
+
+      // Compute relative transform by solving the following equation for as_rel:
+      // gltf_global * gltf_inverse_bind = as_parent * as_pos * as_rel * inverse(as_pos)
+      QuatTransform parentTransform = QuatTransform::identity();
+
+      if (absParent != absTransforms.end())
+        parentTransform = absParent->second.at(k);
+
+      QuatTransform jointPos = QuatTransform(Quat::identity(),
+        joint.first->computeAbsoluteTransform().getTranslation());
+
+      QuatTransform inverseBind = joint.second.inverseBind;
+
+      QuatTransform relativeTransform = jointPos.inverse()
+        .chain(parentTransform.inverse())
+        .chain(globalTransform)
+        .chain(inverseBind)
+        .chain(jointPos);
+
+      rel.push_back(relativeTransform);
+
+      // Compute absolute transform the way we do in the shader
+      QuatTransform absoluteTransform = parentTransform
+        .chain(jointPos)
+        .chain(relativeTransform)
+        .chain(jointPos.inverse());
+
+      abs.push_back(absoluteTransform);
+    }
+  }
+
+  // Initialize common animation group properties
+  GfxAnimationGroup group = { };
+  group.duration = m_keyframeArray.back().timestamp;
+  group.keyframeIndex = 0;
+  group.keyframeCount = m_keyframeTopLevelNodes;
+
+  size_t iterationCount = joints.size();
+
+  for (size_t i = 0; i < iterationCount; i += NodesPerLayer) {
+    group.morphTargetWeightIndex = m_weightArray.size();
+    group.morphTargetCount = 0;
+    group.jointTransformIndex = m_jointArray.size();
+    group.jointCount = 0;
+
+    for (size_t j = 0; j < NodesPerLayer; j++) {
+      size_t index = i + j;
+
+      if (index < joints.size()) {
+        const auto& joint = joints.at(index).second;
+        group.jointCount += 1;
+        group.jointIndices.at(j) = joint.index;
+      } else {
+        group.jointIndices.at(j) = 0;
+      }
+    }
+
+    for (size_t j = 0; j < m_keyframeArray.size(); j++) {
+      const auto& keyframe = m_keyframeArray.at(j);
+
+      if (keyframe.nextCount)
+        continue;
+
+      for (size_t k = 0; k < group.jointCount; k++) {
+        const auto& joint = joints.at(i + k);
+
+        const auto& entry = relTransforms.find(joint.first);
+        dbg_assert(entry != relTransforms.end());
+
+        QuatTransform relativeTransform = entry->second.at(j);
+
+        GfxAnimationJoint jointData = { };
+        jointData.transform = relativeTransform.getRotation().getVector();
+        jointData.translate = relativeTransform.getTranslation().get<0, 1, 2>();
+        m_jointArray.push_back(jointData);
+      }
+    }
+
+    m_animationGroups.push_back(group);
   }
 }
 
@@ -1921,7 +2419,13 @@ Job GltfConverter::dispatchConvert() {
   computeJointIndices();
 
   for (const auto& converter : m_meshConverters)
-    converter->applySkins(m_jointIndices);
+    converter->applySkins(m_jointMap);
+
+  // Add animations. This step requires correct joint indices.
+  auto animations = m_asset->getAnimations();
+
+  for (auto a = animations.first; a != animations.second; a++)
+    addAnimation(*a);
 
   // Dispatch actual mesh conversion jobs, as well
   // as the jobs to compute the object's AABB.
@@ -1932,6 +2436,10 @@ Job GltfConverter::dispatchConvert() {
     dependencies.push_back(converterJob);
     dependencies.push_back(converter->dispatchComputeAabb(m_jobs, converterJob, m_aabb));
   }
+
+  // Dispatch animation conversion jobs
+  for (const auto& converter : m_animationConverters)
+    dependencies.push_back(converter->dispatchConvert(m_jobs));
 
   // Dispatch final job that creates the geometry
   // object as well as all the mesh buffers.
@@ -2081,6 +2589,18 @@ void GltfConverter::buildGeometry() {
     m_geometry->morphTargets.at(morphTarget.morphTargetIndex) = morphTarget;
   }
 
+  // Add animation metadata to geometry object
+  uint32_t animationGroup = 0;
+
+  for (const auto& a : m_animationConverters) {
+    GfxAnimationMetadata metadata = a->getMetadata();
+    metadata.groupIndex = animationGroup;
+
+    m_geometry->animations.push_back(metadata);
+
+    animationGroup += metadata.groupCount;
+  }
+
   // At this point, all non-meshlet metadata is accounted
   // for, so we can compute the final buffer sizes.
   m_geometry->info.meshletDataOffset = bufferOffset;
@@ -2128,6 +2648,7 @@ void GltfConverter::buildGeometry() {
   }
 
   buildBuffers(meshlets);
+  buildAnimationBuffer();
 }
 
 
@@ -2192,6 +2713,53 @@ void GltfConverter::buildBuffers(
       sizeof(jointMetatata.info) * i,
       &jointMetatata.info, sizeof(jointMetatata.info));
   }
+}
+
+
+void GltfConverter::buildAnimationBuffer() {
+  std::vector<GfxAnimationGroup> groups;
+  std::vector<GfxAnimationKeyframe> keyframes;
+  std::vector<GfxAnimationJoint> joints;
+  std::vector<float> weights;
+
+  for (const auto& animation : m_animationConverters)
+    animation->pushArrays(groups, keyframes, joints, weights);
+
+  // Initialize buffer metadata and allocate storage
+  uint32_t offset = 0;
+  allocateStorage(offset, sizeof(GfxAnimationInfo) + sizeof(GfxAnimationGroup) * groups.size());
+
+  GfxAnimationInfo info = { };
+  info.groupCount = uint32_t(groups.size());
+
+  if (!keyframes.empty()) {
+    info.keyframeDataOffset = allocateStorage(offset,
+      sizeof(GfxAnimationKeyframe) * keyframes.size());
+  }
+
+  if (!joints.empty()) {
+    info.jointDataOffset = allocateStorage(offset,
+      sizeof(GfxAnimationJoint) * joints.size());
+  }
+
+  if (!weights.empty()) {
+    info.weightDataOffset = allocateStorage(offset,
+      sizeof(float) * weights.size());
+  }
+
+  // Create buffer and copy everything to it. This is
+  // just a bunch of memcpys since we use flat arrays.
+  m_animationBuffer.resize(offset);
+
+  writeAnimationData(0, &info, sizeof(info));
+  writeAnimationData(sizeof(info), groups.data(),
+    sizeof(GfxAnimationGroup) * info.groupCount);
+  writeAnimationData(info.keyframeDataOffset, keyframes.data(),
+    sizeof(GfxAnimationKeyframe) * keyframes.size());
+  writeAnimationData(info.jointDataOffset, joints.data(),
+    sizeof(GfxAnimationJoint) * joints.size());
+  writeAnimationData(info.weightDataOffset, weights.data(),
+    sizeof(float) * weights.size());
 }
 
 
@@ -2300,18 +2868,27 @@ void GltfConverter::addMeshInstance(
   }
 
   if (node->getSkin() != nullptr)
-    addSkin(node->getSkin());
+    addSkin(node, node->getSkin());
 }
 
 
 void GltfConverter::addSkin(
+  const std::shared_ptr<GltfNode>&    node,
         std::shared_ptr<GltfSkin>     skin) {
   // Ignore joint indices for now, just accumulate the
   // nodes in the asset that are actually joints
   auto joints = skin->getJoints();
 
   for (auto j = joints.first; j != joints.second; j++)
-    m_jointIndices.emplace(*j, 0u);
+    m_jointMap.emplace(*j, 0u);
+}
+
+
+void GltfConverter::addAnimation(
+        std::shared_ptr<GltfAnimation> animation) {
+  auto converter = std::make_shared<GltfAnimationConverter>(m_jointMap, animation);
+
+  m_animationConverters.emplace_back(std::move(converter));
 }
 
 
@@ -2321,8 +2898,8 @@ void GltfConverter::computeJointIndices() {
   // This gives us the correct joint order for the final geometry.
   std::queue<std::shared_ptr<GltfNode>> jointQueue;
 
-  for (const auto& p : m_jointIndices) {
-    if (m_jointIndices.find(p.first->getParent()) == m_jointIndices.end())
+  for (const auto& p : m_jointMap) {
+    if (m_jointMap.find(p.first->getParent()) == m_jointMap.end())
       jointQueue.push(p.first);
   }
 
@@ -2332,24 +2909,24 @@ void GltfConverter::computeJointIndices() {
     // Assign final joint index for the current joint
     uint32_t jointIndex = uint32_t(m_jointMetadata.size());
 
-    auto entry = m_jointIndices.find(joint);
-    dbg_assert(entry != m_jointIndices.end());
+    auto entry = m_jointMap.find(joint);
+    dbg_assert(entry != m_jointMap.end());
     entry->second = jointIndex;
 
     // Set joint metadata
-    auto parent = m_jointIndices.find(joint->getParent());
+    auto parent = m_jointMap.find(joint->getParent());
 
     auto& metadata = m_jointMetadata.emplace_back();
     metadata.name = joint->getName();
     metadata.jointIndex = jointIndex;
-    metadata.info.position = Vector3D(joint->computeTransform().getTranslation());
-    metadata.info.parent = parent == m_jointIndices.end() ? ~0u : parent->second;
+    metadata.info.position = Vector3D(joint->computeAbsoluteTransform().getTranslation());
+    metadata.info.parent = parent == m_jointMap.end() ? ~0u : parent->second;
 
     // Add child nodes to the queue
     auto children = joint->getChildren();
 
     for (auto j = children.first; j != children.second; j++) {
-      if (m_jointIndices.find(*j) != m_jointIndices.end())
+      if (m_jointMap.find(*j) != m_jointMap.end())
         jointQueue.push(*j);
     }
 
@@ -2368,6 +2945,21 @@ void GltfConverter::writeBufferData(
   if (offset + size > storage.size()) {
     Log::err("Buffer write failed: buffer index = ", buffer,
       " (", storage.size(), "), offset = ", offset, ", size = ", size);
+    return;
+  }
+
+  std::memcpy(&storage[offset], data, size);
+}
+
+
+void GltfConverter::writeAnimationData(
+        uint32_t                      offset,
+  const void*                         data,
+        size_t                        size) {
+  auto& storage = m_animationBuffer;
+
+  if (offset + size > storage.size()) {
+    Log::err("Animation data write failed (", storage.size(), "), offset = ", offset, ", size = ", size);
     return;
   }
 

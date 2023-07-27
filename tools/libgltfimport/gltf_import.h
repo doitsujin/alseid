@@ -1,5 +1,8 @@
 #pragma once
 
+#include <unordered_map>
+#include <unordered_set>
+
 // not sure how to include this, the CMake project does
 // not appear to set include directories we can use
 #include "../../subprojects/meshoptimizer/src/meshoptimizer.h"
@@ -436,6 +439,12 @@ private:
  * \brief Morph target lookup table
  */
 using GltfMorphTargetMap = std::unordered_map<std::string, uint32_t>;
+
+
+/**
+ * \brief Joint info lookup table
+ */
+using GltfJointMap = std::unordered_map<std::shared_ptr<GltfNode>, uint32_t>;
 
 
 /**
@@ -950,10 +959,10 @@ public:
    * \brief Generates joint index array for skins
    *
    * Produces one set of joint indices per unique skin.
-   * \param [in] jointIndexMap Joint lookup table
+   * \param [in] jointMap Joint lookup table
    */
   void applySkins(
-    const std::unordered_map<std::shared_ptr<GltfNode>, uint32_t>& jointIndexMap);
+    const GltfJointMap&                 jointMap);
 
   /**
    * \brief Dispatches conversion job
@@ -1010,6 +1019,151 @@ private:
   void accumulateLods();
 
   void processInstances();
+
+};
+
+
+/**
+ * \brief Animation interpolator
+ *
+ * Provides functionality to read and interpolate
+ * animation data at given time stamps.
+ */
+class GltfAnimationInterpolator {
+
+public:
+
+  GltfAnimationInterpolator(
+          std::shared_ptr<GltfAnimationSampler> sampler);
+
+  ~GltfAnimationInterpolator();
+
+  /**
+   * \brief Reads sampler data
+   * \returns Sampler data
+   */
+  void readData();
+
+  /**
+   * \brief Interpolates scalar keyframe data
+   *
+   * Reads source data as if it was scalar.
+   * Useful for morph target weights.
+   * \returns Interpolated key frame data
+   */
+  float interpolateScalar(
+          float                         timestamp) const;
+
+  /**
+   * \brief Interpolates 3D vector
+   *
+   * Useful for joint scaling and translation.
+   * \returns Interpolated key frame data
+   */
+  Vector3D interpolateVec3(
+          float                         timestamp) const;
+
+  /**
+   * \brief Interpolates quaternion
+   *
+   * Uses slerp to interpolate between keyframes.
+   * \returns Interpolated key frame data
+   */
+  Quat interpolateQuaternion(
+          float                         timestamp) const;
+
+private:
+
+  std::shared_ptr<GltfAnimationSampler> m_sampler;
+
+  std::vector<float>                    m_timestamps;
+  std::vector<Vector4D>                 m_keyframes;
+
+  uint32_t findKeyframe(
+          float                         timestamp) const;
+
+  float getKeyframePair(
+          float                         timestamp,
+          Vector4D&                     a,
+          Vector4D&                     b) const;
+
+};
+
+
+/**
+ * \brief Animation converter
+ *
+ * Produces keyframe data for a single GLTF animation.
+ */
+class GltfAnimationConverter : public std::enable_shared_from_this<GltfAnimationConverter> {
+  constexpr static size_t NodesPerLayer = 32;
+public:
+
+  GltfAnimationConverter(
+    const GltfJointMap&                 jointMap,
+          std::shared_ptr<GltfAnimation> animation);
+
+  ~GltfAnimationConverter();
+
+  /**
+   * \brief Retrieves animation metadata
+   * \returns Animation metadata
+   */
+  GfxAnimationMetadata getMetadata() const;
+
+  /**
+   * \brief Pushes data to a set of builder arrays
+   *
+   * \param [out] groups Animation group array
+   * \param [out] keyframes Keyframe array
+   * \param [out] joints Joint transform array
+   * \param [out] weights Morph target weight array
+   */
+  void pushArrays(
+          std::vector<GfxAnimationGroup>& groups,
+          std::vector<GfxAnimationKeyframe>& keyframes,
+          std::vector<GfxAnimationJoint>& joints,
+          std::vector<float>&           weights) const;
+
+  /**
+   * \brief Dispatches animation conversion job
+   *
+   * Creates animation groups and dispatches
+   * jobs to build buffers for each of them.
+   * \param [in] jobs Job manager instance
+   * \returns Job to synchronize with
+   */
+  Job dispatchConvert(
+    const Jobs&                         jobs);
+
+private:
+
+  struct JointInfo {
+    std::shared_ptr<GltfAnimationInterpolator> translation;
+    std::shared_ptr<GltfAnimationInterpolator> rotation;
+    std::shared_ptr<GltfAnimationInterpolator> scale;
+    QuatTransform inverseBind = QuatTransform::identity();
+    uint32_t index = 0;
+  };
+
+  std::shared_ptr<GltfAnimation>    m_animation;
+
+  std::unordered_set<std::shared_ptr<GltfAccessor>>         m_inputAccessors;
+  std::unordered_map<std::shared_ptr<GltfNode>, JointInfo>  m_joints;
+
+  std::vector<GfxAnimationGroup>    m_animationGroups;
+
+  uint32_t                          m_keyframeTopLevelNodes = 0;
+
+  std::vector<GfxAnimationKeyframe> m_keyframeArray;
+  std::vector<GfxAnimationJoint>    m_jointArray;
+  std::vector<float>                m_weightArray;
+
+  void loadInterpolatorData();
+
+  void buildKeyframeTree();
+
+  void buildAnimationGroups();
 
 };
 
@@ -1086,8 +1240,7 @@ private:
   std::unordered_map<
     std::shared_ptr<GltfMaterial>, uint32_t>  m_materialIndices;
 
-  std::unordered_map<
-    std::shared_ptr<GltfNode>, uint32_t>      m_jointIndices;
+  GltfJointMap                                m_jointMap;
 
   std::shared_ptr<GltfMorphTargetMap>         m_morphTargetMap;
 
@@ -1096,12 +1249,15 @@ private:
 
   std::shared_ptr<GltfSharedAabb>             m_aabb;
 
+  std::vector<std::shared_ptr<GltfAnimationConverter>> m_animationConverters;
   std::vector<char>                           m_animationBuffer;
 
   void buildGeometry();
 
   void buildBuffers(
     const std::vector<GfxMeshletMetadata>& meshlets);
+
+  void buildAnimationBuffer();
 
   void computeJointBoundingVolumes();
 
@@ -1122,12 +1278,21 @@ private:
           std::shared_ptr<GltfNode>     node);
 
   void addSkin(
+    const std::shared_ptr<GltfNode>&    node,
           std::shared_ptr<GltfSkin>     skin);
+
+  void addAnimation(
+          std::shared_ptr<GltfAnimation> animation);
 
   void computeJointIndices();
 
   void writeBufferData(
           uint32_t                      buffer,
+          uint32_t                      offset,
+    const void*                         data,
+          size_t                        size);
+
+  void writeAnimationData(
           uint32_t                      offset,
     const void*                         data,
           size_t                        size);

@@ -589,7 +589,7 @@ void GltfNode::setSkin(
 }
 
 
-QuatTransform GltfNode::computeTransform() const {
+QuatTransform GltfNode::computeRelativeTransform() const {
   QuatTransform result;
 
   if (m_matrix != Matrix4x4::identity()) {
@@ -623,10 +623,17 @@ QuatTransform GltfNode::computeTransform() const {
       Vector4D(m_translation, 0.0f));
   }
 
+  return result;
+}
+
+
+QuatTransform GltfNode::computeAbsoluteTransform() const {
+  QuatTransform result = computeRelativeTransform();
+
   auto parent = m_parent.lock();
 
   if (parent != nullptr)
-    result = parent->computeTransform().chain(result);
+    result = parent->computeAbsoluteTransform().chain(result);
 
   return result;
 }
@@ -715,10 +722,11 @@ void from_json(const json& j, GltfAnimationChannel::Desc& desc) {
   desc = GltfAnimationChannel::Desc();
   j.at("sampler").get_to(desc.sampler);
 
-  auto target = j.at("target");
-
   std::string path;
-  target.at("path").get_to(target);
+
+  auto target = j.at("target");
+  target.at("path").get_to(path);
+  target.at("node").get_to(desc.node);
 
   if (path == "weights")
     desc.path = GltfAnimationPath::eWeights;
@@ -728,9 +736,6 @@ void from_json(const json& j, GltfAnimationChannel::Desc& desc) {
     desc.path = GltfAnimationPath::eRotation;
   else if (path == "scale")
     desc.path = GltfAnimationPath::eScale;
-
-  if (target.count("node"))
-    target.at("node").get_to(desc.node);
 }
 
 

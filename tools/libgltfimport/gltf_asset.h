@@ -805,7 +805,15 @@ public:
    * and no mirroring without additional data.
    * \returns Node transform
    */
-  QuatTransform computeTransform() const;
+  QuatTransform computeRelativeTransform() const;
+
+  /**
+   * \brief Computes absolute node transform
+   *
+   * Also applies all parent node transforms.
+   * \returns Node transform
+   */
+  QuatTransform computeAbsoluteTransform() const;
 
 private:
 
