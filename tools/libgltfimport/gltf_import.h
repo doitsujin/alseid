@@ -1055,6 +1055,16 @@ public:
   }
 
   /**
+   * \brief Retrieves animation buffer
+   *
+   * Must always be stored last in a file.
+   * \returns Animation buffer view
+   */
+  RdMemoryView getAnimationBuffer() const {
+    return RdMemoryView(m_animationBuffer);
+  }
+
+  /**
    * \brief Dispatches job to convert the asset
    *
    * Processes all meshes and builds all buffers as
@@ -1085,6 +1095,8 @@ private:
   std::vector<GfxJointMetadata>               m_jointMetadata;
 
   std::shared_ptr<GltfSharedAabb>             m_aabb;
+
+  std::vector<char>                           m_animationBuffer;
 
   void buildGeometry();
 

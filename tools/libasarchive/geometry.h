@@ -53,6 +53,9 @@ private:
   std::vector<size_t>       m_rawSizes;
   std::vector<ArchiveData>  m_buffers;
 
+  size_t                    m_animationSize = 0;
+  ArchiveData               m_animationBuffer;
+
   std::shared_ptr<GltfConverter> m_converter;
 
   BuildResult runIoJob();
