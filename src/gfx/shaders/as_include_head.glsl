@@ -20,6 +20,7 @@
 #extension GL_KHR_shader_subgroup_basic : enable
 #extension GL_KHR_shader_subgroup_ballot : enable
 #extension GL_KHR_shader_subgroup_clustered : enable
+#extension GL_KHR_shader_subgroup_shuffle : enable
 #extension GL_KHR_shader_subgroup_vote : enable
 #endif
 
@@ -28,6 +29,7 @@
 #include "as_matrix.glsl"
 #include "as_quaternion.glsl"
 #include "as_geometry.glsl"
+#include "as_animation.glsl"
 
 // Task shader includes
 #ifdef STAGE_TASK

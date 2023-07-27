@@ -26,13 +26,20 @@ float quatGetScale(vec4 q) {
 
 
 
+// Quaternion normalized linear iterpolation.
+// Use when the accuracy of slerp is not needed.
+vec4 quatNlerp(vec4 v0, vec4 v1, float t) {
+  return normalize(mix(v0, v1, t));
+}
+
+
 // Quaterion slerp. Note that this is slow and
 // should only be used if absolutely necessary.
 vec4 quatSlerp(vec4 v0, vec4 v1, float t) {
   float d = clamp(dot(v0, v1), -1.0f, 1.0f);
 
   if (d > 0.9995f)
-    return normalize(mix(v0, v1, t));
+    return quatNlerp(v0, v1, t);
 
   float theta = acos(d) * t;
 
