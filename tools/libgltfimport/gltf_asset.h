@@ -902,6 +902,183 @@ private:
 
 
 /**
+ * \brief GLTF animation interpolation
+ */
+enum class GltfAnimationInterpolation : uint32_t {
+  eStep         = 0,
+  eLinear       = 1,
+  eCubicSpline  = 2,
+};
+
+
+/**
+ * \brief GLTF animation sampler
+ */
+class GltfAnimationSampler {
+
+public:
+
+  struct Desc {
+    uint32_t input;
+    uint32_t output;
+    GltfAnimationInterpolation interpolation;
+  };
+
+  GltfAnimationSampler(
+    const std::vector<std::shared_ptr<GltfAccessor>>& accessors,
+    const Desc&                         desc);
+
+  ~GltfAnimationSampler();
+
+  /**
+   * \brief Queries input accessor
+   * \returns Timestamp accessor
+   */
+  std::shared_ptr<GltfAccessor> getInput() const {
+    return m_input;
+  }
+
+  /**
+   * \brief Queries output accessor
+   * \returns Transform data accessor
+   */
+  std::shared_ptr<GltfAccessor> getOutput() const {
+    return m_output;
+  }
+
+  /**
+   * \brief Queries interpolation mode
+   * \returns Interpolation mode
+   */
+  GltfAnimationInterpolation getInterpolation() const {
+    return m_interpolation;
+  }
+
+private:
+
+  std::shared_ptr<GltfAccessor> m_input;
+  std::shared_ptr<GltfAccessor> m_output;
+
+  GltfAnimationInterpolation    m_interpolation;
+
+};
+
+
+/**
+ * \brief GLTF animation path
+ */
+enum class GltfAnimationPath {
+  eWeights        = 0,
+  eTranslation    = 1,
+  eRotation       = 2,
+  eScale          = 3,
+};
+
+
+/**
+ * \brief GLTF animation channel
+ */
+class GltfAnimationChannel {
+
+public:
+
+  struct Desc {
+    uint32_t node;
+    uint32_t sampler;
+    GltfAnimationPath path;
+  };
+
+  GltfAnimationChannel(
+    const std::vector<std::shared_ptr<GltfAnimationSampler>>& samplers,
+    const std::vector<std::shared_ptr<GltfNode>>& nodes,
+    const Desc&                         desc);
+
+  ~GltfAnimationChannel();
+
+  /**
+   * \brief Retrieves animated node
+   * \returns Node. May be \c nullptr.
+   */
+  std::shared_ptr<GltfNode> getNode() const {
+    return m_node;
+  }
+
+  /**
+   * \brief Retrieves sampler object
+   * \returns Animation sampler
+   */
+  std::shared_ptr<GltfAnimationSampler> getSampler() const {
+    return m_sampler;
+  }
+
+  /**
+   * \brief Queries animation path
+   * \returns Animation path
+   */
+  GltfAnimationPath getPath() const {
+    return m_path;
+  }
+
+private:
+
+  std::shared_ptr<GltfNode>             m_node;
+  std::shared_ptr<GltfAnimationSampler> m_sampler;
+  GltfAnimationPath                     m_path;
+
+};
+
+
+/**
+ * \brief GLTF animation
+ */
+class GltfAnimation {
+
+public:
+
+  struct Desc {
+    std::string name;
+    std::vector<GltfAnimationChannel::Desc> channels;
+    std::vector<GltfAnimationSampler::Desc> samplers;
+  };
+
+  GltfAnimation(
+    const std::vector<std::shared_ptr<GltfAccessor>>& accessors,
+    const std::vector<std::shared_ptr<GltfNode>>& nodes,
+    const Desc&                         desc);
+
+  ~GltfAnimation();
+
+  /**
+   * \brief Retrieves animation name
+   * \returns Animation name
+   */
+  std::string getName() const {
+    return m_name;
+  }
+
+  /**
+   * \brief Retrieves animation channels
+   *
+   * Samplers can be directly queried from each channel.
+   * \returns Animation channel iterator pair
+   */
+  auto getChannels() const {
+    return std::make_pair(
+      m_channels.begin(),
+      m_channels.end());
+  }
+
+private:
+
+  std::string     m_name;
+
+  std::vector<std::shared_ptr<GltfAnimationSampler>> m_samplers;
+  std::vector<std::shared_ptr<GltfAnimationChannel>> m_channels;
+
+};
+
+
+/**
  * \brief GLTF asset
  */
 class Gltf {
@@ -963,6 +1140,16 @@ public:
       m_skins.end());
   }
 
+  /**
+   * \brief Queries animations
+   * \returns Animation iterator pair
+   */
+  auto getAnimations() const {
+    return std::make_pair(
+      m_animations.begin(),
+      m_animations.end());
+  }
+
 private:
 
   std::string                                   m_jsonString;
@@ -973,6 +1160,7 @@ private:
   std::vector<std::shared_ptr<GltfMesh>>        m_meshes;
   std::vector<std::shared_ptr<GltfNode>>        m_nodes;
   std::vector<std::shared_ptr<GltfSkin>>        m_skins;
+  std::vector<std::shared_ptr<GltfAnimation>>   m_animations;
 
   bool readGlb(
     const IoFile&                       file);
@@ -1001,6 +1189,9 @@ private:
     const json&                         j);
 
   bool parseSkins(
+    const json&                         j);
+
+  bool parseAnimations(
     const json&                         j);
 
 };

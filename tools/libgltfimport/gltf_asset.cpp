@@ -675,6 +675,114 @@ GltfSkin::~GltfSkin() {
 
 
 
+void from_json(const json& j, GltfAnimationSampler::Desc& desc) {
+  desc = GltfAnimationSampler::Desc();
+  desc.interpolation = GltfAnimationInterpolation::eLinear;
+
+  j.at("input").get_to(desc.input);
+  j.at("output").get_to(desc.output);
+
+  if (j.count("interpolation")) {
+    std::string interpolation;
+    j.at("interpolation").get_to(interpolation);
+
+    if (interpolation == "STEP")
+      desc.interpolation = GltfAnimationInterpolation::eStep;
+    else if (interpolation == "CUBICSPLINE")
+      desc.interpolation = GltfAnimationInterpolation::eCubicSpline;
+  }
+}
+
+
+GltfAnimationSampler::GltfAnimationSampler(
+  const std::vector<std::shared_ptr<GltfAccessor>>& accessors,
+  const Desc&                         desc)
+: m_input         (accessors.at(desc.input))
+, m_output        (accessors.at(desc.output))
+, m_interpolation (desc.interpolation) {
+
+}
+
+
+GltfAnimationSampler::~GltfAnimationSampler() {
+
+}
+
+
+
+
+void from_json(const json& j, GltfAnimationChannel::Desc& desc) {
+  desc = GltfAnimationChannel::Desc();
+  j.at("sampler").get_to(desc.sampler);
+
+  auto target = j.at("target");
+
+  std::string path;
+  target.at("path").get_to(target);
+
+  if (path == "weights")
+    desc.path = GltfAnimationPath::eWeights;
+  else if (path == "translation")
+    desc.path = GltfAnimationPath::eTranslation;
+  else if (path == "rotation")
+    desc.path = GltfAnimationPath::eRotation;
+  else if (path == "scale")
+    desc.path = GltfAnimationPath::eScale;
+
+  if (target.count("node"))
+    target.at("node").get_to(desc.node);
+}
+
+
+GltfAnimationChannel::GltfAnimationChannel(
+  const std::vector<std::shared_ptr<GltfAnimationSampler>>& samplers,
+  const std::vector<std::shared_ptr<GltfNode>>& nodes,
+  const Desc&                         desc)
+: m_sampler   (samplers.at(desc.sampler))
+, m_path      (desc.path) {
+  if (desc.node < nodes.size())
+    m_node = nodes.at(desc.node);
+}
+
+
+GltfAnimationChannel::~GltfAnimationChannel() {
+
+}
+
+
+
+
+void from_json(const json& j, GltfAnimation::Desc& desc) {
+  desc = GltfAnimation::Desc();
+
+  j.at("channels").get_to(desc.channels);
+  j.at("samplers").get_to(desc.samplers);
+
+  if (j.count("name"))
+    j.at("name").get_to(desc.name);
+}
+
+
+GltfAnimation::GltfAnimation(
+  const std::vector<std::shared_ptr<GltfAccessor>>& accessors,
+  const std::vector<std::shared_ptr<GltfNode>>& nodes,
+  const Desc&                         desc)
+: m_name(desc.name) {
+  for (const auto& sampler : desc.samplers)
+    m_samplers.emplace_back(std::make_shared<GltfAnimationSampler>(accessors, sampler));
+
+  for (const auto& channel : desc.channels)
+    m_channels.emplace_back(std::make_shared<GltfAnimationChannel>(m_samplers, nodes, channel));
+}
+
+
+GltfAnimation::~GltfAnimation() {
+
+}
+
+
+
+
 Gltf::Gltf(
   const Io&                           io,
   const std::filesystem::path&        path) {
@@ -695,7 +803,8 @@ Gltf::Gltf(
    || !parseMaterials(j)
    || !parseMeshes(j)
    || !parseNodes(j)
-   || !parseSkins(j))
+   || !parseSkins(j)
+   || !parseAnimations(j))
     throw Error("Failed to parse GLTF file");
 }
 
@@ -960,6 +1069,25 @@ bool Gltf::parseSkins(
 
   for (const auto& node : m_nodes)
     node->setSkin(m_skins);
+
+  return true;
+}
+
+
+bool Gltf::parseAnimations(
+  const json&                         j) {
+  if (!j.count("animations"))
+    return true;
+
+  std::vector<GltfAnimation::Desc> animations;
+  j.at("animations").get_to(animations);
+
+  m_animations.reserve(animations.size());
+
+  for (const auto& animation : animations) {
+    m_animations.emplace_back(std::make_shared<GltfAnimation>(
+      m_accessors, m_nodes, animation));
+  }
 
   return true;
 }
