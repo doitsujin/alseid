@@ -226,10 +226,11 @@ struct Meshlet {
   uint16_t  primitiveOffset;
   uint16_t  vertexDataOffset;
   uint16_t  shadingDataOffset;
-  uint16_t  reserved;
+  uint16_t  reserved0;
+  uint16_t  reserved1;
   uint16_t  morphDataOffset;
   uint16_t  morphTargetOffset;
-  uint32_t  morphTargetMask;
+  uint16_t  morphTargetCount;
   uint16_t  jointIndices[MESHLET_JOINT_INDEX_COUNT];
 };
 
@@ -258,8 +259,9 @@ MeshletRef meshletGetHeader(in MeshletMetadataRef dataBuffer, in MeshletMetadata
 // an offset relative to the meshlet that contains
 // morph data.
 struct MeshletMorphTarget {
+  uint16_t  targetIndex;
+  uint16_t  dataIndex;
   uint32_t  vertexMask[4];
-  uint32_t  dataIndex;
 };
 
 

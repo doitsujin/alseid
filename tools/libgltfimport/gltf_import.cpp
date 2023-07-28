@@ -865,8 +865,8 @@ void GltfMeshletBuilder::buildMeshlet(
   std::vector<GfxMeshletMorphTargetInfo> morphTargets;
   std::vector<char> morphBuffer;
 
-  m_metadata.header.morphTargetMask = processMorphTargets(
-    morphTargets, morphBuffer, vertexIndices);
+  processMorphTargets(morphTargets, morphBuffer, vertexIndices);
+  m_metadata.header.morphTargetCount = morphTargets.size();
 
   // Build the actual meshlet buffer
   buildMeshletBuffer(
@@ -1153,7 +1153,7 @@ bool GltfMeshletBuilder::processJoints(
 }
 
 
-uint32_t GltfMeshletBuilder::processMorphTargets(
+void GltfMeshletBuilder::processMorphTargets(
         std::vector<GfxMeshletMorphTargetInfo>& morphTargets,
         std::vector<char>&            morphBuffer,
   const uint32_t*                     vertexIndices) {
@@ -1162,7 +1162,7 @@ uint32_t GltfMeshletBuilder::processMorphTargets(
     GltfPackedVertexStream::eMorphData);
 
   if (!morphDataStride)
-    return 0;
+    return;
 
   // Initialize vertex data reader
   GltfVertexDataReader reader(m_primitive);
@@ -1171,11 +1171,6 @@ uint32_t GltfMeshletBuilder::processMorphTargets(
   // Dummy buffer we can compare vertex data against. There are
   // more efficient solutions, but this way we can just memcmp.
   std::vector<char> zeroVertex(morphDataStride);
-
-  // On input, morph targets may occur in any order so use this
-  // fixed-size array as a reorder buffer. We only support 32
-  // morph targets due to the morph target bit mask existing.
-  std::array<GfxMeshletMorphTargetInfo, 32> targetList = { };
 
   // If positions are morphed, we will have to enlarge the bounding sphere
   float sphereRadiusDelta = 0.0f;
@@ -1213,19 +1208,25 @@ uint32_t GltfMeshletBuilder::processMorphTargets(
     // Find index of the current morph target
     auto entry = m_morphTargetMap->find(target->getName());
     dbg_assert(entry != m_morphTargetMap->end());
-    auto& metadata = targetList.at(entry->second);
-    metadata.dataIndex = morphBuffer.size() / morphDataStride;
 
     // Pack morphed vertex data and append all vertices
     // which have any non-zero data to the output.
     std::vector<char> morphData = packVertices(
       GltfPackedVertexStream::eMorphData, vertices.data());
 
+    GfxMeshletMorphTargetInfo* metadata = nullptr;
+
     for (uint32_t v = 0; v < m_meshlet.vertex_count; v++) {
       if (!std::memcmp(&morphData[v * morphDataStride], &zeroVertex[0], morphDataStride))
         continue;
 
-      metadata.vertexMask.at(v / 32) |= (1u << (v % 32));
+      if (!metadata) {
+        metadata = &morphTargets.emplace_back();
+        metadata->targetIndex = entry->second;
+        metadata->dataIndex = morphBuffer.size() / morphDataStride;
+      }
+
+      metadata->vertexMask.at(v / 32) |= (1u << (v % 32));
 
       size_t offset = morphBuffer.size();
       morphBuffer.resize(offset + morphDataStride);
@@ -1235,33 +1236,15 @@ uint32_t GltfMeshletBuilder::processMorphTargets(
     }
   }
 
-  // Add morph targets with a non-zero vertex mask to the output
-  // array in the correct order, and compute the morph target mask.
-  uint32_t targetMask = 0u;
-
-  for (uint32_t i = 0; i < targetList.size(); i++) {
-    uint32_t vertexMaskAccum = 0;
-
-    for (auto mask : targetList.at(i).vertexMask)
-      vertexMaskAccum |= mask;
-
-    if (vertexMaskAccum) {
-      targetMask |= 1u << i;
-      morphTargets.push_back(targetList.at(i));
-    }
-  }
-
   // Disable cone culling if any morph targets are enabled and
   // vertex positions are morphed, since face normals may change
   // significantly. Also enlarge bounding sphere as necessary.
-  if (targetMask && sphereRadiusDelta > 0.0f) {
+  if (!morphTargets.empty() && sphereRadiusDelta > 0.0f) {
     float sphereRadius = float(m_metadata.info.sphereRadius);
 
     m_metadata.info.flags -= GfxMeshletCullFlag::eCullCone;
     m_metadata.info.sphereRadius = float16_t(sphereRadius + sphereRadiusDelta);
   }
-
-  return targetMask;
 }
 
 
@@ -1464,7 +1447,7 @@ Job GltfMeshPrimitiveConverter::dispatchComputeAabb(
     for (const auto& meshlet : cThis->m_meshlets) {
       auto metadata = meshlet->getMetadata();
 
-      if (metadata.header.morphTargetMask) {
+      if (metadata.header.morphTargetCount) {
         float radius = cTransform.getRotation().scaling() * float(metadata.info.sphereRadius);
         Vector4D pos = cTransform.apply(Vector4D(metadata.info.sphereCenter, 0.0f));
 

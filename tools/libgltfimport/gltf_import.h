@@ -556,7 +556,7 @@ private:
   bool processJoints(
           GltfVertex*                   vertices);
 
-  uint32_t processMorphTargets(
+  void processMorphTargets(
           std::vector<GfxMeshletMorphTargetInfo>& morphTargets,
           std::vector<char>&            morphBuffer,
     const uint32_t*                     vertexIndices);

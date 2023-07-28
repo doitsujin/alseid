@@ -172,7 +172,8 @@ struct GfxMeshletHeader {
   /** Shading data offset relative to the meshlet header. */
   uint16_t shadingDataOffset;
   /** Reserved for future use. */
-  uint16_t reserved;
+  uint16_t reserved0;
+  uint16_t reserved1;
   /** Morph target vertex data offset. Stores a tightly packed
    *  array of material-specific morph data structures that can
    *  be indexed using the vertex mask and offset from the morph
@@ -185,7 +186,7 @@ struct GfxMeshletHeader {
   /** Bit mask of morph targets affecting this meshlet. The number
    *  of bits set here determines the number of morph target info
    *  structures in the buffer. */
-  uint32_t morphTargetMask;
+  uint16_t morphTargetCount;
   /** Indices of joints used in this meshlet. If a meshlet is only
    *  affected by a small number of joints, the mesh shader can load
    *  them all into shared memory at once, the per-vertex joint index
@@ -215,12 +216,14 @@ struct GfxMeshletMetadata {
  * \brief Morph target metadata structure
  */
 struct GfxMeshletMorphTargetInfo {
+  /** Morph target index. */
+  uint16_t targetIndex;
+  /** Index of the morph data structure for the first affected
+   *  vertex in the meshlet morh data array. */
+  uint16_t dataIndex;
   /** Bit mask of meshlet vertices affected by this morph target.
   *   Requires that the meshlet has at most 128 vertices. */
   std::array<uint32_t, 4> vertexMask;
-  /** Index of the morph data structure for the first affected
-   *  vertex in the meshlet morh data array. */
-  uint32_t dataIndex;
 };
 
 static_assert(sizeof(GfxMeshletMorphTargetInfo) == 20);
@@ -626,7 +629,7 @@ struct GfxAnimationGroup {
   uint32_t keyframeCount;
   /** Index of the first morph target weight for the first keyframe
    *  within this animation group. For each keyframe, an array of
-   *  \c popcnt(morphTargetMask) weights is stored at this location. */
+   *  \c morphTargetCount weights is stored at this location. */
   uint32_t morphTargetWeightIndex;
   /** Number of morph targets within the animation group. */
   uint32_t morphTargetCount;
@@ -652,7 +655,7 @@ static_assert(sizeof(GfxAnimationGroup) == 128);
  *
  * Keyframe data is stored as a broad tree in order to facilitate
  * fast lookup on the GPU. Each layer can have up to 32 child nodes,
- * which means that animations with up to 1024 keyframes only need
+ * which means that animations with up to 993 keyframes only need
  * two lookup iterations.
  */
 struct GfxAnimationKeyframe {
@@ -731,9 +734,8 @@ struct GfxGeometryInfo {
   GfxAabb<float16_t> aabb;
   /** Number of materials referenced by the object. */
   uint8_t materialCount;
-  /** Number of morph targets across all meshes. This
-   *  determines the required size of the morph weight
-   *  array passed to shaders. */
+  /** Number of morph targets across all meshes. This determines the
+   *  required size of the morph weight array passed to shaders. */
   uint8_t morphTargetCount;
   /** Data buffer count. For large assets, it is recommended to split off
    *  more detailed LODs into separate buffers, so that geometry data can

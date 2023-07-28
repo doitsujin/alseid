@@ -209,7 +209,10 @@
 #define MAX_PRIM_COUNT (128)
 #endif
 
-#define MAX_MORPH_TARGET_COUNT (32)
+
+// Maximum number of morph targets that can concurrently
+// affect a single meshlet, i.e. have a non-zero weight.
+#define MAX_MORPH_TARGET_COUNT (16)
 
 layout(triangles,
   max_vertices = MAX_VERT_COUNT,
@@ -460,76 +463,63 @@ bool msCullPrimitive(in MsContext context, uvec3 indices) {
 shared MeshletMorphTarget msMorphTargetMetadataShared[MAX_MORPH_TARGET_COUNT];
 shared float msMorphTargetWeightsShared[MAX_MORPH_TARGET_COUNT];
 
-shared uint msMorphTargetMaskShared;
+shared uint msMorphTargetCountShared;
+
+// Initialize morph target allocator
+void msInitMorphTargetAllocator() {
+  if (gl_LocalInvocationIndex == 0)
+    msMorphTargetCountShared = 0;
+}
+
+
+// Allocates morph target output. Returns index into shared arrays
+// to write to. Must be checked against MAX_MORPH_TARGET_COUNT.
+uint msAllocateMorphTarget() {
+  uvec4 invocationMask = subgroupBallot(true);
+
+  uint count = subgroupBallotBitCount(invocationMask);
+  uint index = subgroupBallotBitCount(invocationMask & gl_SubgroupLtMask);
+
+  uint first;
+
+  if (subgroupElect())
+    first = atomicAdd(msMorphTargetCountShared, count);
+
+  first = subgroupBroadcastFirst(first);
+  return first + index;
+}
+
 
 // Load morph target weights into shared memory and generate a
 // precise mask of morph targets that influence the meshlets.
 // Any morph targets with a weight of zero will be disabled.
 uint msLoadMorphTargetMetadataFromMemory(in MsContext context, in Meshlet meshlet) {
   // Fast path, no morph targets affect this mesh at all
-  if (meshlet.morphTargetMask == 0)
+  if (meshlet.morphTargetCount == 0)
     return 0;
 
   // Location where morph targets for the current meshlet are stored
   MeshletMorphTargetRef morphTargets = MeshletMorphTargetRef(
     meshletComputeAddress(context.meshlet, meshlet.morphTargetOffset));
 
-  // Generate thread-local mask first. Generally, we should
-  // only ever run one iteration of this, but support more
-  // than one anyway just to be safe.
-  uint localMask = 0;
+  MS_LOOP_WORKGROUP(index, meshlet.morphTargetCount, meshlet.morphTargetCount) {
+    MeshletMorphTarget metadata = morphTargets.metadata[index];
 
-  MS_LOOP_WORKGROUP(index, MAX_MORPH_TARGET_COUNT, MAX_MORPH_TARGET_COUNT) {
-    uint bit = (1u << index);
-    float weight = 0.0f;
+    float weight = msLoadMorphTargetWeight(context, uint(metadata.targetIndex));
 
-    if ((meshlet.morphTargetMask & bit) != 0)
-      weight = msLoadMorphTargetWeight(context, index);
+    if (abs(weight) > 0.0001f) {
+      uint index = msAllocateMorphTarget();
 
-    if (weight != 0.0f) {
-      uint indexInMeshlet = bitCount(meshlet.morphTargetMask & (bit - 1));
-
-      msMorphTargetMetadataShared[index] = morphTargets.metadata[indexInMeshlet];
-      msMorphTargetWeightsShared[index] = weight;
-
-      localMask |= bit;
+      if (index < MAX_MORPH_TARGET_COUNT) {
+        msMorphTargetMetadataShared[index] = metadata;
+        msMorphTargetWeightsShared[index] = weight;
+      }
     }
   }
 
-  // Broadcast active morph target mask across the whole workgroup
-  uint morphTargetMask = subgroupOr(localMask);
+  barrier();
 
-  if (!IsSingleSubgroup) {
-    if (gl_LocalInvocationIndex == 0)
-      msMorphTargetMaskShared = 0;
-
-    barrier();
-
-    if (subgroupElect() && (morphTargetMask != 0))
-      atomicOr(msMorphTargetMaskShared, morphTargetMask);
-
-    barrier();
-
-    uint broadcast;
-
-    if (subgroupElect())
-      broadcast = msMorphTargetMaskShared;
-
-    morphTargetMask = subgroupBroadcastFirst(broadcast);
-  }
-
-  return morphTargetMask;
-}
-
-
-// Loads morph target metadata with uniform index from LDS
-MeshletMorphTarget msGetMorphTargetMetadata(uint index) {
-  return msMorphTargetMetadataShared[index];
-}
-
-
-float msGetMorphTargetWeight(uint index) {
-  return msMorphTargetWeightsShared[index];
+  return min(msMorphTargetCountShared, MAX_MORPH_TARGET_COUNT);
 }
 
 
@@ -566,18 +556,16 @@ int msScanMorphTargetVertexMask(in MeshletMorphTarget morphTarget, uint vertexIn
 // data.
 #define MS_DEFINE_MORPH_FUNCTION(function, type, call)                    \
 void function(in MsContext context, in Meshlet meshlet,                   \
-    inout type variable, uint vertexIndex, uint morphTargetMask) {        \
+    inout type variable, uint vertexIndex, uint morphTargetCount) {       \
   MsInputMorphDataRef morphData = msGetMeshletMorphData(context, meshlet);\
-  while (morphTargetMask != 0) {                                          \
-    uint index = findLSB(morphTargetMask);                                \
-    MeshletMorphTarget target = msGetMorphTargetMetadata(index);          \
-    float weight = msGetMorphTargetWeight(index);                         \
+  for (uint i = 0; i < morphTargetCount; i++) {                           \
+    MeshletMorphTarget target = msMorphTargetMetadataShared[i];           \
+    float weight = msMorphTargetWeightsShared[i];                         \
     int dataIndex = msScanMorphTargetVertexMask(target, vertexIndex);     \
     if (dataIndex >= 0) {                                                 \
       MsMorphIn delta = morphData.vertices[dataIndex + target.dataIndex]; \
       call(variable, delta, weight);                                      \
     }                                                                     \
-    morphTargetMask &= morphTargetMask - 1;                               \
   }                                                                       \
 }
 
@@ -642,6 +630,10 @@ uint msGetOutputPrimitiveCount() {
 void msMain() {
   msInitPrimitiveAllocator();
 
+#ifndef MS_NO_MORPH_DATA
+  msInitMorphTargetAllocator();
+#endif
+
   // Load some data, compute projection matrix etc.
   MsContext context = msGetInstanceContext();
   Meshlet meshlet = context.meshlet.header;
@@ -656,19 +648,21 @@ void msMain() {
   if (hasDualIndexing)
     msLoadDualVertexIndicesFromMemory(context, meshlet);
 
+  // Insert a barrier here since LDS initialization needs
+  // to have finished before processing morph targets.
+  barrier();
+
   // Find all active morph targets for the current meshlet, given
   // the morph target weights provided by the application.
-  uint morphTargetMask = 0;
+  uint morphTargetCount = 0;
 #ifndef MS_NO_MORPH_DATA
-  morphTargetMask = msLoadMorphTargetMetadataFromMemory(context, meshlet);
+  morphTargetCount = msLoadMorphTargetMetadataFromMemory(context, meshlet);
 #endif // MS_NO_MORPH_DATA
-
-  barrier();
 
   // If any morph targets are active, we cannot compact vertex
   // position data and need to process each output vertex separately.
-  bool hasCompactVertexOutputs = hasDualIndexing && morphTargetMask == 0;
-  bool hasUnpackedVertexOutputs = hasDualIndexing && morphTargetMask != 0;
+  bool hasCompactVertexOutputs = hasDualIndexing && morphTargetCount == 0;
+  bool hasUnpackedVertexOutputs = hasDualIndexing && morphTargetCount != 0;
 
   uint outputVertexCount = hasUnpackedVertexOutputs
     ? meshlet.vertexCount
@@ -683,7 +677,7 @@ void msMain() {
 
     MsVertexIn vertexIn = msVertexInputShared[inputIndex];
 #ifndef MS_NO_MORPH_DATA
-    msMorphVertexData(context, meshlet, vertexIn, index, morphTargetMask);
+    msMorphVertexData(context, meshlet, vertexIn, index, morphTargetCount);
 #endif // MS_NO_MORPH_DATA
 
     msVertexDataShared[index] = msComputeVertexPos(context, vertexIn);
@@ -784,7 +778,7 @@ void msMain() {
 #endif // MS_NO_SHADING_DATA
 
 #ifndef MS_NO_MORPH_DATA
-    msMorphCombinedData(context, meshlet, vertexIn, index, morphTargetMask);
+    msMorphCombinedData(context, meshlet, vertexIn, index, morphTargetCount);
 #endif // MS_NO_MORPH_DATA
 #endif // MS_COMBINED_DATA
 
