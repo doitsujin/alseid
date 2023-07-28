@@ -1873,9 +1873,17 @@ void GltfMeshConverter::processInstances() {
 
 
 GltfAnimationInterpolator::GltfAnimationInterpolator(
-        std::shared_ptr<GltfAnimationSampler> sampler)
-: m_sampler(std::move(sampler)) {
+        std::shared_ptr<GltfAnimationSampler> sampler,
+        uint32_t                      index)
+: m_sampler(std::move(sampler)), m_index(index) {
+  uint32_t inputCount = m_sampler->getInput()->getElementCount();
+  uint32_t outputCount = m_sampler->getOutput()->getElementCount();
 
+  dbg_assert(inputCount != 0 && outputCount != 0 && !(outputCount % inputCount));
+
+  m_count = outputCount / inputCount;
+
+  dbg_assert(m_index < m_count);
 }
 
 
@@ -1939,7 +1947,7 @@ uint32_t GltfAnimationInterpolator::findKeyframe(
 
   while (lo < hi) {
     size_t pivot = (lo + hi) / 2;
-    float t = m_timestamps[pivot];
+    float t = m_timestamps.at(pivot);
 
     if (timestamp >= t)
       lo = pivot + 1;
@@ -1958,16 +1966,16 @@ float GltfAnimationInterpolator::getKeyframePair(
   uint32_t hi = findKeyframe(timestamp);
 
   if (hi == 0) {
-    a = m_keyframes.front();
-    b = m_keyframes.front();
+    a = m_keyframes.at(m_index);
+    b = m_keyframes.at(m_index);
     return 0.0f;
-  } else if (hi == m_keyframes.size()) {
-    a = m_keyframes.back();
-    b = m_keyframes.back();
+  } else if (hi == m_timestamps.size()) {
+    a = m_keyframes.at(m_count * hi + m_index - m_count);
+    b = m_keyframes.at(m_count * hi + m_index - m_count);
     return 0.0f;
   } else {
-    a = m_keyframes.at(hi - 1);
-    b = m_keyframes.at(hi);
+    a = m_keyframes.at(m_count * hi + m_index - m_count);
+    b = m_keyframes.at(m_count * hi + m_index);
 
     float loTime = m_timestamps.at(hi - 1);
     float hiTime = m_timestamps.at(hi);
@@ -1981,6 +1989,7 @@ float GltfAnimationInterpolator::getKeyframePair(
 
 GltfAnimationConverter::GltfAnimationConverter(
   const GltfJointMap&                 jointMap,
+  const GltfMorphTargetMap&           morphTargetMap,
         std::shared_ptr<GltfAnimation> animation)
 : m_animation(std::move(animation)) {
   // Gather unique nodes, timestamp accessors etc.
@@ -1994,8 +2003,6 @@ GltfAnimationConverter::GltfAnimationConverter(
       continue;
     }
 
-    auto interpolator = std::make_shared<GltfAnimationInterpolator>(sampler);
-
     m_inputAccessors.insert(sampler->getInput());
 
     auto node = (*c)->getNode();
@@ -2005,6 +2012,8 @@ GltfAnimationConverter::GltfAnimationConverter(
       auto entry = jointMap.find(node);
 
       if (entry != jointMap.end()) {
+        auto interpolator = std::make_shared<GltfAnimationInterpolator>(sampler, 0);
+
         // Inverse bind matrices in GLTF transform from one node
         // to another, but we need it to be in model space so just
         // invert the absolute transform.
@@ -2034,7 +2043,18 @@ GltfAnimationConverter::GltfAnimationConverter(
       auto mesh = node->getMesh();
 
       if (mesh != nullptr) {
-        Log::err("Morph target animations TODO.");
+        uint32_t targetIndex = 0u;
+
+        auto morphTargets = mesh->getTargetNames();
+
+        for (auto m = morphTargets.first; m != morphTargets.second; m++) {
+          auto interpolator = std::make_shared<GltfAnimationInterpolator>(sampler, targetIndex++);
+
+          auto entry = morphTargetMap.find(*m);
+          dbg_assert(entry != morphTargetMap.end());
+
+          m_morphTargets.emplace(entry->second, interpolator);
+        }
       }
     }
   }
@@ -2098,6 +2118,9 @@ void GltfAnimationConverter::loadInterpolatorData() {
     if (j.second.scale != nullptr)
       j.second.scale->readData();
   }
+
+  for (auto& m : m_morphTargets)
+    m.second->readData();
 }
 
 
@@ -2223,13 +2246,21 @@ void GltfAnimationConverter::buildAnimationGroups() {
   // Linearize node sets so we can more easily iterate over them
   std::vector<std::pair<std::shared_ptr<GltfNode>, JointInfo>> joints;
 
-  for (auto& j : m_joints)
+  for (const auto& j : m_joints)
     joints.push_back(j);
 
   // Order by joint ID since we need to process them in order.
-  std::sort(joints.begin(), joints.end(), [] (const auto& a, const auto& b) {
-    return a.second.index < b.second.index;
-  });
+  std::sort(joints.begin(), joints.end(),
+    [] (const auto& a, const auto& b) { return a.second.index < b.second.index; });
+
+  // Same for morph targets, although the ordering isn't important here
+  std::vector<std::pair<uint32_t, std::shared_ptr<GltfAnimationInterpolator>>> morphTargets;
+
+  for (const auto& m : m_morphTargets)
+    morphTargets.push_back(m);
+
+  std::sort(morphTargets.begin(), morphTargets.end(),
+    [] (const auto& a, const auto& b) { return a.first < b.first; });
 
   // Compute global transforms for each joint separately. This is
   // necessary because GLTF animations store joints as a mess of
@@ -2322,7 +2353,7 @@ void GltfAnimationConverter::buildAnimationGroups() {
   group.keyframeIndex = 0;
   group.keyframeCount = m_keyframeTopLevelNodes;
 
-  size_t iterationCount = joints.size();
+  size_t iterationCount = std::max(joints.size(), morphTargets.size());
 
   for (size_t i = 0; i < iterationCount; i += NodesPerLayer) {
     group.morphTargetWeightIndex = m_weightArray.size();
@@ -2339,6 +2370,13 @@ void GltfAnimationConverter::buildAnimationGroups() {
         group.jointIndices.at(j) = joint.index;
       } else {
         group.jointIndices.at(j) = 0;
+      }
+
+      if (index < morphTargets.size()) {
+        group.morphTargetCount += 1;
+        group.morphTargetIndices.at(j) = morphTargets.at(index).first;
+      } else {
+        group.morphTargetIndices.at(j) = 0;
       }
     }
 
@@ -2360,6 +2398,13 @@ void GltfAnimationConverter::buildAnimationGroups() {
         jointData.transform = relativeTransform.getRotation().getVector();
         jointData.translate = relativeTransform.getTranslation().get<0, 1, 2>();
         m_jointArray.push_back(jointData);
+      }
+
+      for (size_t k = 0; k < group.morphTargetCount; k++) {
+        const auto& morphTarget = morphTargets.at(i + k);
+
+        float weight = morphTarget.second->interpolateScalar(keyframe.timestamp);
+        m_weightArray.push_back(weight);
       }
     }
 
@@ -2725,6 +2770,9 @@ void GltfConverter::buildAnimationBuffer() {
   for (const auto& animation : m_animationConverters)
     animation->pushArrays(groups, keyframes, joints, weights);
 
+  if (joints.empty() && weights.empty())
+    return;
+
   // Initialize buffer metadata and allocate storage
   uint32_t offset = 0;
   allocateStorage(offset, sizeof(GfxAnimationInfo) + sizeof(GfxAnimationGroup) * groups.size());
@@ -2886,7 +2934,7 @@ void GltfConverter::addSkin(
 
 void GltfConverter::addAnimation(
         std::shared_ptr<GltfAnimation> animation) {
-  auto converter = std::make_shared<GltfAnimationConverter>(m_jointMap, animation);
+  auto converter = std::make_shared<GltfAnimationConverter>(m_jointMap, *m_morphTargetMap, animation);
 
   m_animationConverters.emplace_back(std::move(converter));
 }

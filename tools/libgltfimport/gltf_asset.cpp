@@ -468,7 +468,8 @@ GltfMesh::GltfMesh(
 : m_name        (desc.name)
 , m_parentName  (desc.asMesh)
 , m_minDistance (desc.asMinDistance)
-, m_maxDistance (desc.asMaxDistance) {
+, m_maxDistance (desc.asMaxDistance)
+, m_targetNames (desc.targetNames) {
   std::vector<GltfMeshPrimitive::Desc> primitives;
   desc.primitives.get_to(primitives);
 

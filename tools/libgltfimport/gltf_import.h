@@ -1034,7 +1034,8 @@ class GltfAnimationInterpolator {
 public:
 
   GltfAnimationInterpolator(
-          std::shared_ptr<GltfAnimationSampler> sampler);
+          std::shared_ptr<GltfAnimationSampler> sampler,
+          uint32_t                      index);
 
   ~GltfAnimationInterpolator();
 
@@ -1079,6 +1080,9 @@ private:
   std::vector<float>                    m_timestamps;
   std::vector<Vector4D>                 m_keyframes;
 
+  uint32_t                              m_index = 0u;
+  uint32_t                              m_count = 1u;
+
   uint32_t findKeyframe(
           float                         timestamp) const;
 
@@ -1101,6 +1105,7 @@ public:
 
   GltfAnimationConverter(
     const GltfJointMap&                 jointMap,
+    const GltfMorphTargetMap&           morphTargetMap,
           std::shared_ptr<GltfAnimation> animation);
 
   ~GltfAnimationConverter();
@@ -1150,6 +1155,8 @@ private:
 
   std::unordered_set<std::shared_ptr<GltfAccessor>>         m_inputAccessors;
   std::unordered_map<std::shared_ptr<GltfNode>, JointInfo>  m_joints;
+  std::unordered_map<uint32_t,
+    std::shared_ptr<GltfAnimationInterpolator>>             m_morphTargets;
 
   std::vector<GfxAnimationGroup>    m_animationGroups;
 

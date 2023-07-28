@@ -698,6 +698,16 @@ public:
       m_primitives.end());
   }
 
+  /**
+   * \brief Queries morph target names
+   * \returns Morph target iterator pair
+   */
+  auto getTargetNames() const {
+    return std::make_pair(
+      m_targetNames.begin(),
+      m_targetNames.end());
+  }
+
 private:
 
   std::string m_name;
@@ -705,6 +715,8 @@ private:
   
   float       m_minDistance;
   float       m_maxDistance;
+
+  std::vector<std::string> m_targetNames;
 
   std::vector<std::shared_ptr<GltfMeshPrimitive>> m_primitives;
 
