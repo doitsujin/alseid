@@ -226,8 +226,8 @@ struct Meshlet {
   uint16_t  primitiveOffset;
   uint16_t  vertexDataOffset;
   uint16_t  shadingDataOffset;
-  uint16_t  reserved0;
-  uint16_t  reserved1;
+  uint16_t  jointCountPerVertex;
+  uint16_t  jointDataOffset;
   uint16_t  morphDataOffset;
   uint16_t  morphTargetOffset;
   uint16_t  morphTargetCount;
@@ -250,6 +250,26 @@ uint64_t meshletComputeAddress(in MeshletRef baseAddress, uint16_t offset) {
 MeshletRef meshletGetHeader(in MeshletMetadataRef dataBuffer, in MeshletMetadata meshlet) {
   uint64_t address = uint64_t(dataBuffer) + meshlet.dataOffset;
   return MeshletRef(address);
+}
+
+
+// Joint influence structure
+struct JointInfluence {
+  uint16_t  jointIndex;
+  uint16_t  jointWeight;
+};
+
+
+// Buffer reference type for joint influence structures
+layout(buffer_reference, buffer_reference_align = 4, scalar)
+readonly buffer JointInfluenceRef {
+  JointInfluence data[];
+};
+
+
+JointInfluenceRef meshletGetJointInfluenceData(in GeometryRef geometry, in Mesh mesh) {
+  uint64_t address = uint64_t(geometry) + mesh.lodInfoOffset;
+  return JointInfluenceRef(address);
 }
 
 

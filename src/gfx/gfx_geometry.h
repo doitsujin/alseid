@@ -171,9 +171,14 @@ struct GfxMeshletHeader {
   uint16_t vertexDataOffset;
   /** Shading data offset relative to the meshlet header. */
   uint16_t shadingDataOffset;
-  /** Reserved for future use. */
-  uint16_t reserved0;
-  uint16_t reserved1;
+  /** Number of joint index and weight structures for each vertex,
+   *  i.e. the maximum number of joint influences per vertex. */
+  uint16_t jointCountPerVertex;
+  /** Offset of the joint index and weight arrays within the buffer.
+   *  This is laid out in such a way that joint data is stored in
+   *  \c vertexDataCount consecutive elements for every possible
+   *  joint. */
+  uint16_t jointDataOffset;
   /** Morph target vertex data offset. Stores a tightly packed
    *  array of material-specific morph data structures that can
    *  be indexed using the vertex mask and offset from the morph
@@ -196,6 +201,19 @@ struct GfxMeshletHeader {
 };
 
 static_assert(sizeof(GfxMeshletHeader) == 32);
+
+
+/**
+ * \brief Joint index + weight pair
+ */
+struct GfxMeshletJointData {
+  /** Joint index */
+  uint16_t jointIndex;
+  /** Joint weight, as a normalized 16-bit integer. */
+  uint16_t jointWeight;
+};
+
+static_assert(sizeof(GfxMeshletJointData) == 4);
 
 
 /**
