@@ -48,11 +48,11 @@
 // to all user functions. This may be used to pre-compute transforms.
 //
 //    struct MsContext {
-//      MeshletRef      meshlet;    /* mandatory */
+//      uint64_t        meshlet;    /* mandatory */
 //      uint            cullMode;   /* mandatory, FACE_CULL_MODE_xx */
 //      bool            faceFlip;   /* mandatory, swaps vertex order */
 // #ifndef MS_NO_SKINNING
-//      MeshSkinningRef skinData;   /* Pointer to joint index array */
+//      uint64_t        skinData;   /* Pointer to joint index array */
 //      uint            skinOffset; /* Index into joint index array */
 // #endif
 //      ...
@@ -387,10 +387,10 @@ void msLoadLocalJointsFromMemory(in MsContext context, in Meshlet meshlet) {
   uint jointCount = min(uint(meshlet.jointCount), MESHLET_LOCAL_JOINT_COUNT);
 
   MS_LOOP_WORKGROUP(index, jointCount, MESHLET_LOCAL_JOINT_COUNT) {
-    uint joint = uint(context.meshlet.jointIndices[index]);
+    uint joint = uint(MeshletRef(context.meshlet).jointIndices[index]);
 
     if (joint < 0xffffu) {
-      joint = context.skinData.joints[context.skinOffset + joint];
+      joint = MeshSkinningRef(context.skinData).joints[context.skinOffset + joint];
 
       DualQuat dq = msLoadJointDualQuatFromMemory(context, joint);
       msJointDualQuatRShared[index] = quatPack(dq.r);
@@ -731,7 +731,7 @@ void msMain() {
 
   // Load some data, compute projection matrix etc.
   MsContext context = msGetInstanceContext();
-  Meshlet meshlet = context.meshlet.header;
+  Meshlet meshlet = MeshletRef(context.meshlet).header;
 
   // Load input vertex data into shared memory for later use
   msLoadVertexDataFromMemory(context, meshlet);

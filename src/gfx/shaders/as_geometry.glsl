@@ -243,9 +243,9 @@ readonly buffer MeshletRef {
 };
 
 
-uint64_t meshletComputeAddress(in MeshletRef baseAddress, uint16_t offset) {
+uint64_t meshletComputeAddress(uint64_t baseAddress, uint16_t offset) {
   // Offsets within a meshlet are stored as multiples of 16 bytes
-  return uint64_t(baseAddress) + (uint32_t(offset) * 16u);
+  return baseAddress + (uint32_t(offset) * 16u);
 }
 
 
