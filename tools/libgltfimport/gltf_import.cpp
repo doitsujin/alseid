@@ -1123,19 +1123,6 @@ bool GltfMeshletBuilder::processJoints(
     }
   }
 
-  // Also, if the number of unique joints is sufficiently small,
-  // enable local indexing for the meshlet. Set an invalid joint
-  // index for any unused entry.
-  if (m_localJoints.size() <= m_metadata.header.jointIndices.size()) {
-    m_metadata.header.flags |= GfxMeshletFlag::eLocalJoints;
-
-    for (size_t i = 0; i < m_metadata.header.jointIndices.size(); i++) {
-      m_metadata.header.jointIndices[i] = (i < m_localJoints.size())
-        ? uint16_t(m_localJoints[i])
-        : uint16_t(0xffffu);
-    }
-  }
-
   // Repack joint indices for each vertex and order them by weight,
   // and resolve local indexing at the same time if enabled.
   std::vector<std::pair<uint32_t, float>> repackBuffer(attributeOffsets.size());
@@ -1160,7 +1147,7 @@ bool GltfMeshletBuilder::processJoints(
       uint32_t jointIndex = repackBuffer[a].first;
       float    jointWeight = repackBuffer[a].second;
 
-      if ((m_metadata.header.flags & GfxMeshletFlag::eLocalJoints) && jointWeight != 0.0f) {
+      if (jointWeight != 0.0f) {
         auto entry = jointMap.find(jointIndex);
         dbg_assert(entry != jointMap.end());
         jointIndex = entry->second;
@@ -1179,6 +1166,8 @@ bool GltfMeshletBuilder::processJoints(
   // Build joint influence buffer. This is essentially a two-dimensional
   // array of the form GfxMeshletJointData[vertCount][jointCount].
   m_metadata.header.jointCountPerVertex = jointInfluenceCount;
+  m_metadata.header.jointCount = m_localJoints.size();
+
   jointBuffer.resize(jointInfluenceCount * m_meshlet.vertex_count);
 
   std::vector<std::pair<float, uint16_t>> normalizationBuffer(jointInfluenceCount);
@@ -1201,6 +1190,7 @@ bool GltfMeshletBuilder::processJoints(
   // Assign dominant joint to the meshlet. If there are multiple joints
   // or we do not have a dominant joint, disable culling for now.
   m_metadata.info.jointIndex = uint16_t(dominantJoint);
+
   return dominantJoint != ~0u && m_localJoints.size() == 1;
 }
 
@@ -1342,6 +1332,12 @@ void GltfMeshletBuilder::buildMeshletBuffer(
   uint16_t offset = 0;
   allocateStorage(offset, sizeof(m_metadata.header));
 
+  // Local joint index data immediately follows the header
+  size_t localJointDataSize = sizeof(uint16_t) * m_localJoints.size();
+
+  if (localJointDataSize)
+    allocateStorage(offset, localJointDataSize);
+
   // Dual index data is always accessed first
   if (m_metadata.header.flags & GfxMeshletFlag::eDualIndex) {
     m_metadata.header.dualIndexOffset = allocateStorage(offset,
@@ -1391,6 +1387,11 @@ void GltfMeshletBuilder::buildMeshletBuffer(
   // Allocate buffer and write the header
   m_buffer.resize(offset * 16);
   std::memcpy(&m_buffer[0], &m_metadata.header, sizeof(m_metadata.header));
+
+  if (localJointDataSize) {
+    std::memcpy(&m_buffer[sizeof(m_metadata.header)],
+      m_localJoints.data(), localJointDataSize);
+  }
 
   // Write out vertex and shading data
   size_t vertexInputStride = vertexStride +

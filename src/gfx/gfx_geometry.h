@@ -38,8 +38,6 @@ enum class GfxMeshletFlag : uint16_t {
    *  data, one set for vertex position data and one
    *  for shading data. Does not affect morph targets. */
   eDualIndex        = (1u << 0),
-  /** Meshlet header stores per-meshlet joint indices. */
-  eLocalJoints      = (1u << 1),
 
   eFlagEnum         = 0
 };
@@ -192,12 +190,14 @@ struct GfxMeshletHeader {
    *  of bits set here determines the number of morph target info
    *  structures in the buffer. */
   uint16_t morphTargetCount;
-  /** Indices of joints used in this meshlet. If a meshlet is only
-   *  affected by a small number of joints, the mesh shader can load
-   *  them all into shared memory at once, the per-vertex joint index
-   *  will point into this array in that case. This can be used to
-   *  reduce the number of memory loads. */
-  std::array<uint16_t, 4> jointIndices;
+  /** Number of unique joints used by this meshlet. Per-vertex joint
+   *  indices will index into the local joint index array, which
+   *  immediately follows the meshlet header as an array of 16-bit
+   *  indices, which in turn indexes into the mesh instance skin. */
+  uint16_t jointCount;
+  /** Reserved for future use */
+  uint16_t reserved0;
+  uint32_t reserved1;
 };
 
 static_assert(sizeof(GfxMeshletHeader) == 32);

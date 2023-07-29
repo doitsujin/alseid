@@ -68,6 +68,22 @@ vec3 quatApplyNorm(vec4 q, vec3 v) {
 }
 
 
+// Packs normalized quaternion
+uvec2 quatPack(vec4 q) {
+  return uvec2(
+    packSnorm2x16(q.xy),
+    packSnorm2x16(q.zw));
+}
+
+
+// Unpacks normalized quaternion
+vec4 quatUnpack(uvec2 q) {
+  return vec4(
+    unpackSnorm2x16(q.x),
+    unpackSnorm2x16(q.y));
+}
+
+
 // Dual quaternion, used for skinning. We don't implement
 // a lot of operations on these.
 struct DualQuat {
@@ -87,6 +103,7 @@ DualQuat dualQuatNormalize(in DualQuat dq) {
   return DualQuat(normalize(dq.r),
     dq.d - dq.r * dot(dq.r, dq.d));
 }
+
 
 // Transform consisting of a rotation
 // quaternion and translation vector.

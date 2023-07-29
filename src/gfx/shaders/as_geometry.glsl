@@ -211,7 +211,7 @@ readonly buffer MeshletMetadataRef {
 //
 // Stores vertex data as well as morph target data
 // relevant for rendering the meshlet in question.
-#define MESHLET_LOCAL_JOINT_COUNT       (4u)
+#define MESHLET_LOCAL_JOINT_COUNT       (32u)
 
 #define MESHLET_DUAL_INDEX_BIT          (1u << 0)
 #define MESHLET_LOCAL_JOINTS_BIT        (1u << 1)
@@ -231,13 +231,15 @@ struct Meshlet {
   uint16_t  morphDataOffset;
   uint16_t  morphTargetOffset;
   uint16_t  morphTargetCount;
-  uint16_t  jointIndices[MESHLET_LOCAL_JOINT_COUNT];
+  uint32_t  jointCount; // Declare as 32-bit to work around ACO bug
+  uint32_t  reserved1;
 };
 
 // Buffer reference type for meshlet data
 layout(buffer_reference, buffer_reference_align = 16, scalar)
 readonly buffer MeshletRef {
   Meshlet   header;
+  uint16_t  jointIndices[];
 };
 
 

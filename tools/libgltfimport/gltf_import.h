@@ -531,7 +531,7 @@ private:
   GfxMeshletMetadata                      m_metadata;
   std::vector<char>                       m_buffer;
 
-  std::vector<uint32_t>                   m_localJoints;
+  std::vector<uint16_t>                   m_localJoints;
 
   std::vector<GltfVertex> loadVertices(
     const uint32_t*                     indices,

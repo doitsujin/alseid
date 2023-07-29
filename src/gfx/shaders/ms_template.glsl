@@ -20,6 +20,8 @@
 //                          to compute fragment shader inputs.
 //    MS_NO_MORPH_DATA:     Set if the material does not support morph
 //                          target animations.
+//    MS_NO_SKINNING:       Set if the geometry is not skinned. Disables
+//                          all joint-related computations.
 //    MS_NO_UNIFORM_OUTPUT: Set if there are no uniform fragment shader
 //                          input values to compute for this shader.
 //                          Note that uniform output is required if the
@@ -46,9 +48,13 @@
 // to all user functions. This may be used to pre-compute transforms.
 //
 //    struct MsContext {
-//      MeshletRef  meshlet;    /* mandatory */
-//      uint        cullMode;   /* mandatory, FACE_CULL_MODE_xx */
-//      bool        faceFlip;   /* mandatory, swaps vertex order */
+//      MeshletRef      meshlet;    /* mandatory */
+//      uint            cullMode;   /* mandatory, FACE_CULL_MODE_xx */
+//      bool            faceFlip;   /* mandatory, swaps vertex order */
+// #ifndef MS_NO_SKINNING
+//      MeshSkinningRef skinData;   /* Pointer to joint index array */
+//      uint            skinOffset; /* Index into joint index array */
+// #endif
 //      ...
 //    };
 //
@@ -137,6 +143,15 @@
 // #endif
 //
 //
+// Loads a joint from memory. The given joint index is already
+// fully resolved, i.e. it is absolute within the geometry and
+// can be used to index into a constant buffer directly.
+//
+// #ifndef MS_NO_SKINNING
+//    Transform msLoadJointTransform(in MsContext context, uint index);
+// #endif
+//
+//
 // Applies morph target to an input vertex. Implementations
 // should lay out data in such a way that this can be done
 // with simple multiplications and additions.
@@ -167,7 +182,8 @@
 //    MsVertexOut msComputeVertexPos(
 //      in      MsContext   context,    /* Context object */
 //              uint        index,      /* Vertex index */
-//      in      MsVertexIn  vertex);    /* Morphed input data */
+//      in      MsVertexIn  vertex,     /* Morphed input data */
+//      in      Transform   transform); /* Joint transform */
 //
 //
 // Computes fragment shader inputs. The parameters passed to
@@ -276,12 +292,6 @@ bool msMeshletHasDualIndexing(in Meshlet meshlet) {
 }
 
 
-// Checks whether local joints are enabled for the meshlet.
-bool msMeshletHasLocalJoints(in Meshlet meshlet) {
-  return uint(meshlet.flags & MESHLET_LOCAL_JOINTS_BIT) != 0;
-}
-
-
 // Helper to load primitive indices
 uvec3 msLoadPrimitive(in MsContext context, in Meshlet meshlet, uint index) {
   uint64_t address = meshletComputeAddress(
@@ -353,7 +363,7 @@ JointInfluenceRef msGetJointInfluenceData(in MsContext context, in Meshlet meshl
 // Buffer that stores dual quaternions for each local joint. If
 // local joints are enabled for a meshlet, we can use this to
 // avoid having to laod and convert the transform multiple times.
-shared vec4 msJointDualQuatRShared[MESHLET_LOCAL_JOINT_COUNT];
+shared uvec2 msJointDualQuatRShared[MESHLET_LOCAL_JOINT_COUNT];
 shared vec4 msJointDualQuatDShared[MESHLET_LOCAL_JOINT_COUNT];
 
 // Convenience method to load a joint transform and convert it to
@@ -367,41 +377,32 @@ DualQuat msLoadJointDualQuatFromMemory(in MsContext context, uint joint) {
 
 // Loads joint from LDS or memory, depending on meshlet flags.
 DualQuat msLoadJointDualQuat(in MsContext context, in Meshlet meshlet, uint joint) {
-  if (msMeshletHasLocalJoints(meshlet)) {
-    return DualQuat(
-      msJointDualQuatRShared[joint],
-      msJointDualQuatDShared[joint]);
-  } else {
-    joint = context.skinData.joints[context.skinOffset + joint];
-    return msLoadJointDualQuatFromMemory(context, joint);
-  }
+  return DualQuat(
+    quatUnpack(msJointDualQuatRShared[joint]),
+    msJointDualQuatDShared[joint]);
 }
 
 // Loads local joints into shared memory.
-void msLoadLocalJointsFromMemory(in MsContext context) {
-  MS_LOOP_WORKGROUP(index, MESHLET_LOCAL_JOINT_COUNT, MESHLET_LOCAL_JOINT_COUNT) {
-    uint joint = uint(context.meshlet.header.jointIndices[index]);
+void msLoadLocalJointsFromMemory(in MsContext context, in Meshlet meshlet) {
+  uint jointCount = min(uint(meshlet.jointCount), MESHLET_LOCAL_JOINT_COUNT);
+
+  MS_LOOP_WORKGROUP(index, jointCount, MESHLET_LOCAL_JOINT_COUNT) {
+    uint joint = uint(context.meshlet.jointIndices[index]);
 
     if (joint < 0xffffu) {
       joint = context.skinData.joints[context.skinOffset + joint];
 
       DualQuat dq = msLoadJointDualQuatFromMemory(context, joint);
-      msJointDualQuatRShared[index] = dq.r;
+      msJointDualQuatRShared[index] = quatPack(dq.r);
       msJointDualQuatDShared[index] = dq.d;
     }
   }
 }
 
 // Convenience method that loads a joint and applies its weight.
-DualQuat msLoadWeightedJoint(in MsContext context, in Meshlet meshlet, in JointInfluence joint) {
-  const float scale = 1.0f / 65535.0f;
-
-  float weight = float(joint.weight) * scale;
-
-  DualQuat dq = msLoadJointDualQuat(context, meshlet, joint.index);
-  dq.r *= weight;
-  dq.d *= weight;
-  return dq;
+float msNormalizeWeight(uint weight) {
+  const float weightScale = 1.0f / 65535.0f;
+  return float(weight) * weightScale;
 }
 
 // Accumulates all joint transforms for the given vertex. This will
@@ -419,18 +420,23 @@ Transform msComputeJointTransform(in MsContext context, in Meshlet meshlet, in J
   if (joint.weight > 0) {
     // Load first joint and skip all the expensive code below if
     // vertices in this meshlet are only influenced by one joint.
-    DualQuat accum = msLoadWeightedJoint(context, meshlet, joint);
+    DualQuat accum = msLoadJointDualQuat(context, meshlet, joint.index);
 
     if (meshlet.jointCountPerVertex > 1) {
+      float weight = msNormalizeWeight(joint.weight);
+      accum.r *= weight;
+      accum.d *= weight;
+
       for (uint i = 1; i < meshlet.jointCountPerVertex; i++) {
         JointInfluence joint = jointData.data[i * meshlet.vertexDataCount + vertexIndex];
 
         if (joint.weight == 0)
           break;
 
-        DualQuat dq = msLoadWeightedJoint(context, meshlet, joint);
-        accum.r += dq.r;
-        accum.d += dq.d;
+        float weight = msNormalizeWeight(joint.weight);
+        DualQuat dq = msLoadJointDualQuat(context, meshlet, joint.index);
+        accum.r = fma(dq.r, vec4(weight), accum.r);
+        accum.d = fma(dq.d, vec4(weight), accum.d);
       }
 
       accum = dualQuatNormalize(accum);
@@ -748,9 +754,7 @@ void msMain() {
   // into shared memory so we can reuse them later on.
 #ifndef MS_NO_SKINNING
   JointInfluenceRef jointData = msGetJointInfluenceData(context, meshlet);
-
-  if (msMeshletHasLocalJoints(meshlet))
-    msLoadLocalJointsFromMemory(context);
+  msLoadLocalJointsFromMemory(context, meshlet);
 #endif
 
   // Insert a barrier here since LDS initialization needs
