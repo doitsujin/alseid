@@ -60,14 +60,6 @@ Transform csInterpolateJoint(
   Transform loTransform = csLoadKeyframeJoint(jointBuffer, group, keyframePair.loIndex, localIndex);
   Transform hiTransform = csLoadKeyframeJoint(jointBuffer, group, keyframePair.hiIndex, localIndex);
 
-  // Decompose rotation quaternions into a rotation and scaling
-  // component, so that we can interpolate each appropriately.
-  float loScale = quatGetScale(loTransform.rot);
-  float hiScale = quatGetScale(hiTransform.rot);
-
-  loTransform.rot = normalize(loTransform.rot);
-  hiTransform.rot = normalize(hiTransform.rot);
-
   // Interpolate rotation quaterion. Depending on animation
   // group parameters, we may have to use the expensive slerp.
   vec4 rotation;
@@ -77,10 +69,7 @@ Transform csInterpolateJoint(
   else
     rotation = quatNlerp(loTransform.rot, hiTransform.rot, keyframePair.t);
 
-  Transform result;
-  result.rot = rotation * sqrt(mix(loScale, hiScale, keyframePair.t));
-  result.pos = mix(loTransform.pos, hiTransform.pos, keyframePair.t);
-  return result;
+  return Transform(rotation, mix(loTransform.pos, hiTransform.pos, keyframePair.t));
 }
 
 

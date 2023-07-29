@@ -105,7 +105,7 @@ Aabb csAccumulateAabb(Aabb aabb) {
 Transform csComputeJointTransform(in Transform jointTransform, vec3 jointPosition) {
   Transform localTransform;
   localTransform.rot = jointTransform.rot;
-  localTransform.pos = jointTransform.pos + quatApply(jointTransform.rot, -jointPosition) + jointPosition;
+  localTransform.pos = jointTransform.pos + quatApplyNorm(jointTransform.rot, -jointPosition) + jointPosition;
   return localTransform;
 }
 
@@ -113,7 +113,7 @@ Transform csComputeJointTransform(in Transform jointTransform, vec3 jointPositio
 // Computes the absolute transform for a joint by chaining
 // it with the absolute transform of its parent joint.
 Transform csComputeAbsoluteTransform(in Transform parentTransform, in Transform jointTransform) {
-  return transChain(parentTransform, jointTransform);
+  return transChainNorm(parentTransform, jointTransform);
 }
 
 
