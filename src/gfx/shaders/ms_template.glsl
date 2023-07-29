@@ -161,18 +161,24 @@
 //
 // Computes final position and other built-ins of a vertex.
 // This should apply all transforms, including projection.
+// Applications may store per-vertex data in shared memory,
+// using the provided vertex index.
 //
 //    MsVertexOut msComputeVertexPos(
 //      in      MsContext   context,    /* Context object */
+//              uint        index,      /* Vertex index */
 //      in      MsVertexIn  vertex);    /* Morphed input data */
 //
 //
 // Computes fragment shader inputs. The parameters passed to
 // this function may vary depending on compile-time defines.
+// Applications may read previously stored shared memory data
+// using the provided vertex index.
 //
 //    FsInput msComputeFsInput(
 //      in      MsContext   context,    /* Context object */
 //      in      MsVertexIn  vertex,     /* if MS_NO_VERTEX_DATA is not set */
+//              uint        index,      /* Vertex index */
 //      in      MsVertexOut vertexOut,  /* Final vertex position, etc. */
 //      in      MsShadingIn shading,    /* if MS_NO_SHADING_DATA is not set */
 //      in      FsUniform   fsUniform); /* if MS_NO_UNIFORM_OUTPUT is not set */
@@ -197,18 +203,6 @@
 #ifndef MS_NO_SHADING_DATA
 #define MS_COMBINED_DATA 1
 #endif
-
-
-// Restrict output to 128 vertices and primitives
-// by default, unless overridden by the application.
-#ifndef MAX_VERT_COUNT
-#define MAX_VERT_COUNT (128)
-#endif
-
-#ifndef MAX_PRIM_COUNT
-#define MAX_PRIM_COUNT (128)
-#endif
-
 
 // Maximum number of morph targets that can concurrently
 // affect a single meshlet, i.e. have a non-zero weight.
@@ -282,6 +276,12 @@ bool msMeshletHasDualIndexing(in Meshlet meshlet) {
 }
 
 
+// Checks whether local joints are enabled for the meshlet.
+bool msMeshletHasLocalJoints(in Meshlet meshlet) {
+  return uint(meshlet.flags & MESHLET_LOCAL_JOINTS_BIT) != 0;
+}
+
+
 // Helper to load primitive indices
 uvec3 msLoadPrimitive(in MsContext context, in Meshlet meshlet, uint index) {
   uint64_t address = meshletComputeAddress(
@@ -335,6 +335,117 @@ MsInputMorphDataRef msGetMeshletMorphData(in MsContext context, in Meshlet meshl
   return MsInputMorphDataRef(meshletComputeAddress(context.meshlet, meshlet.morphDataOffset));
 }
 #endif // MS_NO_MORPH_DATA
+
+
+// Buffer reference type for per-vertex joint influence data.
+#ifndef MS_NO_SKINNING
+layout(buffer_reference, buffer_reference_align = 4, scalar)
+readonly buffer JointInfluenceRef {
+  JointInfluence data[];
+};
+
+JointInfluenceRef msGetJointInfluenceData(in MsContext context, in Meshlet meshlet) {
+  uint64_t address = meshletComputeAddress(context.meshlet, meshlet.jointDataOffset);
+  return JointInfluenceRef(address);
+}
+
+
+// Buffer that stores dual quaternions for each local joint. If
+// local joints are enabled for a meshlet, we can use this to
+// avoid having to laod and convert the transform multiple times.
+shared vec4 msJointDualQuatRShared[MESHLET_LOCAL_JOINT_COUNT];
+shared vec4 msJointDualQuatDShared[MESHLET_LOCAL_JOINT_COUNT];
+
+// Convenience method to load a joint transform and convert it to
+// a dual-quaternion. We cannot use the representation that uses a
+// rotation quaternion with a translation vector directly, since
+// interpolating the translation vectors yields wrong results.
+DualQuat msLoadJointDualQuatFromMemory(in MsContext context, uint joint) {
+  Transform transform = msLoadJointTransform(context, joint);
+  return transToDualQuat(transform);
+}
+
+// Loads joint from LDS or memory, depending on meshlet flags.
+DualQuat msLoadJointDualQuat(in MsContext context, in Meshlet meshlet, uint joint) {
+  if (msMeshletHasLocalJoints(meshlet)) {
+    return DualQuat(
+      msJointDualQuatRShared[joint],
+      msJointDualQuatDShared[joint]);
+  } else {
+    joint = context.skinData.joints[context.skinOffset + joint];
+    return msLoadJointDualQuatFromMemory(context, joint);
+  }
+}
+
+// Loads local joints into shared memory.
+void msLoadLocalJointsFromMemory(in MsContext context) {
+  MS_LOOP_WORKGROUP(index, MESHLET_LOCAL_JOINT_COUNT, MESHLET_LOCAL_JOINT_COUNT) {
+    uint joint = uint(context.meshlet.header.jointIndices[index]);
+
+    if (joint < 0xffffu) {
+      joint = context.skinData.joints[context.skinOffset + joint];
+
+      DualQuat dq = msLoadJointDualQuatFromMemory(context, joint);
+      msJointDualQuatRShared[index] = dq.r;
+      msJointDualQuatDShared[index] = dq.d;
+    }
+  }
+}
+
+// Convenience method that loads a joint and applies its weight.
+DualQuat msLoadWeightedJoint(in MsContext context, in Meshlet meshlet, in JointInfluence joint) {
+  const float scale = 1.0f / 65535.0f;
+
+  float weight = float(joint.weight) * scale;
+
+  DualQuat dq = msLoadJointDualQuat(context, meshlet, joint.index);
+  dq.r *= weight;
+  dq.d *= weight;
+  return dq;
+}
+
+// Accumulates all joint transforms for the given vertex. This will
+// essentially iterate over the per-vertex list of joint influences
+// and interpolate the dual quaternions using the joint weights.
+Transform msComputeJointTransform(in MsContext context, in Meshlet meshlet, in JointInfluenceRef jointData, uint vertexIndex) {
+  // If the weight of the first joint is zero, the vertex is not
+  // attached to any joints. This works because joint influences
+  // are ordered by weight.
+  JointInfluence joint = JointInfluence(0us, 0us);
+
+  if (meshlet.jointCountPerVertex > 0)
+    joint = jointData.data[vertexIndex];
+
+  if (joint.weight > 0) {
+    // Load first joint and skip all the expensive code below if
+    // vertices in this meshlet are only influenced by one joint.
+    DualQuat accum = msLoadWeightedJoint(context, meshlet, joint);
+
+    if (meshlet.jointCountPerVertex > 1) {
+      for (uint i = 1; i < meshlet.jointCountPerVertex; i++) {
+        JointInfluence joint = jointData.data[i * meshlet.vertexDataCount + vertexIndex];
+
+        if (joint.weight == 0)
+          break;
+
+        DualQuat dq = msLoadWeightedJoint(context, meshlet, joint);
+        accum.r += dq.r;
+        accum.d += dq.d;
+      }
+
+      accum = dualQuatNormalize(accum);
+    }
+
+    return dualQuatToTrans(accum);
+  } else {
+    // Return identity transform. Note that this different
+    // from running the above code with zero iterations.
+    return transIdentity();
+  }
+}
+
+
+#endif // MS_NO_SKINNING
 
 
 // Dual vertex index pairs. Only used if dual indexing is actually
@@ -648,6 +759,15 @@ void msMain() {
   if (hasDualIndexing)
     msLoadDualVertexIndicesFromMemory(context, meshlet);
 
+  // If local joints are used for this meshlet, load all joints
+  // into shared memory so we can reuse them later on.
+#ifndef MS_NO_SKINNING
+  JointInfluenceRef jointData = msGetJointInfluenceData(context, meshlet);
+
+  if (msMeshletHasLocalJoints(meshlet))
+    msLoadLocalJointsFromMemory(context);
+#endif
+
   // Insert a barrier here since LDS initialization needs
   // to have finished before processing morph targets.
   barrier();
@@ -680,7 +800,16 @@ void msMain() {
     msMorphVertexData(context, meshlet, vertexIn, index, morphTargetCount);
 #endif // MS_NO_MORPH_DATA
 
-    msVertexDataShared[index] = msComputeVertexPos(context, vertexIn);
+#ifndef MS_NO_SKINNING
+    Transform jointTransform = msComputeJointTransform(context, meshlet, jointData, inputIndex);
+#endif
+
+    msVertexDataShared[index] = msComputeVertexPos(context
+      , index, vertexIn
+#ifndef MS_NO_SKINNING
+      , jointTransform
+#endif // MS_NO_SKINNING
+    );
   }
 
   barrier();
@@ -783,6 +912,7 @@ void msMain() {
 #endif // MS_COMBINED_DATA
 
     FsInput fsInput = msComputeFsInput(context
+      , outputIndex
 #ifndef MS_NO_VERTEX_DATA
       , vertexIn.vertex
 #endif // MS_NO_VERTEX_DATA

@@ -1,3 +1,8 @@
+// Computes identity quaternion
+vec4 quatIdentity() {
+  return vec4(0.0f, 0.0f, 0.0f, 1.0f);
+}
+
 // Multiplies two quaternions
 vec4 quatMul(vec4 a, vec4 b) {
   vec4 result;
@@ -63,12 +68,38 @@ vec3 quatApplyNorm(vec4 q, vec3 v) {
 }
 
 
+// Dual quaternion, used for skinning. We don't implement
+// a lot of operations on these.
+struct DualQuat {
+  vec4 r;
+  vec4 d;
+};
+
+
+// Computes identity dual quaternion
+DualQuat dualQuatIdentity() {
+  return DualQuat(quatIdentity(), vec4(0.0f));
+}
+
+
+// Normalizes a dual quaternion
+DualQuat dualQuatNormalize(in DualQuat dq) {
+  return DualQuat(normalize(dq.r),
+    dq.d - dq.r * dot(dq.r, dq.d));
+}
+
 // Transform consisting of a rotation
 // quaternion and translation vector.
 struct Transform {
   vec4 rot;
   vec3 pos;
 };
+
+
+// Computes identity transform
+Transform transIdentity() {
+  return Transform(quatIdentity(), vec3(0.0f));
+}
 
 
 // Chains two transforms together. Follows same logic as
@@ -106,4 +137,17 @@ vec3 transApply(in Transform a, vec3 v) {
 // except that the rotation quaternion must be normalized.
 vec3 transApplyNorm(in Transform a, vec3 v) {
   return quatApplyNorm(a.rot, v) + a.pos;
+}
+
+
+// Computes dual quaternion from transform
+DualQuat transToDualQuat(in Transform a) {
+  return DualQuat(a.rot, quatMul(vec4(0.5f * a.pos, 0.0f), a.rot));
+}
+
+
+// Computes transform from dual quaternion. The resulting translation
+// vector is equivalent to applying a null vector to the quaternion.
+Transform dualQuatToTrans(in DualQuat dq) {
+  return Transform(dq.r, 2.0f * (dq.r.w * dq.d.xyz - dq.d.w * dq.r.xyz + cross(dq.r.xyz, dq.d.xyz)));
 }

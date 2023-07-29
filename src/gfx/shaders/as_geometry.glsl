@@ -140,7 +140,7 @@ bool asNeedsFaceFlip(uint mirrorA, uint mirrorB) {
 
 
 // Buffer reference type for skinning data
-layout(buffer_reference, buffer_reference_align = 16, scalar)
+layout(buffer_reference, buffer_reference_align = 4, scalar)
 readonly buffer MeshSkinningRef {
   uint16_t joints[];
 };
@@ -211,7 +211,7 @@ readonly buffer MeshletMetadataRef {
 //
 // Stores vertex data as well as morph target data
 // relevant for rendering the meshlet in question.
-#define MESHLET_JOINT_INDEX_COUNT       (4u)
+#define MESHLET_LOCAL_JOINT_COUNT       (4u)
 
 #define MESHLET_DUAL_INDEX_BIT          (1u << 0)
 #define MESHLET_LOCAL_JOINTS_BIT        (1u << 1)
@@ -231,7 +231,7 @@ struct Meshlet {
   uint16_t  morphDataOffset;
   uint16_t  morphTargetOffset;
   uint16_t  morphTargetCount;
-  uint16_t  jointIndices[MESHLET_JOINT_INDEX_COUNT];
+  uint16_t  jointIndices[MESHLET_LOCAL_JOINT_COUNT];
 };
 
 // Buffer reference type for meshlet data
@@ -255,22 +255,9 @@ MeshletRef meshletGetHeader(in MeshletMetadataRef dataBuffer, in MeshletMetadata
 
 // Joint influence structure
 struct JointInfluence {
-  uint16_t  jointIndex;
-  uint16_t  jointWeight;
+  uint16_t  index;
+  uint16_t  weight;
 };
-
-
-// Buffer reference type for joint influence structures
-layout(buffer_reference, buffer_reference_align = 4, scalar)
-readonly buffer JointInfluenceRef {
-  JointInfluence data[];
-};
-
-
-JointInfluenceRef meshletGetJointInfluenceData(in GeometryRef geometry, in Mesh mesh) {
-  uint64_t address = uint64_t(geometry) + mesh.lodInfoOffset;
-  return JointInfluenceRef(address);
-}
 
 
 // Morph target metadata
