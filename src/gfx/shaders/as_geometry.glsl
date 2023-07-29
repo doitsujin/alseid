@@ -257,9 +257,16 @@ MeshletRef meshletGetHeader(in MeshletMetadataRef dataBuffer, in MeshletMetadata
 
 // Joint influence structure
 struct JointInfluence {
-  uint16_t  index;
-  uint16_t  weight;
+  uint32_t  index;
+  float     weight;
 };
+
+JointInfluence jointInfluenceUnpack(uint16_t data) {
+  uint u32 = uint(data);
+
+  return JointInfluence(bitfieldExtract(uint(u32), 11, 5),
+    float(bitfieldExtract(uint(u32), 0, 11)) / 2047.0f);
+}
 
 
 // Morph target metadata

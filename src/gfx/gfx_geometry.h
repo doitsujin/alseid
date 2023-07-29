@@ -207,13 +207,32 @@ static_assert(sizeof(GfxMeshletHeader) == 32);
  * \brief Joint index + weight pair
  */
 struct GfxMeshletJointData {
-  /** Joint index */
-  uint16_t jointIndex;
-  /** Joint weight, as a normalized 16-bit integer. */
-  uint16_t jointWeight;
+  constexpr static uint32_t WeightBits = 11;
+  constexpr static uint32_t WeightFactor = (1u << WeightBits) - 1;
+
+  GfxMeshletJointData() = default;
+
+  GfxMeshletJointData(
+          uint16_t                      index,
+          float                         weight)
+  : jointWeightAndIndex((index << WeightBits) |
+      clamp<uint16_t>(uint16_t(weight * float(WeightFactor)), 0, WeightFactor)) { }
+
+  /** Joint weight in the lower 11 bits as a normalized
+   *  unsigned integer, and local joint index in the
+   *  upper 5 bits. */
+  uint16_t jointWeightAndIndex;
+
+  uint16_t getIndex() const {
+    return uint16_t(jointWeightAndIndex >> WeightBits);
+  }
+
+  float getWeight() const {
+    return float(jointWeightAndIndex & WeightFactor) / float(WeightFactor);
+  }
 };
 
-static_assert(sizeof(GfxMeshletJointData) == 4);
+static_assert(sizeof(GfxMeshletJointData) == 2);
 
 
 /**

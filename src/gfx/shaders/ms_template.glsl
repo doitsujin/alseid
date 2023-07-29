@@ -351,7 +351,7 @@ MsInputMorphDataRef msGetMeshletMorphData(in MsContext context, in Meshlet meshl
 #ifndef MS_NO_SKINNING
 layout(buffer_reference, buffer_reference_align = 4, scalar)
 readonly buffer JointInfluenceRef {
-  JointInfluence data[];
+  uint16_t data[];
 };
 
 JointInfluenceRef msGetJointInfluenceData(in MsContext context, in Meshlet meshlet) {
@@ -399,12 +399,6 @@ void msLoadLocalJointsFromMemory(in MsContext context, in Meshlet meshlet) {
   }
 }
 
-// Convenience method that loads a joint and applies its weight.
-float msNormalizeWeight(uint weight) {
-  const float weightScale = 1.0f / 65535.0f;
-  return float(weight) * weightScale;
-}
-
 // Accumulates all joint transforms for the given vertex. This will
 // essentially iterate over the per-vertex list of joint influences
 // and interpolate the dual quaternions using the joint weights.
@@ -412,10 +406,10 @@ Transform msComputeJointTransform(in MsContext context, in Meshlet meshlet, in J
   // If the weight of the first joint is zero, the vertex is not
   // attached to any joints. This works because joint influences
   // are ordered by weight.
-  JointInfluence joint = JointInfluence(0us, 0us);
+  JointInfluence joint = JointInfluence(0u, 0.0f);
 
   if (meshlet.jointCountPerVertex > 0)
-    joint = jointData.data[vertexIndex];
+    joint = jointInfluenceUnpack(jointData.data[vertexIndex]);
 
   if (joint.weight > 0) {
     // Load first joint and skip all the expensive code below if
@@ -423,20 +417,19 @@ Transform msComputeJointTransform(in MsContext context, in Meshlet meshlet, in J
     DualQuat accum = msLoadJointDualQuat(context, meshlet, joint.index);
 
     if (meshlet.jointCountPerVertex > 1) {
-      float weight = msNormalizeWeight(joint.weight);
-      accum.r *= weight;
-      accum.d *= weight;
+      accum.r *= joint.weight;
+      accum.d *= joint.weight;
 
       for (uint i = 1; i < meshlet.jointCountPerVertex; i++) {
-        JointInfluence joint = jointData.data[i * meshlet.vertexDataCount + vertexIndex];
+        JointInfluence joint = jointInfluenceUnpack(
+          jointData.data[i * meshlet.vertexDataCount + vertexIndex]);
 
-        if (joint.weight == 0)
+        if (joint.weight == 0.0f)
           break;
 
-        float weight = msNormalizeWeight(joint.weight);
         DualQuat dq = msLoadJointDualQuat(context, meshlet, joint.index);
-        accum.r = fma(dq.r, vec4(weight), accum.r);
-        accum.d = fma(dq.d, vec4(weight), accum.d);
+        accum.r = fma(dq.r, vec4(joint.weight), accum.r);
+        accum.d = fma(dq.d, vec4(joint.weight), accum.d);
       }
 
       accum = dualQuatNormalize(accum);

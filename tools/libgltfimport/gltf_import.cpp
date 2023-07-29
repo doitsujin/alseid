@@ -1026,7 +1026,6 @@ bool GltfMeshletBuilder::processJoints(
         GltfVertex*                   vertices,
         std::vector<GfxMeshletJointData>& jointBuffer) {
   constexpr float DominantJointThreshold = 0.9999f;
-  constexpr float JointWeightThreshold = 1.0f / 65535.0f;
 
   // Find joint and joint weight attributes
   std::vector<std::pair<uint32_t, uint32_t>> attributeOffsets;
@@ -1147,17 +1146,17 @@ bool GltfMeshletBuilder::processJoints(
       uint32_t jointIndex = repackBuffer[a].first;
       float    jointWeight = repackBuffer[a].second;
 
-      if (jointWeight != 0.0f) {
+      GfxMeshletJointData jointData(jointIndex, jointWeight);
+
+      if (jointData.getWeight() != 0.0f) {
         auto entry = jointMap.find(jointIndex);
         dbg_assert(entry != jointMap.end());
         jointIndex = entry->second;
+        weightCountNonZero += 1;
       }
 
       vertices[v].u32[attributeOffsets[a].first] = jointIndex;
       vertices[v].f32[attributeOffsets[a].second] = jointWeight;
-
-      if (jointWeight >= JointWeightThreshold)
-        weightCountNonZero += 1;
     }
 
     jointInfluenceCount = std::max(jointInfluenceCount, weightCountNonZero);
@@ -1175,15 +1174,15 @@ bool GltfMeshletBuilder::processJoints(
   for (uint32_t v = 0; v < m_meshlet.vertex_count; v++) {
     for (size_t a = 0; a < jointInfluenceCount; a++) {
       float w = clamp(vertices[v].f32[attributeOffsets[a].second], 0.0f, 1.0f);
-      normalizationBuffer[a] = std::make_pair(w, uint16_t(65535.0f * w));
+      normalizationBuffer[a] = std::make_pair(w, uint16_t(float(GfxMeshletJointData::WeightFactor) * w));
     }
 
     renormalizeWeights(normalizationBuffer);
 
     for (size_t a = 0; a < jointInfluenceCount; a++) {
-      auto& item = jointBuffer.at(jointInfluenceCount * v + a);
-      item.jointIndex = vertices[v].u32[attributeOffsets[a].first];
-      item.jointWeight = normalizationBuffer[a].second;
+      jointBuffer.at(jointInfluenceCount * v + a).jointWeightAndIndex =
+        (vertices[v].u32[attributeOffsets[a].first] << GfxMeshletJointData::WeightBits) |
+        (normalizationBuffer[a].second & GfxMeshletJointData::WeightFactor);
     }
   }
 
@@ -1197,21 +1196,19 @@ bool GltfMeshletBuilder::processJoints(
 
 void GltfMeshletBuilder::renormalizeWeights(
         std::vector<std::pair<float, uint16_t>>& weights) const {
-  constexpr uint16_t factor = 65535;
-
   // Compute current normalized sum and the deltas between
   // the original weights and the normalized representation.
   uint16_t normalizedSum = 0;
 
   for (auto& p : weights) {
-    p.first -= float(p.second) / float(factor);
+    p.first -= float(p.second) / float(GfxMeshletJointData::WeightFactor);
     normalizedSum += p.second;
   }
 
   // Find the pair with the largest delta and add one to the
   // normalized value, adjust delta accordingly. Repeat until
   // the sum of all weights is 1.0.
-  while (normalizedSum < factor) {
+  while (normalizedSum < GfxMeshletJointData::WeightFactor) {
     size_t maxDeltaIndex = 0;
 
     for (size_t i = 1; i < weights.size(); i++) {
@@ -1219,7 +1216,7 @@ void GltfMeshletBuilder::renormalizeWeights(
         maxDeltaIndex = 1;
     }
 
-    weights[maxDeltaIndex].first -= 1.0f / float(factor);
+    weights[maxDeltaIndex].first -= 1.0f / float(GfxMeshletJointData::WeightFactor);
     weights[maxDeltaIndex].second += 1;
 
     normalizedSum += 1;
