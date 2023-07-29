@@ -17,6 +17,23 @@
 //      float               timestamp;      /* mandatory */
 //      ...
 //    };
+//
+//
+// Initializes the context object.
+//
+//    CsContext csGetContext();
+//
+//
+// Stores a transformed joint. The index given is the index of
+// the joint within the geometry, no further translation needed.
+// The rotation quaternion will already be normalized.
+//
+//    void csStoreOutputJoint(uint index, in Transform transform);
+//
+//
+// Stores morph target weight.
+//
+//    void csStoreOutputWeight(uint index, float weight);
 
 
 // Use a fixed workgroup size of 32 threads since the animation

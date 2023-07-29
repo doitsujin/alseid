@@ -100,8 +100,6 @@ Aabb csAccumulateAabb(Aabb aabb) {
 // Computes transform for a single joint. This is equivalent to
 // translating a vertex into joint space, applying the relative
 // transform, and then translating back into model space.
-// Do not assume normalization here. This is slower, but this
-// shader is not expected to be ALU bound in the first place.
 Transform csComputeJointTransform(in Transform jointTransform, vec3 jointPosition) {
   Transform localTransform;
   localTransform.rot = jointTransform.rot;
