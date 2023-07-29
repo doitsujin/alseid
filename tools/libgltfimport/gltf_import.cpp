@@ -513,11 +513,10 @@ void GltfPackedVertexLayout::processVertices(
   const GltfVertex*                   vertexData,
   const uint32_t*                     indexData,
         GltfPackedVertexStream        outputType,
+        size_t                        outputStride,
         void*                         data) const {
   // Don't bother trying to be cache friendly for large inputs.
   // Ideally, this gets called for meshlet data anyway.
-  uint32_t stride = getStreamDataStride(outputType);
-
   for (const auto& a : m_attributes) {
     if (!testAttributeStream(a, outputType))
       continue;
@@ -617,7 +616,7 @@ void GltfPackedVertexLayout::processVertices(
       }
 
       // Copy formatted vertex to the output array
-      void* dst = reinterpret_cast<char*>(data) + i * stride + offset;
+      void* dst = reinterpret_cast<char*>(data) + i * outputStride + offset;
       std::memcpy(dst, dwords.data(), formatInfo.elementSize);
     }
   }
@@ -841,18 +840,22 @@ void GltfMeshletBuilder::buildMeshlet(
   std::vector<GltfVertex> inputVertices = loadVertices(vertexIndices, vertexData);
 
   // If possible, use local joint indices for the meshlet
-  // and also assign a dominant joint for culling.
   computeMeshletBounds(inputVertices.data(), primitiveIndices);
 
-  if (!processJoints(inputVertices.data()))
+  // Compute the joint influence buffer for this meshlet and assign
+  // the dominant joint, if any. The joint buffer also takes part in
+  // dual indexing considerations later.
+  std::vector<GfxMeshletJointData> jointBuffer;
+
+  if (!processJoints(inputVertices.data(), jointBuffer))
     m_metadata.info.flags -= GfxMeshletCullFlag::eCullSphere | GfxMeshletCullFlag::eCullCone;
 
   // Read both shading and vertex data into local arrays
   std::vector<char> vertexBuffer = packVertices(
-    GltfPackedVertexStream::eVertexData, inputVertices.data());
+    GltfPackedVertexStream::eVertexData, inputVertices.data(), jointBuffer.data());
 
   std::vector<char> shadingBuffer = packVertices(
-    GltfPackedVertexStream::eShadingData, inputVertices.data());
+    GltfPackedVertexStream::eShadingData, inputVertices.data(), nullptr);
 
   // Compute dual index buffer by deduplicating vertex and shading data.
   // The data buffers are changed even if dual indexing is disabled, so
@@ -892,13 +895,30 @@ std::vector<GltfVertex> GltfMeshletBuilder::loadVertices(
 
 std::vector<char> GltfMeshletBuilder::packVertices(
         GltfPackedVertexStream        stream,
-  const GltfVertex*                   vertices) {
+  const GltfVertex*                   vertices,
+  const GfxMeshletJointData*          joints) {
   uint32_t stride = m_packedLayout->getStreamDataStride(stream);
-  std::vector<char> result(stride * m_meshlet.vertex_count);
+
+  // For vertex data, also append joint data.
+  uint32_t jointDataSize = joints
+    ? uint32_t(sizeof(GfxMeshletJointData) * m_metadata.header.jointCountPerVertex)
+    : 0u;
+
+  // Build actual data buffer
+  uint32_t packedStride = stride + jointDataSize;
+  std::vector<char> result(packedStride * m_meshlet.vertex_count);
 
   m_packedLayout->processVertices(m_inputLayout,
     m_meshlet.vertex_count, vertices, nullptr,
-    stream, result.data());
+    stream, packedStride, result.data());
+
+  if (jointDataSize) {
+    for (uint32_t i = 0; i < m_meshlet.vertex_count; i++) {
+      std::memcpy(&result[i * packedStride + stride],
+        &joints[i * m_metadata.header.jointCountPerVertex],
+        jointDataSize);
+    }
+  }
 
   return result;
 }
@@ -954,6 +974,8 @@ std::vector<std::pair<uint8_t, uint8_t>> GltfMeshletBuilder::computeDualIndexBuf
   uint32_t vertexStride = m_packedLayout->getStreamDataStride(GltfPackedVertexStream::eVertexData);
   uint32_t shadingStride = m_packedLayout->getStreamDataStride(GltfPackedVertexStream::eShadingData);
 
+  vertexStride += m_metadata.header.jointCountPerVertex * sizeof(GfxMeshletJointData);
+
   uint32_t vertexDataCount = 0;
   uint32_t shadingDataCount = 0;
 
@@ -1001,8 +1023,10 @@ uint32_t GltfMeshletBuilder::deduplicateData(
 
 
 bool GltfMeshletBuilder::processJoints(
-        GltfVertex*                   vertices) {
+        GltfVertex*                   vertices,
+        std::vector<GfxMeshletJointData>& jointBuffer) {
   constexpr float DominantJointThreshold = 0.9999f;
+  constexpr float JointWeightThreshold = 1.0f / 65535.0f;
 
   // Find joint and joint weight attributes
   std::vector<std::pair<uint32_t, uint32_t>> attributeOffsets;
@@ -1116,7 +1140,11 @@ bool GltfMeshletBuilder::processJoints(
   // and resolve local indexing at the same time if enabled.
   std::vector<std::pair<uint32_t, float>> repackBuffer(attributeOffsets.size());
 
+  uint32_t jointInfluenceCount = 0;
+
   for (uint32_t v = 0; v < m_meshlet.vertex_count; v++) {
+    uint32_t weightCountNonZero = 0;
+
     for (size_t a = 0; a < attributeOffsets.size(); a++) {
       repackBuffer[a] = std::make_pair(
         vertices[v].u32[attributeOffsets[a].first],
@@ -1140,16 +1168,72 @@ bool GltfMeshletBuilder::processJoints(
 
       vertices[v].u32[attributeOffsets[a].first] = jointIndex;
       vertices[v].f32[attributeOffsets[a].second] = jointWeight;
+
+      if (jointWeight >= JointWeightThreshold)
+        weightCountNonZero += 1;
+    }
+
+    jointInfluenceCount = std::max(jointInfluenceCount, weightCountNonZero);
+  }
+
+  // Build joint influence buffer. This is essentially a two-dimensional
+  // array of the form GfxMeshletJointData[vertCount][jointCount].
+  m_metadata.header.jointCountPerVertex = jointInfluenceCount;
+  jointBuffer.resize(jointInfluenceCount * m_meshlet.vertex_count);
+
+  std::vector<std::pair<float, uint16_t>> normalizationBuffer(jointInfluenceCount);
+
+  for (uint32_t v = 0; v < m_meshlet.vertex_count; v++) {
+    for (size_t a = 0; a < jointInfluenceCount; a++) {
+      float w = clamp(vertices[v].f32[attributeOffsets[a].second], 0.0f, 1.0f);
+      normalizationBuffer[a] = std::make_pair(w, uint16_t(65535.0f * w));
+    }
+
+    renormalizeWeights(normalizationBuffer);
+
+    for (size_t a = 0; a < jointInfluenceCount; a++) {
+      auto& item = jointBuffer.at(jointInfluenceCount * v + a);
+      item.jointIndex = vertices[v].u32[attributeOffsets[a].first];
+      item.jointWeight = normalizationBuffer[a].second;
     }
   }
 
   // Assign dominant joint to the meshlet. If there are multiple joints
   // or we do not have a dominant joint, disable culling for now.
-  //
-  // TODO: Find a way to allow culling anyway as long as a dominant
-  //    joint could be found (animation keyframes or something?)
   m_metadata.info.jointIndex = uint16_t(dominantJoint);
   return dominantJoint != ~0u && m_localJoints.size() == 1;
+}
+
+
+void GltfMeshletBuilder::renormalizeWeights(
+        std::vector<std::pair<float, uint16_t>>& weights) const {
+  constexpr uint16_t factor = 65535;
+
+  // Compute current normalized sum and the deltas between
+  // the original weights and the normalized representation.
+  uint16_t normalizedSum = 0;
+
+  for (auto& p : weights) {
+    p.first -= float(p.second) / float(factor);
+    normalizedSum += p.second;
+  }
+
+  // Find the pair with the largest delta and add one to the
+  // normalized value, adjust delta accordingly. Repeat until
+  // the sum of all weights is 1.0.
+  while (normalizedSum < factor) {
+    size_t maxDeltaIndex = 0;
+
+    for (size_t i = 1; i < weights.size(); i++) {
+      if (weights[i].first > weights[maxDeltaIndex].first)
+        maxDeltaIndex = 1;
+    }
+
+    weights[maxDeltaIndex].first -= 1.0f / float(factor);
+    weights[maxDeltaIndex].second += 1;
+
+    normalizedSum += 1;
+  }
 }
 
 
@@ -1212,7 +1296,7 @@ void GltfMeshletBuilder::processMorphTargets(
     // Pack morphed vertex data and append all vertices
     // which have any non-zero data to the output.
     std::vector<char> morphData = packVertices(
-      GltfPackedVertexStream::eMorphData, vertices.data());
+      GltfPackedVertexStream::eMorphData, vertices.data(), nullptr);
 
     GfxMeshletMorphTargetInfo* metadata = nullptr;
 
@@ -1264,6 +1348,14 @@ void GltfMeshletBuilder::buildMeshletBuffer(
       m_meshlet.vertex_count * 2);
   }
 
+  // Joint data is always required for vertex processing if present.
+  if (m_metadata.header.jointCountPerVertex) {
+    m_metadata.header.jointDataOffset = allocateStorage(offset,
+      m_metadata.header.jointCountPerVertex *
+      m_metadata.header.vertexDataCount *
+      sizeof(GfxMeshletJointData));
+  }
+
   // Generally followed by vertex data. Ignore morph targets for
   // now, if those are used then access patterns are weird anyway.
   uint32_t vertexStride = m_packedLayout->getStreamDataStride(GltfPackedVertexStream::eVertexData);
@@ -1301,26 +1393,37 @@ void GltfMeshletBuilder::buildMeshletBuffer(
   std::memcpy(&m_buffer[0], &m_metadata.header, sizeof(m_metadata.header));
 
   // Write out vertex and shading data
+  size_t vertexInputStride = vertexStride +
+    m_metadata.header.jointCountPerVertex * sizeof(GfxMeshletJointData);
+
   char* dstVertexData = &m_buffer[m_metadata.header.vertexDataOffset * 16];
   char* dstShadingData = &m_buffer[m_metadata.header.shadingDataOffset * 16];
+  char* dstJointData = &m_buffer[m_metadata.header.jointDataOffset * 16];
 
-  if (m_metadata.header.flags & GfxMeshletFlag::eDualIndex) {
-    // If dual indexing is enabled, we can copy vertex data as it is
-    std::memcpy(dstVertexData, vertexData, m_metadata.header.vertexDataCount * vertexStride);
-    std::memcpy(dstShadingData, shadingData, m_metadata.header.shadingDataCount * shadingStride);
+  for (uint32_t i = 0; i < m_meshlet.vertex_count; i++) {
+    std::pair<uint8_t, uint8_t> dualIndex = dualIndexData[i];
 
-    auto dstDualIndexData = reinterpret_cast<uint8_t*>(&m_buffer[m_metadata.header.dualIndexOffset * 16]);
-
-    for (uint32_t i = 0; i < m_meshlet.vertex_count; i++) {
+    if (m_metadata.header.flags & GfxMeshletFlag::eDualIndex) {
+      auto dstDualIndexData = reinterpret_cast<uint8_t*>(&m_buffer[m_metadata.header.dualIndexOffset * 16]);
       dstDualIndexData[2 * i + 0] = dualIndexData[i].first;
       dstDualIndexData[2 * i + 1] = dualIndexData[i].second;
+      dualIndex = { i, i };
     }
-  } else {
-    // Otherwise, we need to resolve the dual index buffer by hand
-    for (uint32_t i = 0; i < m_meshlet.vertex_count; i++) {
-      auto d = dualIndexData[i];
-      std::memcpy(&dstVertexData[i * vertexStride], &vertexData[d.first * vertexStride], vertexStride);
-      std::memcpy(&dstShadingData[i * shadingStride], &shadingData[d.second * shadingStride], shadingStride);
+
+    if (i < m_metadata.header.vertexDataCount) {
+      std::memcpy(&dstVertexData[i * vertexStride],
+        &vertexData[dualIndex.first * vertexInputStride], vertexStride);
+
+      for (uint32_t j = 0; j < m_metadata.header.jointCountPerVertex; j++) {
+        std::memcpy(&dstJointData[(j * m_metadata.header.vertexDataCount + i) * sizeof(GfxMeshletJointData)],
+          &vertexData[dualIndex.first * vertexInputStride + vertexStride + j * sizeof(GfxMeshletJointData)],
+          sizeof(GfxMeshletJointData));
+      }
+    }
+
+    if (i < m_metadata.header.shadingDataCount) {
+      std::memcpy(&dstShadingData[i * shadingStride],
+        &shadingData[dualIndex.second * shadingStride], shadingStride);
     }
   }
 
@@ -1835,15 +1938,14 @@ void GltfMeshConverter::processInstances() {
 
         instance.info.jointIndex = entry->second;
       } else {
-        // If this happens, just add a list of invalid joint
-        // indices, shaders are responsible for bound-checking.
+        // If this happens, just add dummy joint indices
         Log::err("No skin assigned to instance ", node->getName(), " of skinned mesh ", m_mesh->getName());
 
         if (!dummySkinOffset) {
           dummySkinOffset = uint16_t(m_jointIndices.size());
 
           for (size_t i = 0; i < m_jointCountPerSkin; i++)
-            m_jointIndices.push_back(0xffffu);
+            m_jointIndices.push_back(0);
         }
 
         instance.info.jointIndex = dummySkinOffset;

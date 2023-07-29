@@ -311,6 +311,7 @@ public:
    * \param [in] vertexData Input vertex data
    * \param [in] indexData Optional index buffer
    * \param [in] outputType Output stream type
+   * \param [in] outputStride Output data stride
    * \param [out] data Packed vertex data
    */
   void processVertices(
@@ -319,6 +320,7 @@ public:
     const GltfVertex*                   vertexData,
     const uint32_t*                     indexData,
           GltfPackedVertexStream        outputType,
+          size_t                        outputStride,
           void*                         data) const;
 
 private:
@@ -537,7 +539,8 @@ private:
 
   std::vector<char> packVertices(
           GltfPackedVertexStream        stream,
-    const GltfVertex*                   vertices);
+    const GltfVertex*                   vertices,
+    const GfxMeshletJointData*          joints);
 
   void computeMeshletBounds(
     const GltfVertex*                   vertices,
@@ -554,7 +557,11 @@ private:
           uint32_t                      index);
 
   bool processJoints(
-          GltfVertex*                   vertices);
+          GltfVertex*                   vertices,
+          std::vector<GfxMeshletJointData>& jointBuffer);
+
+  void renormalizeWeights(
+          std::vector<std::pair<float, uint16_t>>& weights) const;
 
   void processMorphTargets(
           std::vector<GfxMeshletMorphTargetInfo>& morphTargets,
