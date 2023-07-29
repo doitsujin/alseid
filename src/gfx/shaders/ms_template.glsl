@@ -481,21 +481,6 @@ void msLoadVertexDataFromMemory(in MsContext context, in Meshlet meshlet) {
 }
 
 
-// Input shading data. This will generally only be copied into LDS
-// if dual indexing is enabled for the meshlet.
-#ifndef MS_NO_SHADING_DATA
-shared MsShadingIn msShadingInputShared[MAX_VERT_COUNT];
-
-void msLoadShadingDataFromMemory(in MsContext context, in Meshlet meshlet) {
-  MsInputShadingDataRef shadingData = MsInputShadingDataRef(
-    meshletComputeAddress(context.meshlet, meshlet.shadingDataOffset));
-
-  MS_LOOP_WORKGROUP(index, meshlet.shadingDataCount, MAX_VERT_COUNT) {
-    msShadingInputShared[index] = shadingData.vertices[index];
-  }
-}
-#endif
-
 // Output vertex position data. If dual-indexing is used, this is
 // generally compacted in such a way that each output position may
 // be used by multiple output vertices.
@@ -871,14 +856,10 @@ void msMain() {
   FsUniform fsUniform = msComputeFsUniform(context);
 #endif
 
-  // Load shading data into shared memory
-#ifndef MS_NO_SHADING_DATA
-  msLoadShadingDataFromMemory(context, meshlet);
-
-  barrier();
-#endif // MS_NO_SHADING_DATA
-
   // Export vertex positions and fragment shader inputs
+  MsInputShadingDataRef shadingData = MsInputShadingDataRef(
+    meshletComputeAddress(context.meshlet, meshlet.shadingDataOffset));
+
   MS_LOOP_WORKGROUP(index, outputVertexCount, MAX_VERT_COUNT) {
     // Compute vertex and shading data indices
     uvec2 dualIndex = uvec2(index);
@@ -903,7 +884,7 @@ void msMain() {
     vertexIn.vertex = msVertexInputShared[dualIndex.x];
 #endif // MS_NO_VERTEX_DATA
 #ifndef MS_NO_SHADING_DATA
-    vertexIn.shading = msShadingInputShared[dualIndex.y];
+    vertexIn.shading = shadingData.vertices[dualIndex.y];
 #endif // MS_NO_SHADING_DATA
 
 #ifndef MS_NO_MORPH_DATA
