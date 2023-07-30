@@ -1381,6 +1381,15 @@ void GltfMeshletBuilder::buildMeshletBuffer(
       offset, morphBuffer.size());
   }
 
+  // Put ray tracing index data at the end since we'll never access
+  // it during actual rendering. Note that the ray tracing metadata
+  // structure does not encode offsets as multiples of 16.
+  m_metadata.rayTracing.vertexOffset = m_metadata.header.vertexDataOffset * 16;
+  m_metadata.rayTracing.indexOffset = allocateStorage(offset,
+    m_meshlet.triangle_count * 3 * sizeof(uint16_t)) * 16;
+  m_metadata.rayTracing.vertexCount = m_meshlet.vertex_count;
+  m_metadata.rayTracing.primitiveCount = m_meshlet.triangle_count;
+
   // Allocate buffer and write the header
   m_buffer.resize(offset * 16);
   std::memcpy(&m_buffer[0], &m_metadata.header, sizeof(m_metadata.header));
@@ -1428,12 +1437,23 @@ void GltfMeshletBuilder::buildMeshletBuffer(
   // Write out primitive data
   auto dstPrimitiveData = reinterpret_cast<GfxMeshletPrimitive*>(
     &m_buffer[m_metadata.header.primitiveOffset * 16]);
+  auto dstBvhIndexData = reinterpret_cast<uint16_t*>(
+    &m_buffer[m_metadata.rayTracing.indexOffset]);
 
   for (uint32_t i = 0; i < m_meshlet.triangle_count; i++) {
     dstPrimitiveData[i] = GfxMeshletPrimitive(
       primitiveIndices[3 * i + 0],
       primitiveIndices[3 * i + 1],
       primitiveIndices[3 * i + 2]);
+
+    for (uint32_t j = 0; j < 3; j++) {
+      uint8_t index = primitiveIndices[3 * i + j];
+
+      if (m_metadata.header.flags & GfxMeshletFlag::eDualIndex)
+        index = dualIndexData[index].first;
+
+      dstBvhIndexData[3 * i + j] = uint16_t(index);
+    }
   }
 
   // Write out morph target data
@@ -2691,6 +2711,7 @@ void GltfConverter::buildGeometry() {
         meshletMetadata.info.dataOffset = allocateStorage(
           bufferDataSizes.at(lodMetadata.info.bufferIndex),
           meshlet->getBuffer().getSize());
+        meshletMetadata.rayTracing.headerOffset = meshletMetadata.info.dataOffset;
 
         meshlets.push_back(meshletMetadata);
       }
@@ -2747,7 +2768,7 @@ void GltfConverter::buildGeometry() {
   // At this point, we know the total size of the metadata
   // buffer as well as all meshlet data buffers. Do another
   // pass over all meshlets and fix up the data offsets.
-  m_geometry->meshletOffsets.resize(meshlets.size());
+  m_geometry->meshlets.resize(meshlets.size());
 
   for (size_t i = 0; i < m_geometry->info.meshCount; i++) {
     const auto& meshMetadata = m_geometry->meshes.at(i);
@@ -2759,10 +2780,10 @@ void GltfConverter::buildGeometry() {
       for (size_t k = 0; k < lodMetadata.info.meshletCount; k++) {
         auto& meshletMetadata = meshlets.at(lodMetadata.firstMeshletIndex + k);
         meshletMetadata.info.dataOffset += lodBufferOffset;
-
-        m_geometry->meshletOffsets.at(lodMetadata.firstMeshletIndex + k) =
-          meshletMetadata.info.dataOffset + meshletMetadata.header.vertexDataOffset +
+        meshletMetadata.rayTracing.headerOffset += lodBufferOffset +
           (lodMetadata.info.bufferIndex ? 0u : m_geometry->info.meshletDataOffset);
+
+        m_geometry->meshlets.at(lodMetadata.firstMeshletIndex + k) = meshletMetadata.rayTracing;
       }
     }
   }

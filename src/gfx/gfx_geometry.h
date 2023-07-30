@@ -236,6 +236,34 @@ static_assert(sizeof(GfxMeshletJointData) == 2);
 
 
 /**
+ * \brief Meshlet ray tracing info
+ *
+ * Stores all information necessary to build bottom-level
+ * BVHs for meshlet-based geometry. The intention is that
+ * all meshlets of an LOD are packed into one bottom-level
+ * BVH.
+ */
+struct GfxMeshletRayTracingInfo {
+  /** Offset of meshlet header within the data buffer,
+   *  relative to the start of the actual GPU buffer. */
+  uint32_t headerOffset;
+  /** Offset of vertex data, relative to the meshlet header.
+   *  The actual vertex layout of the can be queried from
+   *  the mesh material. */
+  uint32_t vertexOffset;
+  /** Offset of index data relative to the meshlet header.
+   *  Indices for BVH builds are stored as 16-bit. */
+  uint32_t indexOffset;
+  /** Number of vertices in the meshlet. */
+  uint16_t vertexCount;
+  /** Number of primitives in the meshlet. */
+  uint16_t primitiveCount;
+};
+
+static_assert(sizeof(GfxMeshletRayTracingInfo) == 16);
+
+
+/**
  * \brief Meshlet metadata
  *
  * CPU-side copy of meshlet info, which can be useful when creating
@@ -246,6 +274,8 @@ struct GfxMeshletMetadata {
   GfxMeshletInfo info = { };
   /** Meshlet data header */
   GfxMeshletHeader header = { };
+  /** Meshlet ray tracing info */
+  GfxMeshletRayTracingInfo rayTracing = { };
 };
 
 
@@ -819,10 +849,9 @@ struct GfxGeometry {
   std::vector<GfxMeshMetadata> meshes;
   /** List of mesh instances */
   std::vector<GfxMeshInstanceMetadata> instances;
-  /** List of meshlet vertex data offsets within their
-   *  respective data buffers. Useful when creating ray
-   *  tracing BVHs. */
-  std::vector<uint32_t> meshletOffsets;
+  /** List of meshlet vertex data offsets within their respective
+   *  data buffers. Useful when creating ray tracing BVHs. */
+  std::vector<GfxMeshletRayTracingInfo> meshlets;
   /** List of material descriptions. */
   std::vector<GfxMeshMaterialMetadata> materials;
   /** List of vertex attribute descriptions. */
@@ -860,10 +889,10 @@ struct GfxGeometry {
    * \param [in] mesh Mesh to look at
    * \param [in] lod Mesh LOD to look at
    * \param [in] meshlet Meshlet index within the LOD
-   * \returns Offset of meshlet vertex data within
-   *    the data buffer that the LOD is stored in.
+   * \returns Pointer to meshlet info, or \c nullptr
+   *    if the given meshlet index is out of bounds.
    */
-  uint32_t getMeshletVertexDataOffset(
+  const GfxMeshletRayTracingInfo* getMeshlet(
     const GfxMeshMetadata*              mesh,
     const GfxMeshLodMetadata*           lod,
           uint32_t                      meshlet) const;
