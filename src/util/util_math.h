@@ -238,6 +238,95 @@ T bextract(T op, uint32_t first, uint32_t count) {
 }
 
 
+/**
+ * \brief Inserts given set of bits
+ *
+ * \param [in] op Operand to insert to
+ * \param [in] v Value to insert
+ * \param [in] first Bit index to insert at
+ * \param [in] count Number of bits to insert
+ */
+template<typename T>
+T binsert(T op, T v, uint32_t first, uint32_t count) {
+  if (!count)
+    return op;
+
+  T mask = ((T(2) << (count - 1)) - T(1)) << first;
+  return (op & ~mask) | ((v << first) & mask);
+}
+
+
+/**
+ * \brief Byte swap helpers
+ */
+inline uint16_t bswap16(uint16_t a) {
+  return (a >> 8) | (a << 8);
+}
+
+inline uint32_t bswap32(uint32_t a) {
+#ifdef AS_HAS_X86_INTRINSICS
+  return uint32_t(_bswap(a));
+#else
+  a = (a >> 16) | (a << 16);
+  a = ((a & 0xff00ff00u) >> 8)
+    | ((a & 0x00ff00ffu) << 8);
+  return a;
+#endif
+}
+
+inline uint64_t bswap64(uint64_t a) {
+#ifdef AS_HAS_X86_INTRINSICS
+  return uint64_t(_bswap64(a));
+#else
+  a = (a >> 32) | (a << 32);
+  a = ((a & 0xffff0000ffff0000ull) >> 16)
+    | ((a & 0x0000ffff0000ffffull) << 16);
+  a = ((a & 0xff00ff00ff00ff00ull) >> 8)
+    | ((a & 0x00ff00ff00ff00ffull) << 8);
+  return a;
+#endif
+}
+
+
+/**
+ * \brief Swaps byte order
+ *
+ * Useful to convert between big endian and little endian.
+ * \param [in] a Input value
+ * \returns Input value with reversed byte order
+ */
+template<typename T, std::enable_if_t<std::is_integral_v<T>, bool> = true>
+inline T bswap(T a) {
+  if constexpr (sizeof(T) == 8)
+    return T(bswap64(uint64_t(a)));
+
+  if constexpr (sizeof(T) == 4)
+    return T(bswap32(uint32_t(a)));
+
+  if constexpr (sizeof(T) == 2)
+    return T(bswap16(uint16_t(a)));
+
+  return a;
+}
+
+
+/**
+ * \brief Reverses bits
+ *
+ * \param [in] a Input
+ * \returns Input with reversed bits
+ */
+template<typename T>
+T breverse(T a) {
+  a = ((a & T(0xf0f0f0f0f0f0f0f0ull)) >> 4)
+    | ((a & T(0x0f0f0f0f0f0f0f0full)) << 4);
+  a = ((a & T(0xccccccccccccccccull)) >> 2)
+    | ((a & T(0x3333333333333333ull)) << 2);
+  a = ((a & T(0xaaaaaaaaaaaaaaaaull)) >> 1)
+    | ((a & T(0x5555555555555555ull)) << 1);
+  return bswap(a);
+}
+
 
 /**
  * \brief Computes multiply-add
