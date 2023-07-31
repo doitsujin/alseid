@@ -176,6 +176,13 @@ GfxRayTracingBvh GfxDebugDevice::createRayTracingBvh(
 }
 
 
+GfxRenderState GfxDebugDevice::createRenderState(
+  const GfxRenderStateDesc&           desc) {
+  // TODO validate state
+  return m_device->createRenderState(desc);
+}
+
+
 GfxRenderTargetState GfxDebugDevice::createRenderTargetState(
   const GfxRenderTargetStateDesc&     desc) {
   // TODO validate state

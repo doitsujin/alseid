@@ -581,6 +581,12 @@ GfxRayTracingBvh GfxVulkanDevice::createRayTracingBvh(
 }
 
 
+GfxRenderState GfxVulkanDevice::createRenderState(
+  const GfxRenderStateDesc&           desc) {
+  return GfxRenderState(m_pipelineManager->createRenderState(desc));
+}
+
+
 GfxRenderTargetState GfxVulkanDevice::createRenderTargetState(
   const GfxRenderTargetStateDesc&     desc) {
   return GfxRenderTargetState(m_pipelineManager->createRenderTargetState(desc));

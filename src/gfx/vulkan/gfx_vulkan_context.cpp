@@ -971,6 +971,12 @@ void GfxVulkanContext::setRasterizerState(
 }
 
 
+void GfxVulkanContext::setRenderState(
+        GfxRenderState                state) {
+
+}
+
+
 void GfxVulkanContext::setShaderConstants(
         uint32_t                      offset,
         uint32_t                      size,

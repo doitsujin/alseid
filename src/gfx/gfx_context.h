@@ -716,6 +716,16 @@ public:
           GfxRasterizerState            state) = 0;
 
   /**
+   * \brief Sets render state
+   *
+   * Only changes the render states that are defined by
+   * the state object, and leaves other state untouched.
+   * \param [in] state Render state object
+   */
+  virtual void setRenderState(
+          GfxRenderState                state) = 0;
+
+  /**
    * \brief Sets shader constants
    *
    * The sum of \c offset and \c size \e must

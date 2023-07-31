@@ -590,6 +590,214 @@ GfxVulkanRenderTargetState::~GfxVulkanRenderTargetState() {
 
 
 
+GfxVulkanRenderState::GfxVulkanRenderState(
+        GfxVulkanPipelineManager&     mgr,
+  const GfxRenderStateData&           desc)
+: GfxRenderStateIface(desc) {
+  if (desc.flags & GfxRenderStateFlag::ePrimitiveTopology)
+    setupPrimitiveTopology(mgr, desc.primitiveTopology);
+
+  if (desc.flags & GfxRenderStateFlag::eVertexLayout)
+    setupVertexLayout(mgr, desc.vertexLayout);
+
+  if (desc.flags & (
+      GfxRenderStateFlag::eCullMode |
+      GfxRenderStateFlag::eFrontFace |
+      GfxRenderStateFlag::eConservativeRaster))
+    setupRasterizer(mgr, desc);
+
+  if (desc.flags & GfxRenderStateFlag::eDepthBias)
+    setupDepthBias(mgr, desc.depthBias);
+
+  if (desc.flags & GfxRenderStateFlag::eShadingRate)
+    setupShadingRate(mgr, desc.shadingRate);
+
+  if (desc.flags & GfxRenderStateFlag::eDepthTest)
+    setupDepthTest(mgr, desc.depthTest);
+
+  if (desc.flags & GfxRenderStateFlag::eStencilTest)
+    setupStencilTest(mgr, desc.depthTest, desc.stencilTest);
+
+  if (desc.flags & GfxRenderStateFlag::eMultisampling)
+    setupMultisampling(mgr, desc.multisampling);
+
+  if (desc.flags & GfxRenderStateFlag::eBlending)
+    setupBlending(mgr, desc.blending);
+
+  // Do this at the very end when all potential
+  // dynamic state has been registered
+  if (m_dyState.dynamicStateCount)
+    m_dyState.pDynamicStates = m_dyList.data();
+}
+
+
+GfxVulkanRenderState::~GfxVulkanRenderState() {
+
+}
+
+
+void GfxVulkanRenderState::setupPrimitiveTopology(
+        GfxVulkanPipelineManager&     mgr,
+  const GfxPrimitiveTopology&         desc) {
+  m_iaState.topology = getVkPrimitiveTopology(desc.primitiveType);
+  m_iaState.primitiveRestartEnable = desc.isPrimitiveRestartEnabled();
+
+  m_tsState.patchControlPoints = desc.patchVertexCount;
+}
+
+
+void GfxVulkanRenderState::setupVertexLayout(
+        GfxVulkanPipelineManager&     mgr,
+  const GfxVertexLayout&              desc) {
+  uint32_t bindingMask = 0;
+
+  // Set up all the state objects
+  for (uint32_t i = 0; i < GfxMaxVertexAttributes; i++) {
+    auto& info = desc.attributes[i];
+
+    if (info.format == GfxFormat::eUnknown)
+      continue;
+
+    auto& att = m_viAttributes[m_viState.vertexAttributeDescriptionCount++];
+    att.location = i;
+    att.format = mgr.device().getVkFormat(info.format);
+    att.offset = info.offset;
+    att.binding = info.binding;
+
+    if (!(bindingMask & (1u << info.binding))) {
+      bindingMask |= (1u << info.binding);
+
+      auto& bind = m_viBindings[m_viState.vertexBindingDescriptionCount++];
+      bind.binding = info.binding;
+      bind.stride = info.stride;
+      bind.inputRate = getVkInputRate(info.inputRate);
+    }
+  }
+
+  if (m_viState.vertexAttributeDescriptionCount) {
+    m_viState.pVertexAttributeDescriptions = m_viAttributes.data();
+    m_viState.pVertexBindingDescriptions = m_viBindings.data();
+  }
+}
+
+
+void GfxVulkanRenderState::setupRasterizer(
+        GfxVulkanPipelineManager&     mgr,
+  const GfxRenderStateData&           desc) {
+  m_rsState.depthClampEnable = VK_FALSE;
+  m_rsState.rasterizerDiscardEnable = VK_FALSE;
+  m_rsState.polygonMode = VK_POLYGON_MODE_FILL;
+
+  if (desc.flags & GfxRenderStateFlag::eCullMode)
+    m_rsState.cullMode = getVkCullMode(desc.cullMode);
+
+  if (desc.flags & GfxRenderStateFlag::eFrontFace)
+    m_rsState.frontFace = getVkFrontFace(desc.frontFace);
+
+  if (desc.conservativeRaster) {
+    m_rsConservative.conservativeRasterizationMode = VK_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATE_EXT;
+    m_rsState.pNext = &m_rsConservative;
+  }
+}
+
+
+void GfxVulkanRenderState::setupDepthBias(
+        GfxVulkanPipelineManager&     mgr,
+  const GfxDepthBias&                 desc) {
+  m_rsState.depthBiasEnable = desc.isDepthBiasEnabled();
+  m_rsState.depthBiasConstantFactor = desc.depthBias;
+  m_rsState.depthBiasSlopeFactor = desc.depthBiasSlope;
+  m_rsState.depthBiasClamp = desc.depthBiasClamp;
+}
+
+
+void GfxVulkanRenderState::setupShadingRate(
+        GfxVulkanPipelineManager&     mgr,
+  const GfxShadingRate&               desc) {
+  m_srState.fragmentSize = getVkExtent2D(desc.shadingRate);
+  m_srState.combinerOps[0] = VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR;
+  m_srState.combinerOps[1] = getVkShadingRateCombiner(desc.shadingRateOp);
+}
+
+
+void GfxVulkanRenderState::setupDepthTest(
+        GfxVulkanPipelineManager&     mgr,
+  const GfxDepthTest&                 desc) {
+  m_dsState.depthTestEnable = desc.isDepthTestEnabled();
+  m_dsState.depthWriteEnable = desc.enableDepthWrite;
+  m_dsState.depthCompareOp = getVkCompareOp(desc.depthCompareOp);
+  m_dsState.depthBoundsTestEnable = desc.enableDepthBoundsTest;
+
+  if (m_dsState.depthBoundsTestEnable)
+    m_dyList.at(m_dyState.dynamicStateCount++) = VK_DYNAMIC_STATE_DEPTH_BOUNDS;
+}
+
+
+void GfxVulkanRenderState::setupStencilTest(
+        GfxVulkanPipelineManager&     mgr,
+  const GfxDepthTest&                 depth,
+  const GfxStencilTest&               desc) {
+  m_dsState.stencilTestEnable = desc.isStencilTestEnabled(depth);
+  m_dsState.front = getVkStencilState(desc.front);
+  m_dsState.back = getVkStencilState(desc.back);
+
+  if (m_dsState.stencilTestEnable)
+    m_dyList.at(m_dyState.dynamicStateCount++) = VK_DYNAMIC_STATE_STENCIL_REFERENCE;
+}
+
+
+void GfxVulkanRenderState::setupMultisampling(
+        GfxVulkanPipelineManager&     mgr,
+  const GfxMultisampling&             desc) {
+
+}
+
+
+void GfxVulkanRenderState::setupBlending(
+        GfxVulkanPipelineManager&     mgr,
+  const GfxBlending&                  desc) {
+  bool usesBlendConstants = false;
+
+  m_cbState.logicOpEnable = desc.isLogicOpEnabled();
+  m_cbState.logicOp = getVkLogicOp(desc.logicOp);
+
+  for (uint32_t i = 0; i < GfxMaxColorAttachments; i++) {
+    VkPipelineColorBlendAttachmentState& attachment = m_cbAttachments[i];
+    attachment.colorWriteMask = getVkComponentFlags(desc.renderTargets[i].writeMask);
+
+    if (desc.renderTargets[i].isBlendingEnabled()) {
+      usesBlendConstants |= desc.renderTargets[i].usesBlendConstants();
+
+      attachment.blendEnable = VK_TRUE;
+      attachment.srcColorBlendFactor = getVkBlendFactor(desc.renderTargets[i].srcColor);
+      attachment.dstColorBlendFactor = getVkBlendFactor(desc.renderTargets[i].dstColor);
+      attachment.colorBlendOp = getVkBlendOp(desc.renderTargets[i].colorOp);
+      attachment.srcAlphaBlendFactor = getVkBlendFactor(desc.renderTargets[i].srcAlpha);
+      attachment.dstAlphaBlendFactor = getVkBlendFactor(desc.renderTargets[i].dstAlpha);
+      attachment.alphaBlendOp = getVkBlendOp(desc.renderTargets[i].alphaOp);
+    }
+  }
+
+  if (usesBlendConstants)
+    m_dyList.at(m_dyState.dynamicStateCount++) = VK_DYNAMIC_STATE_BLEND_CONSTANTS;
+}
+
+
+VkStencilOpState GfxVulkanRenderState::getVkStencilState(
+  const GfxStencilDesc&               desc) {
+  VkStencilOpState state = { };
+  state.failOp = getVkStencilOp(desc.failOp);
+  state.passOp = getVkStencilOp(desc.passOp);
+  state.depthFailOp = getVkStencilOp(desc.depthFailOp);
+  state.compareOp = getVkCompareOp(desc.compareOp);
+  state.compareMask = desc.compareMask;
+  state.writeMask = desc.writeMask;
+  return state;
+}
+
+
+
+
 size_t GfxVulkanFragmentOutputStateKey::hash() const {
   HashState hash;
   hash.add(colorBlendState.hash());

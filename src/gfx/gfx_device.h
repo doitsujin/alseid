@@ -346,6 +346,15 @@ public:
     const GfxRayTracingInstanceDesc&    desc) = 0;
 
   /**
+   * \brief Creates a render state object
+   *
+   * \param [in] desc Render state description
+   * \returns Render state object
+   */
+  virtual GfxRenderState createRenderState(
+    const GfxRenderStateDesc&     desc) = 0;
+
+  /**
    * \brief Creates a render target state object
    *
    * \param [in] desc Render target properties

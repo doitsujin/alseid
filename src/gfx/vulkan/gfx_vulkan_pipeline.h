@@ -533,6 +533,203 @@ private:
 
 
 /**
+ * \brief Vulkan render state object
+ *
+ * Stores Vulkan pipeline state for all state
+ * contained in the state object.
+ */
+class GfxVulkanRenderState : public GfxRenderStateIface {
+
+public:
+
+  GfxVulkanRenderState(
+          GfxVulkanPipelineManager&     mgr,
+    const GfxRenderStateData&           desc);
+
+  ~GfxVulkanRenderState();
+
+  /**
+   * \brief Retrieves vertex input state
+   * \returns Vertex input state
+   */
+  VkPipelineVertexInputStateCreateInfo getViState() const {
+    return m_viState;
+  }
+
+  /**
+   * \brief Retrieves input assembly state
+   * \returns Input assembly state
+   */
+  VkPipelineInputAssemblyStateCreateInfo getIaState() const {
+    return m_iaState;
+  }
+
+  /**
+   * \brief Retrieves tessellation state
+   * \returns Tessellation state
+   */
+  VkPipelineTessellationStateCreateInfo getTsState() const {
+    return m_tsState;
+  }
+
+  /**
+   * \brief Retrieves Vulkan rasterizer info
+   * \returns Vulkan rasterizer info
+   */
+  VkPipelineRasterizationStateCreateInfo getRsState() const {
+    return m_rsState;
+  }
+
+  /**
+   * \brief Retrieves Vulkan conservative rasterization info
+   * \returns Vulkan conservative rasterization info
+   */
+  VkPipelineRasterizationConservativeStateCreateInfoEXT getRsConservativeState() const {
+    return m_rsConservative;
+  }
+
+  /**
+   * \brief Retrieves Vulkan shading rate info
+   * \returns Vulkan shading rate info
+   */
+  VkPipelineFragmentShadingRateStateCreateInfoKHR getSrState() const {
+    return m_srState;
+  }
+
+  /**
+   * \brief Retrieves Vulkan depth-stencil info
+   * \returns Vulkan depth-stencil info
+   */
+  VkPipelineDepthStencilStateCreateInfo getDsState() const {
+    return m_dsState;
+  }
+
+  /**
+   * \brief Retrieves Vulkan color blend info
+   *
+   * \param [in] rtCount Number of render targets
+   * \returns Vulkan color blend info
+   */
+  VkPipelineColorBlendStateCreateInfo getCbState(uint32_t rtCount) const {
+    VkPipelineColorBlendStateCreateInfo result = m_cbState;
+    result.attachmentCount = rtCount;
+    result.pAttachments = rtCount ? m_cbAttachments.data() : nullptr;
+    return result;
+  }
+
+  /**
+   * \brief Queries Vulkan sample count
+   * \returns Vulkan sample count
+   */
+  VkSampleCountFlagBits getSampleCount() const {
+    return m_msState.rasterizationSamples;
+  }
+
+  /**
+   * \brief Retrieves sample mask
+   * \returns Sample mask
+   */
+  VkSampleMask getSampleMask() const {
+    return m_msMask;
+  }
+
+  /**
+   * \brief Retrieves Vulkan multisample info
+   *
+   * \param [in] rtState Render target state to get sample count from
+   * \param [in] sampleShading Whether to enable sample shading
+   * \returns Vulkan multisample info
+   */
+  VkPipelineMultisampleStateCreateInfo getMsState(
+    const GfxVulkanRenderTargetState&   rtState,
+          bool                          sampleShading) const {
+    VkPipelineMultisampleStateCreateInfo result = m_msState;
+
+    if (rtState.getSampleCount())
+      result.rasterizationSamples = rtState.getSampleCount();
+
+    result.sampleShadingEnable = sampleShading;
+    result.minSampleShading = sampleShading ? 1.0f : 0.0f;
+    return result;
+  }
+
+  /**
+   * \brief Queries dynamic state
+   * \returns Dynamic state
+   */
+  VkPipelineDynamicStateCreateInfo getDyState() const {
+    return m_dyState;
+  }
+
+private:
+
+  std::array<VkVertexInputAttributeDescription, GfxMaxVertexAttributes> m_viAttributes = { };
+  std::array<VkVertexInputBindingDescription,   GfxMaxVertexBindings>   m_viBindings   = { };
+
+  VkPipelineVertexInputStateCreateInfo                  m_viState = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+  VkPipelineInputAssemblyStateCreateInfo                m_iaState = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
+  VkPipelineTessellationStateCreateInfo                 m_tsState = { VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO };
+
+  VkPipelineRasterizationConservativeStateCreateInfoEXT m_rsConservative = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_CONSERVATIVE_STATE_CREATE_INFO_EXT };
+  VkPipelineRasterizationStateCreateInfo                m_rsState        = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
+  VkPipelineFragmentShadingRateStateCreateInfoKHR       m_srState        = { VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_STATE_CREATE_INFO_KHR };
+
+  VkPipelineDepthStencilStateCreateInfo                 m_dsState = { VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
+
+  std::array<VkPipelineColorBlendAttachmentState, GfxMaxColorAttachments> m_cbAttachments = { };
+
+  VkPipelineColorBlendStateCreateInfo                   m_cbState = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
+
+  VkSampleMask                                          m_msMask  = 0;
+  VkPipelineMultisampleStateCreateInfo                  m_msState = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
+
+  std::array<VkDynamicState, 8>                         m_dyList = { };
+  VkPipelineDynamicStateCreateInfo                      m_dyState = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
+
+  void setupPrimitiveTopology(
+          GfxVulkanPipelineManager&     mgr,
+    const GfxPrimitiveTopology&         desc);
+
+  void setupVertexLayout(
+          GfxVulkanPipelineManager&     mgr,
+    const GfxVertexLayout&              desc);
+
+  void setupRasterizer(
+          GfxVulkanPipelineManager&     mgr,
+    const GfxRenderStateData&           desc);
+
+  void setupDepthBias(
+          GfxVulkanPipelineManager&     mgr,
+    const GfxDepthBias&                 desc);
+
+  void setupShadingRate(
+          GfxVulkanPipelineManager&     mgr,
+    const GfxShadingRate&               desc);
+
+  void setupDepthTest(
+          GfxVulkanPipelineManager&     mgr,
+    const GfxDepthTest&                 desc);
+
+  void setupStencilTest(
+          GfxVulkanPipelineManager&     mgr,
+    const GfxDepthTest&                 depth,
+    const GfxStencilTest&               desc);
+
+  void setupMultisampling(
+          GfxVulkanPipelineManager&     mgr,
+    const GfxMultisampling&             desc);
+
+  void setupBlending(
+          GfxVulkanPipelineManager&     mgr,
+    const GfxBlending&                  desc);
+
+  static VkStencilOpState getVkStencilState(
+    const GfxStencilDesc&               desc);
+
+};
+
+
+/**
  * \brief Vulkan fragment output pipeline key
  *
  * Only consists of render target formats and blend state.
@@ -1043,6 +1240,17 @@ public:
     const GfxMeshPipelineDesc&          desc);
 
   /**
+   * \brief Creates render state
+   *
+   * \param [in] desc State object description
+   * \returns State object
+   */
+  GfxVulkanRenderState& createRenderState(
+    const GfxRenderStateDesc&           desc) {
+    return createStateObject(m_renderStates, GfxRenderStateData(desc));
+  }
+
+  /**
    * \brief Creates vertex input state
    *
    * \param [in] desc State object description
@@ -1172,6 +1380,11 @@ private:
     GfxVulkanPipelineLayoutKey,
     GfxVulkanPipelineLayout,
     HashMemberProc>       m_pipelineLayouts;
+
+  std::unordered_map<
+    GfxRenderStateData,
+    GfxVulkanRenderState,
+    HashMemberProc>       m_renderStates;
 
   std::unordered_map<
     GfxVertexInputStateDesc,

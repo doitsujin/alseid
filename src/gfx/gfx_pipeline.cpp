@@ -234,6 +234,187 @@ size_t GfxGraphicsStateDesc::hash() const {
 }
 
 
+size_t GfxPrimitiveTopology::hash() const {
+  HashState result;
+  result.add(uint32_t(primitiveType));
+  result.add(uint32_t(patchVertexCount));
+  return result;
+}
+
+
+size_t GfxVertexLayout::hash() const {
+  HashState result;
+
+  for (const auto& attribute : attributes)
+    result.add(attribute.hash());
+
+  return result;
+}
+
+
+size_t GfxDepthBias::hash() const {
+  HashState result;
+  result.add(hashFloat(depthBias));
+  result.add(hashFloat(depthBiasSlope));
+  result.add(hashFloat(depthBiasClamp));
+  return result;
+}
+
+
+size_t GfxShadingRate::hash() const {
+  HashState result;
+  result.add(uint32_t(shadingRateOp));
+  result.add(shadingRate.at<0>());
+  result.add(shadingRate.at<1>());
+  return result;
+}
+
+
+size_t GfxDepthTest::hash() const {
+  HashState result;
+  result.add(uint32_t(enableDepthWrite));
+  result.add(uint32_t(enableDepthBoundsTest));
+  result.add(uint32_t(depthCompareOp));
+  return result;
+}
+
+
+size_t GfxStencilTest::hash() const {
+  HashState result;
+  result.add(front.hash());
+  result.add(back.hash());
+  return result;
+}
+
+
+size_t GfxMultisampling::hash() const {
+  HashState result;
+  result.add(sampleCount);
+  result.add(sampleMask);
+  result.add(uint32_t(enableAlphaToCoverage));
+  return result;
+}
+
+
+size_t GfxBlending::hash() const {
+  HashState result;
+  result.add(uint32_t(logicOp));
+
+  for (const auto& renderTarget : renderTargets)
+    result.add(renderTarget.hash());
+
+  return result;
+}
+
+
+GfxRenderStateData::GfxRenderStateData(
+  const GfxRenderStateDesc&           desc) {
+  if (desc.primitiveTopology) {
+    flags |= GfxRenderStateFlag::ePrimitiveTopology;
+    primitiveTopology = *desc.primitiveTopology;
+  }
+
+  if (desc.vertexLayout) {
+    flags |= GfxRenderStateFlag::eVertexLayout;
+    vertexLayout = *desc.vertexLayout;
+  }
+
+  if (desc.frontFace) {
+    flags |= GfxRenderStateFlag::eFrontFace;
+    frontFace = *desc.frontFace;
+  }
+
+  if (desc.cullMode) {
+    flags |= GfxRenderStateFlag::eCullMode;
+    cullMode = *desc.cullMode;
+  }
+
+  if (desc.conservativeRaster) {
+    flags |= GfxRenderStateFlag::eConservativeRaster;
+    conservativeRaster = *desc.conservativeRaster;
+  }
+
+  if (desc.depthBias) {
+    flags |= GfxRenderStateFlag::eDepthBias;
+    depthBias = *desc.depthBias;
+  }
+
+  if (desc.shadingRate) {
+    flags |= GfxRenderStateFlag::eShadingRate;
+    shadingRate = *desc.shadingRate;
+  }
+
+  if (desc.depthTest) {
+    flags |= GfxRenderStateFlag::eDepthTest;
+    depthTest = *desc.depthTest;
+  }
+
+  if (desc.stencilTest) {
+    flags |= GfxRenderStateFlag::eStencilTest;
+    stencilTest = *desc.stencilTest;
+  }
+
+  if (desc.multisampling) {
+    flags |= GfxRenderStateFlag::eMultisampling;
+    multisampling = *desc.multisampling;
+  }
+
+  if (desc.blending) {
+    flags |= GfxRenderStateFlag::eBlending;
+    blending = *desc.blending;
+  }
+}
+
+
+size_t GfxRenderStateData::hash() const {
+  HashState result;
+  result.add(uint32_t(flags));
+  result.add(primitiveTopology.hash());
+  result.add(vertexLayout.hash());
+  result.add(uint32_t(frontFace));
+  result.add(uint32_t(cullMode));
+  result.add(uint32_t(conservativeRaster));
+  result.add(depthBias.hash());
+  result.add(shadingRate.hash());
+  result.add(depthTest.hash());
+  result.add(stencilTest.hash());
+  result.add(multisampling.hash());
+  result.add(blending.hash());
+  return result;
+}
+
+
+GfxRenderStateIface::GfxRenderStateIface(
+  const GfxRenderStateData&           desc)
+: m_data(desc) {
+  if (desc.flags & GfxRenderStateFlag::ePrimitiveTopology)
+    m_desc.primitiveTopology = &m_data.primitiveTopology;
+  if (desc.flags & GfxRenderStateFlag::eVertexLayout)
+    m_desc.vertexLayout = &m_data.vertexLayout;
+  if (desc.flags & GfxRenderStateFlag::eFrontFace)
+    m_desc.frontFace = &m_data.frontFace;
+  if (desc.flags & GfxRenderStateFlag::eCullMode)
+    m_desc.cullMode = &m_data.cullMode;
+  if (desc.flags & GfxRenderStateFlag::eConservativeRaster)
+    m_desc.conservativeRaster = &m_data.conservativeRaster;
+  if (desc.flags & GfxRenderStateFlag::eDepthBias)
+    m_desc.depthBias = &m_data.depthBias;
+  if (desc.flags & GfxRenderStateFlag::eShadingRate)
+    m_desc.shadingRate = &m_data.shadingRate;
+  if (desc.flags & GfxRenderStateFlag::eStencilTest)
+    m_desc.stencilTest = &m_data.stencilTest;
+  if (desc.flags & GfxRenderStateFlag::eMultisampling)
+    m_desc.multisampling = &m_data.multisampling;
+  if (desc.flags & GfxRenderStateFlag::eBlending)
+    m_desc.blending = &m_data.blending;
+}
+
+
+GfxRenderStateIface::~GfxRenderStateIface() {
+
+}
+
+
 size_t GfxGraphicsPipelineDesc::hash() const {
   HashState result;
   result.add(vertex.hash());

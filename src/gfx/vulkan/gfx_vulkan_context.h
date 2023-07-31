@@ -480,6 +480,13 @@ public:
           GfxRasterizerState            state) override;
 
   /**
+   * \brief Sets render state
+   * \param [in] state Render state object
+   */
+  void setRenderState(
+          GfxRenderState                state) override;
+
+  /**
    * \brief Sets shader constants
    *
    * \param [in] offset Offset into constant block

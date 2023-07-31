@@ -765,6 +765,354 @@ struct GfxGraphicsStateDesc {
 
 
 /**
+ * \brief Primitive topology state
+ *
+ * Defines the primitive topology used for input
+ * assembly in legacy vertex shader pipelines.
+ */
+struct GfxPrimitiveTopology {
+  /** Primitive type. Defines both rasterization behaviour and
+   *  the way vertex data will be passed to the vertex shader. */
+  GfxPrimitiveType primitiveType = GfxPrimitiveType::eTriangleList;
+  /** Patch vertex count for tessellation pipelines. */
+  uint32_t patchVertexCount = 0u;
+
+  /**
+   * \brief Checks whether primitive restart is enabled
+   * \returns \c true for strip topologies.
+   */
+  bool isPrimitiveRestartEnabled() const {
+    return primitiveType == GfxPrimitiveType::eLineStrip
+        || primitiveType == GfxPrimitiveType::eTriangleStrip;
+  }
+
+  bool operator == (const GfxPrimitiveTopology&) const = default;
+  bool operator != (const GfxPrimitiveTopology&) const = default;
+
+  size_t hash() const;
+};
+
+
+/**
+ * \brief Vertex layout description
+ *
+ * Defines the way vertex data is laid out in vertex buffers
+ * when using legacy vertex shader pipelines.
+ */
+struct GfxVertexLayout {
+  /** Vertex attribute descriptions. */
+  std::array<GfxVertexInputAttribute, GfxMaxVertexAttributes> attributes;
+
+  bool operator == (const GfxVertexLayout&) const = default;
+  bool operator != (const GfxVertexLayout&) const = default;
+
+  size_t hash() const;
+};
+
+
+/**
+ * \brief Depth bias description
+ *
+ * Applied during rasterization. Depth bias will be
+ * disabled if relevant values are 0.
+ */
+struct GfxDepthBias {
+  float depthBias = 0.0f;
+  float depthBiasSlope = 0.0f;
+  float depthBiasClamp = 0.0f;
+
+  /**
+   * \brief Checks whether depth bias is enabled
+   * \returns \c true if depth bias is enabled
+   */
+  bool isDepthBiasEnabled() const {
+    return depthBias != 0.0f || depthBiasSlope != 0.0f;
+  }
+
+  bool operator == (const GfxDepthBias&) const = default;
+  bool operator != (const GfxDepthBias&) const = default;
+
+  size_t hash() const;
+};
+
+
+/**
+ * \brief Shading rate description
+ *
+ * Influences fragment shader execution after rasterization.
+ */
+struct GfxShadingRate {
+  /** Shading rate combiner with the shading rate image. */
+  GfxShadingRateOp shadingRateOp = GfxShadingRateOp::eFixed;
+  /** Shading rate specified for the pipeline. */
+  Extent2D shadingRate = Extent2D(1, 1);
+
+  bool operator == (const GfxShadingRate&) const = default;
+  bool operator != (const GfxShadingRate&) const = default;
+
+  size_t hash() const;
+};
+
+
+/**
+ * \brief Depth test description
+ *
+ * Only relevant if a depth-stencil image is bound, otherwise
+ * the depth test is considered to be disabled.
+ */
+struct GfxDepthTest {
+  /** Enables depth writes. If disabled, depth values from
+   *  rasterization will only be used for the comparison. */
+  bool enableDepthWrite = false;
+  /** Enables depth bounds testing. If enabled, depth values in
+  *   the depth buffer will be compared to a range that can be
+  *   set dynamically. */
+  bool enableDepthBoundsTest = false;
+  /** Depth compare op. If this is \c GfxCompareOp::eAlways
+   *  and depth writes are disabled, the depth test will
+   *  effectively be disabled entirely. */
+  GfxCompareOp depthCompareOp = GfxCompareOp::eAlways;
+
+  /**
+   * \brief Checks whether the depth test is enabled
+   * \returns \c true if depth gets accessed
+   */
+  bool isDepthTestEnabled() const {
+    return enableDepthWrite || depthCompareOp != GfxCompareOp::eAlways;
+  }
+
+  bool operator == (const GfxDepthTest&) const = default;
+  bool operator != (const GfxDepthTest&) const = default;
+
+  size_t hash() const;
+};
+
+
+/**
+ * \brief Stencil test description
+ *
+ * Related to the depth test in functionality, but kept
+ * separate since stencil testing is often not needed.
+ */
+struct GfxStencilTest {
+  /** Front face stencil operation */
+  GfxStencilDesc front;
+  /** Back face stencil operation */
+  GfxStencilDesc back;
+
+  /**
+   * \brief Checks whether stencil test is used
+   * \returns \c true if stencil gets accessed
+   */
+  bool isStencilTestEnabled(const GfxDepthTest& depthTest) const {
+    bool depthTestCanFail = depthTest.depthCompareOp != GfxCompareOp::eAlways;
+
+    return front.isStencilTestEnabled(depthTestCanFail)
+        || back.isStencilTestEnabled(depthTestCanFail);
+  }
+
+  /**
+   * \brief Checks whether stencil writes are enabled
+   * \returns \c true if stencil gets written
+   */
+  bool isStencilWriteEnabled(const GfxDepthTest& depthTest) const {
+    bool depthTestCanFail = depthTest.depthCompareOp != GfxCompareOp::eAlways;
+
+    return front.isStencilWriteEnabled(depthTestCanFail)
+        || back.isStencilWriteEnabled(depthTestCanFail);
+  }
+
+  bool operator == (const GfxStencilTest&) const = default;
+  bool operator != (const GfxStencilTest&) const = default;
+
+  size_t hash() const;
+};
+
+
+/**
+ * \brief Multisample state description
+ */
+struct GfxMultisampling {
+  /** Sample count override. Only has an effect when
+   *  no render targets are bound to the pipeline. */
+  uint32_t sampleCount = 0;
+  /** Sample mask. By default, all samples are enabled. */
+  uint32_t sampleMask = ~0u;
+  /** Whether to enable alpha-to-coverage */
+  bool enableAlphaToCoverage = false;
+
+  bool operator == (const GfxMultisampling&) const = default;
+  bool operator != (const GfxMultisampling&) const = default;
+
+  size_t hash() const;
+};
+
+
+/**
+ * \brief Blending description
+ *
+ * Defines how fragment shader outputs are combined with
+ * the data already stored in bound render targets.
+ */
+struct GfxBlending {
+  /** Logic op. If this is \c GfxLogicOp::eCopySrc, the logic
+   *  op is effectively disabled. Can only be used on integer
+   *  render targets. */
+  GfxLogicOp logicOp = GfxLogicOp::eSrc;
+  /** Blend state for individual render targets. */
+  std::array<GfxRenderTargetBlend, GfxMaxColorAttachments> renderTargets;
+
+  /**
+   * \brief Checks whether logic op is enabled
+   * \returns \c true if logic op is enabled
+   */
+  bool isLogicOpEnabled() const {
+    return logicOp != GfxLogicOp::eSrc;
+  }
+
+  bool operator == (const GfxBlending&) const = default;
+  bool operator != (const GfxBlending&) const = default;
+
+  size_t hash() const;
+};
+
+
+/**
+ * \brief Render state description
+ *
+ * Stores a collection of render states. Any of the given
+ * pointers can be \c nullptr, which means that the state
+ * in question will not be included in the object.
+ *
+ * Binding render state objects will only affect states that
+ * are actually specified in them. This allows changing small
+ * subsets of state depending on application needs using one
+ * single function call, rather than using larger state blocks
+ * which may not map to the granularity that the app needs,
+ * or having to set each state individually.
+ */
+struct GfxRenderStateDesc {
+  /** Primitive topology. */
+  const GfxPrimitiveTopology* primitiveTopology = nullptr;
+  /** Vertex layout. */
+  const GfxVertexLayout* vertexLayout = nullptr;
+  /** Front-face for rasterization. */
+  const GfxFrontFace* frontFace = nullptr;
+  /** Face culling mode for rasterization. */
+  const GfxCullMode* cullMode = nullptr;
+  /** Conservative rasteritation. */
+  const bool* conservativeRaster = nullptr;
+  /** Depth bias. */
+  const GfxDepthBias* depthBias = nullptr;
+  /** Shading rate. */
+  const GfxShadingRate* shadingRate = nullptr;
+  /** Depth test. */
+  const GfxDepthTest* depthTest = nullptr;
+  /** Stencil test. */
+  const GfxStencilTest* stencilTest = nullptr;
+  /** Multisample state. */
+  const GfxMultisampling* multisampling = nullptr;
+  /** Color blend state. */
+  const GfxBlending* blending = nullptr;
+};
+
+
+/**
+ * \brief Render state flags
+ *
+ * Defines which render state flags are set in
+ * a render state object.
+ */
+enum class GfxRenderStateFlag : uint32_t {
+  ePrimitiveTopology  = (1u << 0),
+  eVertexLayout       = (1u << 1),
+  eFrontFace          = (1u << 2),
+  eCullMode           = (1u << 3),
+  eConservativeRaster = (1u << 4),
+  eDepthBias          = (1u << 5),
+  eShadingRate        = (1u << 6),
+  eDepthTest          = (1u << 7),
+  eStencilTest        = (1u << 8),
+  eMultisampling      = (1u << 9),
+  eBlending           = (1u << 10),
+
+  eAll                = ((1u << 11) - 1),
+
+  eFlagEnum           = 0,
+};
+
+using GfxRenderStateFlags = Flags<GfxRenderStateFlag>;
+
+
+/**
+ * \brief Render state data
+ *
+ * Flat data structure containing all render
+ * states, except render target state.
+ */
+struct GfxRenderStateData {
+  GfxRenderStateData() = default;
+
+  GfxRenderStateData(
+    const GfxRenderStateDesc&           desc);
+
+  GfxRenderStateFlags flags = 0;
+  GfxPrimitiveTopology primitiveTopology;
+  GfxVertexLayout vertexLayout;
+  GfxFrontFace frontFace = GfxFrontFace::eCcw;
+  GfxCullMode cullMode = GfxCullMode::eNone;
+  bool conservativeRaster = false;
+  GfxDepthBias depthBias;
+  GfxShadingRate shadingRate;
+  GfxDepthTest depthTest;
+  GfxStencilTest stencilTest;
+  GfxMultisampling multisampling;
+  GfxBlending blending;
+
+  bool operator == (const GfxRenderStateData&) const = default;
+  bool operator != (const GfxRenderStateData&) const = default;
+
+  size_t hash() const;
+};
+
+
+/**
+ * \brief Render state interface
+ *
+ * Can be bound to the context to update only the
+ * provided subset of render states.
+ */
+class GfxRenderStateIface {
+
+public:
+
+  GfxRenderStateIface(
+    const GfxRenderStateData&           desc);
+
+  virtual ~GfxRenderStateIface();
+
+  /**
+   * \brief Returns a reference to the contained render state
+   *
+   * Beware of potential lifetime issues when using this.
+   * \returns Render state data
+   */
+  const GfxRenderStateData& getState() const {
+    return m_data;
+  }
+
+protected:
+
+  GfxRenderStateData  m_data;
+  GfxRenderStateDesc  m_desc;
+
+};
+
+/** See GfxGraphicsPipelGfxRenderStateIfaceineIface. */
+using GfxRenderState = PtrRef<GfxRenderStateIface>;
+
+
+/**
  * \brief Graphics pipeline description
  */
 struct GfxGraphicsPipelineDesc {

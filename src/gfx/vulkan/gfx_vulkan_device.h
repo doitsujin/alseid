@@ -369,6 +369,15 @@ public:
     const GfxRayTracingInstanceDesc&    desc) override;
 
   /**
+   * \brief Creates render state object
+   *
+   * \param [in] desc Render state description
+   * \returns Render state object
+   */
+  GfxRenderState createRenderState(
+    const GfxRenderStateDesc&           desc) override;
+
+  /**
    * \brief Creates a render target state object
    *
    * Render target states are created and bound automatically
