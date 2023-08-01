@@ -290,20 +290,88 @@ GfxRenderStateData::GfxRenderStateData(
 }
 
 
+bool GfxRenderStateData::operator == (const GfxRenderStateData& other) const {
+  bool eq = flags == other.flags;
+
+  if (eq && (flags & GfxRenderStateFlag::ePrimitiveTopology))
+    eq = primitiveTopology == other.primitiveTopology;
+
+  if (eq && (flags & GfxRenderStateFlag::eVertexLayout))
+    eq = vertexLayout == other.vertexLayout;
+
+  if (eq && (flags & GfxRenderStateFlag::eFrontFace))
+    eq = frontFace == other.frontFace;
+
+  if (eq && (flags & GfxRenderStateFlag::eCullMode))
+    eq = cullMode == other.cullMode;
+
+  if (eq && (flags & GfxRenderStateFlag::eConservativeRaster))
+    eq = conservativeRaster == other.conservativeRaster;
+
+  if (eq && (flags & GfxRenderStateFlag::eDepthBias))
+    eq = depthBias == other.depthBias;
+
+  if (eq && (flags & GfxRenderStateFlag::eShadingRate))
+    eq = shadingRate == other.shadingRate;
+
+  if (eq && (flags & GfxRenderStateFlag::eDepthTest))
+    eq = depthTest == other.depthTest;
+
+  if (eq && (flags & GfxRenderStateFlag::eStencilTest))
+    eq = stencilTest == other.stencilTest;
+
+  if (eq && (flags & GfxRenderStateFlag::eMultisampling))
+    eq = multisampling == other.multisampling;
+
+  if (eq && (flags & GfxRenderStateFlag::eBlending))
+    eq = blending == other.blending;
+
+  return eq;
+}
+
+
+bool GfxRenderStateData::operator != (const GfxRenderStateData& other) const {
+  return !operator == (other);
+}
+
+
 size_t GfxRenderStateData::hash() const {
   HashState result;
   result.add(uint32_t(flags));
-  result.add(primitiveTopology.hash());
-  result.add(vertexLayout.hash());
-  result.add(uint32_t(frontFace));
-  result.add(uint32_t(cullMode));
-  result.add(uint32_t(conservativeRaster));
-  result.add(depthBias.hash());
-  result.add(shadingRate.hash());
-  result.add(depthTest.hash());
-  result.add(stencilTest.hash());
-  result.add(multisampling.hash());
-  result.add(blending.hash());
+
+  if (flags & GfxRenderStateFlag::ePrimitiveTopology)
+    result.add(primitiveTopology.hash());
+
+  if (flags & GfxRenderStateFlag::eVertexLayout)
+    result.add(vertexLayout.hash());
+
+  if (flags & GfxRenderStateFlag::eFrontFace)
+    result.add(uint32_t(frontFace));
+
+  if (flags & GfxRenderStateFlag::eCullMode)
+    result.add(uint32_t(cullMode));
+
+  if (flags & GfxRenderStateFlag::eConservativeRaster)
+    result.add(uint32_t(conservativeRaster));
+
+  if (flags & GfxRenderStateFlag::eDepthBias)
+    result.add(depthBias.hash());
+
+  if (flags & GfxRenderStateFlag::eShadingRate)
+    result.add(shadingRate.hash());
+
+  if (flags & GfxRenderStateFlag::eDepthTest)
+    result.add(depthTest.hash());
+
+  if (flags & GfxRenderStateFlag::eStencilTest)
+    result.add(stencilTest.hash());
+
+  if (flags & GfxRenderStateFlag::eMultisampling)
+    result.add(multisampling.hash());
+
+  if (flags & GfxRenderStateFlag::eBlending)
+    result.add(blending.hash());
+
   return result;
 }
 

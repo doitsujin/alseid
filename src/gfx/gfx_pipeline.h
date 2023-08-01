@@ -716,6 +716,7 @@ struct GfxRenderStateData {
   explicit GfxRenderStateData(
     const GfxRenderStateDesc&           desc);
 
+  /** Bit mask of active render states. */
   GfxRenderStateFlags flags = 0;
   GfxPrimitiveTopology primitiveTopology;
   GfxVertexLayout vertexLayout;
@@ -729,8 +730,8 @@ struct GfxRenderStateData {
   GfxMultisampling multisampling;
   GfxBlending blending;
 
-  bool operator == (const GfxRenderStateData&) const = default;
-  bool operator != (const GfxRenderStateData&) const = default;
+  bool operator == (const GfxRenderStateData& other) const;
+  bool operator != (const GfxRenderStateData& other) const;
 
   size_t hash() const;
 };
