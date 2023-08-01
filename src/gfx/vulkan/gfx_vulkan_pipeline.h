@@ -773,8 +773,75 @@ public:
 
 private:
 
-  GfxVulkanPipelineManager&               m_mgr;
-  VkPipeline                              m_pipeline = VK_NULL_HANDLE;
+  GfxVulkanPipelineManager& m_mgr;
+  VkPipeline                m_pipeline  = VK_NULL_HANDLE;
+
+};
+
+
+/**
+ * \brief Fragment output pipeline key
+ */
+struct GfxVulkanFragmentOutputKey {
+  /** Pointer to normalized render state */
+  const GfxVulkanRenderState* renderState = nullptr;
+  /** Pointer to render target state */
+  const GfxVulkanRenderTargetState* targetState = nullptr;
+  /** Whether to enable sample rate shading */
+  VkBool32 sampleShading = VK_FALSE;
+
+  bool operator == (const GfxVulkanFragmentOutputKey&) const = default;
+  bool operator != (const GfxVulkanFragmentOutputKey&) const = default;
+
+  size_t hash() const {
+    HashState result;
+    result.add(reinterpret_cast<uintptr_t>(renderState));
+    result.add(reinterpret_cast<uintptr_t>(targetState));
+    result.add(uint32_t(sampleShading));
+    return result;
+  }
+};
+
+
+/**
+ * \brief Vulkan fragment output pipeline
+ *
+ * Manages a pipeline library object.
+ */
+class GfxVulkanFragmentOutputPipeline {
+
+public:
+
+  GfxVulkanFragmentOutputPipeline(
+          GfxVulkanPipelineManager&     mgr,
+    const GfxVulkanFragmentOutputKey&   key);
+
+  ~GfxVulkanFragmentOutputPipeline();
+
+  /**
+   * \brief Retrieves Vulkan pipeline library
+   *
+   * May be \c VK_NULL_HANDLE if pipeline
+   * libraries are not supported.
+   * \returns Vulkan pipeline library
+   */
+  VkPipeline getHandle() const {
+    return m_pipeline;
+  }
+
+  /**
+   * \brief Retrieves dynamic state flags
+   * \returns Dynamic state flags
+   */
+  GfxVulkanDynamicStates getDynamicStateFlags() const {
+    return m_dynamic;
+  }
+
+private:
+
+  GfxVulkanPipelineManager& m_mgr;
+  GfxVulkanDynamicStates    m_dynamic   = 0;
+  VkPipeline                m_pipeline  = VK_NULL_HANDLE;
 
 };
 
@@ -1303,6 +1370,23 @@ public:
     const GfxVulkanRenderState&         renderState);
 
   /**
+   * \brief Creates a fragment output pipeline
+   *
+   * Note that this will generally try to reduce the number
+   * of redundant pipelines by normalizing render state.
+   * \param [in] targetState Render target state.
+   * \param [in] renderState Render state object. Must
+   *    contain valid blend and multisample states.
+   * \param [in] sampleShading Whether to enable sample shading.
+   * \returns Vertex input pipeline for the given
+   *    render state object.
+   */
+  GfxVulkanFragmentOutputPipeline& createFragmentOutputPipeline(
+    const GfxVulkanRenderTargetState&   targetState,
+    const GfxVulkanRenderState&         renderState,
+          VkBool32                      sampleShading);
+
+  /**
    * \brief Creates render state
    *
    * \param [in] desc State object description
@@ -1453,6 +1537,11 @@ private:
     GfxVulkanVertexInputKey,
     GfxVulkanVertexInputPipeline,
     HashMemberProc>       m_vertexInputPipelines;
+
+  std::unordered_map<
+    GfxVulkanFragmentOutputKey,
+    GfxVulkanFragmentOutputPipeline,
+    HashMemberProc>       m_fragmentOutputPipelines;
 
   std::unordered_map<
     GfxVertexInputStateDesc,

@@ -833,6 +833,71 @@ GfxVulkanVertexInputPipeline::~GfxVulkanVertexInputPipeline() {
 
 
 
+GfxVulkanFragmentOutputPipeline::GfxVulkanFragmentOutputPipeline(
+        GfxVulkanPipelineManager&     mgr,
+  const GfxVulkanFragmentOutputKey&   key)
+: m_mgr(mgr) {
+  auto& vk = m_mgr.device().vk();
+  auto& features = m_mgr.device().getVkFeatures();
+
+  auto rtState = key.targetState->getRtState();
+  auto msState = key.renderState->getMsState(*key.targetState, key.sampleShading);
+  auto cbState = key.renderState->getCbState(rtState.colorAttachmentCount);
+  auto dyState = key.renderState->getDyState();
+
+  small_vector<VkDynamicState, 8> dyStates;
+
+  for (size_t i = 0; i < dyState.dynamicStateCount; i++) {
+    if (dyState.pDynamicStates[i] == VK_DYNAMIC_STATE_BLEND_CONSTANTS)
+      dyStates.push_back(dyState.pDynamicStates[i]);
+  }
+
+  if (key.sampleShading) {
+    if (features.extExtendedDynamicState3.extendedDynamicState3RasterizationSamples
+     && features.extExtendedDynamicState3.extendedDynamicState3SampleMask) {
+      dyStates.push_back(VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT);
+      dyStates.push_back(VK_DYNAMIC_STATE_SAMPLE_MASK_EXT);
+    }
+
+    if (features.extExtendedDynamicState3.extendedDynamicState3AlphaToCoverageEnable)
+      dyStates.push_back(VK_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT);
+  }
+
+  dyState = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
+  dyState.dynamicStateCount = dyStates.size();
+
+  if (dyState.dynamicStateCount)
+    dyState.pDynamicStates = dyStates.data();
+
+  VkGraphicsPipelineLibraryCreateInfoEXT libInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT, &rtState };
+  libInfo.flags             = VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT;
+
+  VkGraphicsPipelineCreateInfo info = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, &libInfo };
+  info.flags                = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR;
+  info.pMultisampleState    = &msState;
+  info.pColorBlendState     = &cbState;
+  info.pDynamicState        = &dyState;
+  info.basePipelineIndex    = -1;
+
+  VkResult vr = vk.vkCreateGraphicsPipelines(vk.device,
+    VK_NULL_HANDLE, 1, &info, nullptr, &m_pipeline);
+
+  if (vr)
+    throw VulkanError("Vulkan: Failed to create vertex input pipeline library", vr);
+
+  m_dynamic = getDynamicStateFlagsFromState(dyState);
+}
+
+
+GfxVulkanFragmentOutputPipeline::~GfxVulkanFragmentOutputPipeline() {
+  auto& vk = m_mgr.device().vk();
+
+  vk.vkDestroyPipeline(vk.device, m_pipeline, nullptr);
+}
+
+
+
+
 size_t GfxVulkanFragmentOutputStateKey::hash() const {
   HashState hash;
   hash.add(colorBlendState.hash());
@@ -1847,6 +1912,37 @@ GfxVulkanVertexInputPipeline& GfxVulkanPipelineManager::createVertexInputPipelin
     return entry->second;
 
   auto insert = m_vertexInputPipelines.emplace(std::piecewise_construct,
+    std::forward_as_tuple(key),
+    std::forward_as_tuple(*this, key));
+  return insert.first->second;
+}
+
+
+GfxVulkanFragmentOutputPipeline& GfxVulkanPipelineManager::createFragmentOutputPipeline(
+  const GfxVulkanRenderTargetState&   targetState,
+  const GfxVulkanRenderState&         renderState,
+        VkBool32                      sampleShading) {
+  GfxRenderStateDesc renderStateDesc = renderState.getDesc();
+
+  GfxRenderStateDesc normalizedDesc;
+  normalizedDesc.multisampling = renderStateDesc.multisampling;
+  normalizedDesc.blending = renderStateDesc.blending;
+
+  GfxVulkanRenderState& normalizedState = createRenderState(normalizedDesc);
+
+  std::lock_guard lock(m_mutex);
+
+  GfxVulkanFragmentOutputKey key = { };
+  key.targetState = &targetState;
+  key.renderState = &normalizedState;
+  key.sampleShading = sampleShading;
+
+  auto entry = m_fragmentOutputPipelines.find(key);
+
+  if (entry != m_fragmentOutputPipelines.end())
+    return entry->second;
+
+  auto insert = m_fragmentOutputPipelines.emplace(std::piecewise_construct,
     std::forward_as_tuple(key),
     std::forward_as_tuple(*this, key));
   return insert.first->second;
