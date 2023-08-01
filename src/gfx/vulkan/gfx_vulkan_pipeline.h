@@ -661,6 +661,18 @@ public:
     return m_dyState;
   }
 
+  /**
+   * \brief Queries vertex buffer mask
+   *
+   * The resulting bit mask will have a bit set for
+   * each \c binding value that appears in the vertex
+   * attribute array.
+   * \returns Used vertex buffer mask
+   */
+  uint32_t getVertexBindingMask() const {
+    return m_vertexBindingMask;
+  }
+
 private:
 
   std::array<VkVertexInputAttributeDescription, GfxMaxVertexAttributes> m_viAttributes = { };
@@ -685,6 +697,8 @@ private:
 
   std::array<VkDynamicState, 8>                         m_dyList = { };
   VkPipelineDynamicStateCreateInfo                      m_dyState = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
+
+  uint32_t                                              m_vertexBindingMask = 0;
 
   void setupPrimitiveTopology(
           GfxVulkanPipelineManager&     mgr,
@@ -980,6 +994,20 @@ struct GfxVulkanGraphicsPipelineKey {
 
 
 /**
+ * \brief Vulkan graphics pipeline variant key
+ */
+struct GfxVulkanGraphicsPipelineVariantKey {
+  /** Render state object */
+  const GfxVulkanRenderState* renderState = nullptr;
+  /** Render target state object */
+  const GfxVulkanRenderTargetState* targetState = nullptr;
+
+  bool operator == (const GfxVulkanGraphicsPipelineVariantKey&) const = default;
+  bool operator != (const GfxVulkanGraphicsPipelineVariantKey&) const = default;
+};
+
+
+/**
  * \brief Vulkan graphics pipeline variant info
  */
 struct GfxVulkanGraphicsPipelineVariant {
@@ -1042,20 +1070,20 @@ public:
    * - Look up existing linked pipeline variant
    * - Fast-link the pipeline if possible
    * - Compile optimized variant (will cause stutter)
-   * \param [in] state Render state
+   * \param [in] key Variant key
    * \returns Pipeline handle
    */
   GfxVulkanGraphicsPipelineVariant getVariant(
-    const GfxGraphicsStateDesc&         state);
+    const GfxVulkanGraphicsPipelineVariantKey& key);
 
   /**
    * \brief Compiles pipeline variant with the given state
    *
-   * \param [in] state Render state
+   * \param [in] key Variant key
    * \returns Pipeline handle
    */
   GfxVulkanGraphicsPipelineVariant createVariant(
-    const GfxGraphicsStateDesc&         state);
+    const GfxVulkanGraphicsPipelineVariantKey& key);
 
   /**
    * \brief Compiles shader pipeline library
@@ -1075,43 +1103,27 @@ public:
    */
   bool isAvailable() const override;
 
-  /**
-   * \brief Compiles a pipeline variant with the given state
-   *
-   * No-op if fast linking is possible for the given pipeline.
-   * \param [in] state Pipeline state vector
-   */
-  void compileVariant(
-    const GfxGraphicsStateDesc&         state) override;
-
 private:
 
   struct LinkedVariant {
     LinkedVariant(
-      const GfxGraphicsStateDesc&             s,
+      const GfxVulkanGraphicsPipelineVariantKey& k,
       const GfxVulkanGraphicsPipelineVariant& v)
-    : vertexInputState  (s.vertexInputState)
-    , colorBlendState   (s.colorBlendState)
-    , multisampleState  (s.multisampleState)
-    , renderTargetState (s.renderTargetState)
-    , variant           (v) { }
+    : key(k), variant(v) { }
 
-    GfxVertexInputState               vertexInputState;
-    GfxColorBlendState                colorBlendState;
-    GfxMultisampleState               multisampleState;
-    GfxRenderTargetState              renderTargetState;
-    GfxVulkanGraphicsPipelineVariant  variant;
+    GfxVulkanGraphicsPipelineVariantKey key;
+    GfxVulkanGraphicsPipelineVariant    variant;
   };
 
   struct OptimizedVariant {
     OptimizedVariant(
-      const GfxGraphicsStateDesc&             s,
+      const GfxVulkanGraphicsPipelineVariantKey& k,
       const GfxVulkanGraphicsPipelineVariant& v)
-    : state(s), dynamicStates(v.dynamicStates), pipeline(v.pipeline) { }
+    : key(k), dynamicStates(v.dynamicStates), pipeline(v.pipeline) { }
 
-    GfxGraphicsStateDesc              state;
-    GfxVulkanDynamicStates            dynamicStates = 0;
-    std::atomic<VkPipeline>           pipeline = { VK_NULL_HANDLE };
+    GfxVulkanGraphicsPipelineVariantKey key;
+    GfxVulkanDynamicStates              dynamicStates = 0;
+    std::atomic<VkPipeline>             pipeline = { VK_NULL_HANDLE };
 
     GfxVulkanGraphicsPipelineVariant getVariant() {
       GfxVulkanGraphicsPipelineVariant result;
@@ -1154,24 +1166,24 @@ private:
   std::atomic<bool>                 m_isAvailable = { false };
 
   GfxVulkanGraphicsPipelineVariant lookupLinked(
-    const GfxGraphicsStateDesc&         state) const;
+    const GfxVulkanGraphicsPipelineVariantKey& key) const;
 
   LookupResult lookupOptimized(
-    const GfxGraphicsStateDesc&         state) const;
+    const GfxVulkanGraphicsPipelineVariantKey& key) const;
 
   GfxVulkanGraphicsPipelineVariant createLibraryLocked();
 
   GfxVulkanGraphicsPipelineVariant createVariantLocked(
-    const GfxGraphicsStateDesc&         state) const;
+    const GfxVulkanGraphicsPipelineVariantKey& key) const;
 
   GfxVulkanGraphicsPipelineVariant linkVariant(
-    const GfxGraphicsStateDesc&         state);
+    const GfxVulkanGraphicsPipelineVariantKey& key);
 
   bool canLinkVariant(
-    const GfxGraphicsStateDesc&         state) const;
+    const GfxVulkanGraphicsPipelineVariantKey& key) const;
 
   void deferCreateVariant(
-    const GfxGraphicsStateDesc&         state);
+    const GfxVulkanGraphicsPipelineVariantKey& key);
 
   bool canFastLink() const;
 
@@ -1393,8 +1405,8 @@ public:
    * \returns State object
    */
   GfxVulkanRenderState& createRenderState(
-    const GfxRenderStateDesc&           desc) {
-    return createStateObject(m_renderStates, GfxRenderStateData(desc));
+    const GfxRenderStateData&           desc) {
+    return createStateObject(m_renderStates, desc);
   }
 
   /**
@@ -1476,11 +1488,11 @@ public:
    * \brief Asynchronously compiles pipeline variant
    *
    * \param [in] pipeline Graphics pipeline
-   * \param [in] state Render state
+   * \param [in] key Variant key
    */
   void deferCreateGraphicsPipelineVariant(
           GfxVulkanGraphicsPipeline&    pipeline,
-    const GfxGraphicsStateDesc&         state);
+    const GfxVulkanGraphicsPipelineVariantKey& key);
 
 private:
 
@@ -1499,10 +1511,11 @@ private:
     : type            (WorkItemType::eGraphicsPipeline)
     , graphicsPipeline(&p) { }
 
-    WorkItem(GfxVulkanGraphicsPipeline& p, const GfxGraphicsStateDesc& state)
+    WorkItem(GfxVulkanGraphicsPipeline& p,
+      const GfxVulkanGraphicsPipelineVariantKey& key)
     : type            (WorkItemType::eGraphicsVariant)
     , graphicsPipeline(&p)
-    , graphicsState   (state) { }
+    , graphicsState   (key) { }
 
     WorkItemType type;
 
@@ -1511,7 +1524,7 @@ private:
       GfxVulkanComputePipeline* computePipeline;
     };
 
-    GfxGraphicsStateDesc graphicsState;
+    GfxVulkanGraphicsPipelineVariantKey graphicsState;
   };
 
   GfxVulkanDevice&        m_device;

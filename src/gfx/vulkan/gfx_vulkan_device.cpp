@@ -583,7 +583,7 @@ GfxRayTracingBvh GfxVulkanDevice::createRayTracingBvh(
 
 GfxRenderState GfxVulkanDevice::createRenderState(
   const GfxRenderStateDesc&           desc) {
-  return GfxRenderState(m_pipelineManager->createRenderState(desc));
+  return GfxRenderState(m_pipelineManager->createRenderState(GfxRenderStateData(desc)));
 }
 
 
@@ -734,20 +734,17 @@ void GfxVulkanDevice::waitQueueIdle(
 
 
 bool GfxVulkanDevice::supportsFragmentShadingRateWithState(
-  const GfxGraphicsStateDesc&         state) const {
-  auto& rsInfo = static_cast<GfxVulkanRasterizerState&>(*state.rasterizerState);
-  auto& msInfo = static_cast<GfxVulkanMultisampleState&>(*state.multisampleState);
-
+  const GfxVulkanRenderState&         state) const {
   if (!m_properties.khrFragmentShadingRate.fragmentShadingRateWithConservativeRasterization) {
-    VkPipelineRasterizationConservativeStateCreateInfoEXT rsConservativeState = rsInfo.getRsConservativeState();
+    VkPipelineRasterizationConservativeStateCreateInfoEXT rsConservativeState = state.getRsConservativeState();
 
     if (rsConservativeState.conservativeRasterizationMode != VK_CONSERVATIVE_RASTERIZATION_MODE_DISABLED_EXT)
       return false;
   }
 
   if (!m_properties.khrFragmentShadingRate.fragmentShadingRateWithSampleMask) {
-    VkSampleMask fullMask = (1u << VkSampleMask(msInfo.getSampleCount())) - 1u;
-    VkSampleMask currMask = msInfo.getSampleMask();
+    VkSampleMask fullMask = (1u << VkSampleMask(state.getSampleCount())) - 1u;
+    VkSampleMask currMask = state.getSampleMask();
 
     if ((currMask & fullMask) != fullMask)
       return false;

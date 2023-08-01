@@ -649,8 +649,6 @@ void GfxVulkanRenderState::setupPrimitiveTopology(
 void GfxVulkanRenderState::setupVertexLayout(
         GfxVulkanPipelineManager&     mgr,
   const GfxVertexLayout&              desc) {
-  uint32_t bindingMask = 0;
-
   // Set up all the state objects
   for (uint32_t i = 0; i < GfxMaxVertexAttributes; i++) {
     auto& info = desc.attributes[i];
@@ -664,8 +662,8 @@ void GfxVulkanRenderState::setupVertexLayout(
     att.offset = info.offset;
     att.binding = info.binding;
 
-    if (!(bindingMask & (1u << info.binding))) {
-      bindingMask |= (1u << info.binding);
+    if (!(m_vertexBindingMask & (1u << info.binding))) {
+      m_vertexBindingMask |= (1u << info.binding);
 
       auto& bind = m_viBindings[m_viState.vertexBindingDescriptionCount++];
       bind.binding = info.binding;
@@ -1118,41 +1116,41 @@ GfxVulkanGraphicsPipeline::~GfxVulkanGraphicsPipeline() {
 
 
 GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::getVariant(
-  const GfxGraphicsStateDesc&         state) {
-  LookupResult result = lookupOptimized(state);
+  const GfxVulkanGraphicsPipelineVariantKey& key) {
+  LookupResult result = lookupOptimized(key);
 
   if (likely(result.variant.pipeline))
     return result.variant;
 
   if (likely(m_canLink)) {
-    result.variant = lookupLinked(state);
+    result.variant = lookupLinked(key);
 
     if (likely(result.variant.pipeline))
       return result.variant;
 
-    if (canLinkVariant(state)) {
+    if (canLinkVariant(key)) {
       if (!result.found)
-        deferCreateVariant(state);
+        deferCreateVariant(key);
 
-      result.variant = linkVariant(state);
+      result.variant = linkVariant(key);
       return result.variant;
     }
   }
 
-  result.variant = createVariant(state);
+  result.variant = createVariant(key);
   return result.variant;
 }
 
 
 GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariant(
-  const GfxGraphicsStateDesc&         state) {
+  const GfxVulkanGraphicsPipelineVariantKey& key) {
   std::lock_guard lock(m_optimizedMutex);
   auto iter = m_optimizedVariants.end();
 
   // Find existing entry for the variant, or create a new one if
   // necessary. If the variant has already been compiled, exit.
   for (auto i = m_optimizedVariants.begin(); i != m_optimizedVariants.end(); i++) {
-    if (i->state == state) {
+    if (i->key == key) {
       auto variant = i->getVariant();
 
       if (variant.pipeline)
@@ -1164,9 +1162,9 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariant(
   }
 
   if (iter == m_optimizedVariants.end())
-    iter = m_optimizedVariants.emplace(state, GfxVulkanGraphicsPipelineVariant());
+    iter = m_optimizedVariants.emplace(key, GfxVulkanGraphicsPipelineVariant());
 
-  GfxVulkanGraphicsPipelineVariant variant = createVariantLocked(state);
+  GfxVulkanGraphicsPipelineVariant variant = createVariantLocked(key);
   iter->setVariant(variant);
   return variant;
 }
@@ -1188,20 +1186,10 @@ bool GfxVulkanGraphicsPipeline::isAvailable() const {
 }
 
 
-void GfxVulkanGraphicsPipeline::compileVariant(
-  const GfxGraphicsStateDesc&         state) {
-  if (!m_canLink || !canLinkVariant(state))
-    deferCreateVariant(state);
-}
-
-
 GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::lookupLinked(
-  const GfxGraphicsStateDesc&         state) const {
+  const GfxVulkanGraphicsPipelineVariantKey& key) const {
   for (auto& v : m_linkedVariants) {
-    if (v.vertexInputState == state.vertexInputState
-     && v.colorBlendState == state.colorBlendState
-     && v.multisampleState == state.multisampleState
-     && v.renderTargetState == state.renderTargetState)
+    if (v.key == key)
       return v.variant;
   }
 
@@ -1210,9 +1198,9 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::lookupLinked(
 
 
 GfxVulkanGraphicsPipeline::LookupResult GfxVulkanGraphicsPipeline::lookupOptimized(
-  const GfxGraphicsStateDesc&         state) const {
+  const GfxVulkanGraphicsPipelineVariantKey& key) const {
   for (auto& v : m_optimizedVariants) {
-    if (v.state == state)
+    if (v.key == key)
       return { v.getVariant(), VK_TRUE };
   }
 
@@ -1362,15 +1350,9 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createLibraryLocked(
 
 
 GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
-  const GfxGraphicsStateDesc&         state) const {
+  const GfxVulkanGraphicsPipelineVariantKey& key) const {
   auto& vk = m_mgr.device().vk();
   auto& features = m_mgr.device().getVkFeatures();
-
-  auto& rsInfo = static_cast<GfxVulkanRasterizerState&>(*state.rasterizerState);
-  auto& dsInfo = static_cast<GfxVulkanDepthStencilState&>(*state.depthStencilState);
-  auto& cbInfo = static_cast<GfxVulkanColorBlendState&>(*state.colorBlendState);
-  auto& msInfo = static_cast<GfxVulkanMultisampleState&>(*state.multisampleState);
-  auto& rtInfo = static_cast<GfxVulkanRenderTargetState&>(*state.renderTargetState);
 
   // Set up shader stages.
   GfxVulkanGraphicsShaderStages shaderStages;
@@ -1382,27 +1364,26 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
   dyStates.push_back(VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT);
   dyStates.push_back(VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT);
 
-  VkPipelineRenderingCreateInfo rtState = rtInfo.getRtState();
+  VkPipelineRenderingCreateInfo rtState = key.targetState->getRtState();
   VkPipelineVertexInputStateCreateInfo viState = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
   VkPipelineInputAssemblyStateCreateInfo iaState = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
   VkPipelineTessellationStateCreateInfo tsState = { VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO };
   VkPipelineViewportStateCreateInfo vpState = { VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
-  VkPipelineRasterizationStateCreateInfo rsState = rsInfo.getRsState();
-  VkPipelineFragmentShadingRateStateCreateInfoKHR srState = rsInfo.getSrState();
-  VkPipelineDepthStencilStateCreateInfo dsState = dsInfo.getDsState();
-  VkPipelineMultisampleStateCreateInfo msState = msInfo.getMsState(rtInfo, m_sampleRateShading);
-  VkPipelineColorBlendStateCreateInfo cbState = cbInfo.getCbState(rtState.colorAttachmentCount);
+  VkPipelineRasterizationStateCreateInfo rsState = key.renderState->getRsState();
+  VkPipelineFragmentShadingRateStateCreateInfoKHR srState = key.renderState->getSrState();
+  VkPipelineDepthStencilStateCreateInfo dsState = key.renderState->getDsState();
+  VkPipelineMultisampleStateCreateInfo msState = key.renderState->getMsState(*key.targetState, m_sampleRateShading);
+  VkPipelineColorBlendStateCreateInfo cbState = key.renderState->getCbState(rtState.colorAttachmentCount);
+  VkPipelineDynamicStateCreateInfo dyState = key.renderState->getDyState();
 
   if (m_stages & GfxShaderStage::eVertex) {
-    auto& viInfo = static_cast<GfxVulkanVertexInputState&>(*state.vertexInputState);
-
-    viState = viInfo.getViState();
-    iaState = viInfo.getIaState();
-    tsState = viInfo.getTsState();
+    viState = key.renderState->getViState();
+    iaState = key.renderState->getIaState();
+    tsState = key.renderState->getTsState();
   }
 
-  dsInfo.getDynamicStates(dyStates);
-  cbInfo.getDynamicStates(dyStates);
+  for (size_t i = 0; i < dyState.dynamicStateCount; i++)
+    dyStates.push_back(dyState.pDynamicStates[i]);
 
   // Set up shading rate state
   VkPipelineCreateFlags flags = 0;
@@ -1417,12 +1398,12 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
 
     if (usesShadingRate) {
       usesShadingRate = supportsFragmentShadingRate()
-        && m_mgr.device().supportsFragmentShadingRateWithState(state);
+        && m_mgr.device().supportsFragmentShadingRateWithState(*key.renderState);
     }
   }
 
   // Set up dynamic state info
-  VkPipelineDynamicStateCreateInfo dyState = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
+  dyState = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
   dyState.dynamicStateCount = dyStates.size();
 
   if (dyState.dynamicStateCount)
@@ -1477,12 +1458,12 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
 
 
 GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::linkVariant(
-  const GfxGraphicsStateDesc&         state) {
+  const GfxVulkanGraphicsPipelineVariantKey& key) {
   auto& vk = m_mgr.device().vk();
   auto& features = m_mgr.device().getVkFeatures();
 
   std::lock_guard lock(m_linkedMutex);
-  GfxVulkanGraphicsPipelineVariant variant = lookupLinked(state);
+  GfxVulkanGraphicsPipelineVariant variant = lookupLinked(key);
 
   if (variant.pipeline)
     return variant;
@@ -1496,20 +1477,16 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::linkVariant(
 
   // Look up vertex input state library
   if (m_stages & GfxShaderStage::eVertex) {
-    auto& viState = static_cast<GfxVulkanVertexInputState&>(*state.vertexInputState);
-    libraries.push_back(viState.getHandle());
+    auto& viLibrary = m_mgr.createVertexInputPipeline(*key.renderState);
+    libraries.push_back(viLibrary.getHandle());
   }
 
   // Look up fragment output state library
-  GfxVulkanFragmentOutputStateKey foKey;
-  foKey.colorBlendState = state.colorBlendState;
-  foKey.multisampleState = state.multisampleState;
-  foKey.renderTargetState = state.renderTargetState;
-  foKey.sampleRateShading = m_sampleRateShading;
+  auto& foLibrary = m_mgr.createFragmentOutputPipeline(
+    *key.targetState, *key.renderState, m_sampleRateShading);
 
-  auto& foState = m_mgr.createFragmentOutputState(foKey);
-  libraries.push_back(foState.getHandle());
-  variant.dynamicStates |= foState.getDynamicStateFlags();
+  libraries.push_back(foLibrary.getHandle());
+  variant.dynamicStates |= foLibrary.getDynamicStateFlags();
 
   // Create actual Vulkan pipeline, but without link-time
   // optimization in order to avoid stutter.
@@ -1532,7 +1509,7 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::linkVariant(
   if (vr)
     throw VulkanError("Vulkan: Failed to link graphics pipeline", vr);
 
-  m_linkedVariants.emplace(state, variant);
+  m_linkedVariants.emplace(key, variant);
 
   m_mgr.device().setDebugName(variant.pipeline, std::string(m_debugName + " [linked]").c_str());
   return variant;
@@ -1540,34 +1517,32 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::linkVariant(
 
 
 bool GfxVulkanGraphicsPipeline::canLinkVariant(
-  const GfxGraphicsStateDesc&         state) const {
+  const GfxVulkanGraphicsPipelineVariantKey& key) const {
   auto& features = m_mgr.device().getVkFeatures();
 
   // If sample shading is enabled, dynamic multisample state will be
   // required if multisample state does not match the assumed defaults
   if (m_sampleRateShading) {
-    auto& rtInfo = static_cast<const GfxVulkanRenderTargetState&>(*state.renderTargetState);
-    auto& msInfo = static_cast<const GfxVulkanMultisampleState&>(*state.multisampleState);
-    auto msDesc = msInfo.getDesc();
+    auto msState = key.renderState->getMsState(*key.targetState, m_sampleRateShading);
 
     if (!features.extExtendedDynamicState3.extendedDynamicState3RasterizationSamples
      || !features.extExtendedDynamicState3.extendedDynamicState3SampleMask) {
-      VkSampleCountFlagBits sampleCount = rtInfo.getSampleCount();
+      VkSampleCountFlagBits sampleCount = key.targetState->getSampleCount();
 
       if (!sampleCount)
-        sampleCount = msInfo.getSampleCount();
+        sampleCount = msState.rasterizationSamples;
 
       if (sampleCount != VK_SAMPLE_COUNT_1_BIT)
         return false;
 
       uint32_t allSampleMask = (1u << sampleCount) - 1;
 
-      if ((msDesc.sampleMask & allSampleMask) != allSampleMask)
+      if ((key.renderState->getSampleMask() & allSampleMask) != allSampleMask)
         return false;
     }
 
     if (!features.extExtendedDynamicState3.extendedDynamicState3AlphaToCoverageEnable) {
-      if (msDesc.enableAlphaToCoverage)
+      if (msState.alphaToCoverageEnable)
         return false;
     }
   }
@@ -1577,13 +1552,13 @@ bool GfxVulkanGraphicsPipeline::canLinkVariant(
 
 
 void GfxVulkanGraphicsPipeline::deferCreateVariant(
-  const GfxGraphicsStateDesc&         state) {
+  const GfxVulkanGraphicsPipelineVariantKey& key) {
   // We need to lock here since we want to prevent other
   // threads from adding an entry for the same pipeline
   std::unique_lock lock(m_optimizedMutex);
 
   // Check whether the scenario described above happened
-  LookupResult result = lookupOptimized(state);
+  LookupResult result = lookupOptimized(key);
 
   if (result.found)
     return;
@@ -1591,11 +1566,11 @@ void GfxVulkanGraphicsPipeline::deferCreateVariant(
   // If not, add an entry to the list with a null pipeline.
   // This prevents subsequent lookups from trying to add
   // the same pipeline again.
-  m_optimizedVariants.emplace(state, GfxVulkanGraphicsPipelineVariant());
+  m_optimizedVariants.emplace(key, GfxVulkanGraphicsPipelineVariant());
   lock.unlock();
 
   // Enqueue job to create the optimized pipeline
-  m_mgr.deferCreateGraphicsPipelineVariant(*this, state);
+  m_mgr.deferCreateGraphicsPipelineVariant(*this, key);
 }
 
 
@@ -1951,10 +1926,10 @@ GfxVulkanFragmentOutputPipeline& GfxVulkanPipelineManager::createFragmentOutputP
 
 void GfxVulkanPipelineManager::deferCreateGraphicsPipelineVariant(
         GfxVulkanGraphicsPipeline&    pipeline,
-  const GfxGraphicsStateDesc&         state) {
+  const GfxVulkanGraphicsPipelineVariantKey& key) {
   std::unique_lock lock(m_compilerMutex);
 
-  m_compilerQueue.emplace(pipeline, state);
+  m_compilerQueue.emplace(pipeline, key);
   m_compilerCond.notify_one();
 }
 

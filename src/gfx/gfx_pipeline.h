@@ -1200,17 +1200,6 @@ public:
   virtual bool isAvailable() const = 0;
 
   /**
-   * \brief Compiles a pipeline variant with the given state
-   *
-   * Compilation will be performed asynchronously, if at all.
-   * This may be useful for devices that do not support fast
-   * linking for pipelines.
-   * \param [in] state Pipeline state vector
-   */
-  virtual void compileVariant(
-    const GfxGraphicsStateDesc&         state) = 0;
-
-  /**
    * \brief Queries shader stages
    * \returns Shader stage mask
    */

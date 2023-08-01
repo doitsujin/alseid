@@ -543,6 +543,8 @@ private:
 
   GfxGraphicsStateDesc              m_defaultState;
   GfxGraphicsStateDesc              m_graphicsState;
+  GfxRenderStateData                m_renderState;
+  const GfxVulkanRenderState*       m_renderStateObject = nullptr;
   GfxVulkanGraphicsPipeline*        m_graphicsPipeline;
   GfxVulkanComputePipeline*         m_computePipeline;
 

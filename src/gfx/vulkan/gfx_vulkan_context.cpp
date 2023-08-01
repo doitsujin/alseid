@@ -354,7 +354,7 @@ void GfxVulkanContext::beginRendering(
 
   // Create and set render target state object, and
   // dirty all graphics state for the next draw call
-  m_graphicsState.renderTargetState = m_device->createRenderTargetState(rtDesc);
+  m_renderTargetState = &m_device->getPipelineManager().createRenderTargetState(rtDesc);
 
   invalidateState();
 }
@@ -973,7 +973,63 @@ void GfxVulkanContext::setRasterizerState(
 
 void GfxVulkanContext::setRenderState(
         GfxRenderState                state) {
+  const GfxRenderStateData& data = state->getState();
 
+  m_flags |= GfxVulkanContextFlag::eDirtyPipeline;
+
+  if (data.flags & GfxRenderStateFlag::ePrimitiveTopology)
+    m_renderState.primitiveTopology = data.primitiveTopology;
+
+  if (data.flags & GfxRenderStateFlag::eVertexLayout)
+    m_renderState.vertexLayout = data.vertexLayout;
+
+  if (data.flags & GfxRenderStateFlag::eFrontFace) {
+    m_renderState.frontFace = data.frontFace;
+    m_dynamicStatesDirty |= GfxVulkanDynamicState::eRasterizerState;
+  }
+
+  if (data.flags & GfxRenderStateFlag::eCullMode) {
+    m_renderState.cullMode = data.cullMode;
+    m_dynamicStatesDirty |= GfxVulkanDynamicState::eRasterizerState;
+  }
+
+  if (data.flags & GfxRenderStateFlag::eConservativeRaster) {
+    m_renderState.conservativeRaster = data.conservativeRaster;
+    m_dynamicStatesDirty |= GfxVulkanDynamicState::eConservativeRaster;
+  }
+
+  if (data.flags & GfxRenderStateFlag::eDepthBias) {
+    m_renderState.depthBias = data.depthBias;
+    m_dynamicStatesDirty |= GfxVulkanDynamicState::eRasterizerState;
+  }
+
+  if (data.flags & GfxRenderStateFlag::eShadingRate) {
+    m_renderState.shadingRate = data.shadingRate;
+    m_dynamicStatesDirty |= GfxVulkanDynamicState::eShadingRate;
+  }
+
+  if (data.flags & GfxRenderStateFlag::eDepthTest) {
+    m_renderState.depthTest = data.depthTest;
+    m_dynamicStatesDirty |= GfxVulkanDynamicState::eDepthStencilState
+                         |  GfxVulkanDynamicState::eDepthBoundsState;
+  }
+
+  if (data.flags & GfxRenderStateFlag::eStencilTest) {
+    m_renderState.stencilTest = data.stencilTest;
+    m_dynamicStatesDirty |= GfxVulkanDynamicState::eDepthStencilState;
+  }
+
+  if (data.flags & GfxRenderStateFlag::eMultisampling) {
+    m_renderState.multisampling = data.multisampling;
+    m_dynamicStatesDirty |= GfxVulkanDynamicState::eMultisampleState
+                         |  GfxVulkanDynamicState::eAlphaToCoverage
+                         |  GfxVulkanDynamicState::eShadingRate;
+  }
+
+  if (data.flags & GfxRenderStateFlag::eBlending) {
+    m_renderState.blending = data.blending;
+    m_dynamicStatesDirty |= GfxVulkanDynamicState::eBlendConstants;
+  }
 }
 
 
@@ -1031,22 +1087,37 @@ void GfxVulkanContext::updateGraphicsState(
   if (m_flags & GfxVulkanContextFlag::eDirtyPipeline) {
     m_flags -= GfxVulkanContextFlag::eDirtyPipeline;
 
-    // Normalize state if we're using a mesh shader pipeline
-    GfxGraphicsStateDesc state = m_graphicsState;
+    // Disable vertex state for mesh shading pipelines,
+    // and look up a compatible render state object.
+    GfxRenderStateFlags vertexStateFlags =
+      GfxRenderStateFlag::ePrimitiveTopology |
+      GfxRenderStateFlag::eVertexLayout;
 
+    if (m_graphicsPipeline->getShaderStages() & GfxShaderStage::eVertex)
+      m_renderState.flags |= vertexStateFlags;
+    else
+      m_renderState.flags -= vertexStateFlags;
+
+    m_renderStateObject = &m_device->getPipelineManager().createRenderState(m_renderState);
+
+    // Dirty vertex buffers that have changed if necessary.
     if (m_graphicsPipeline->getShaderStages() & GfxShaderStage::eVertex) {
-      // Dirty all vertex buffers that have changed
-      uint32_t vbosActive = state.vertexInputState->getVertexBufferMask();
+      uint32_t vbosActive = m_renderStateObject->getVertexBindingMask();
       m_vbosDirty = vbosActive & (vbosActive ^ m_vbosActive);
       m_vbosActive = vbosActive;
     } else {
-      state.vertexInputState = nullptr;
+      m_renderState.flags -= vertexStateFlags;
+
       m_vbosActive = 0;
       m_vbosDirty = 0;
     }
 
     // This may link or compile a pipeline on demand
-    auto variant = m_graphicsPipeline->getVariant(state);
+    GfxVulkanGraphicsPipelineVariantKey key;
+    key.renderState = m_renderStateObject;
+    key.targetState = m_renderTargetState;
+
+    auto variant = m_graphicsPipeline->getVariant(key);
     vk.vkCmdBindPipeline(m_cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, variant.pipeline);
 
     // Mark all states dirty that were not dynamic in the previous pipeline
@@ -1068,12 +1139,12 @@ void GfxVulkanContext::updateGraphicsState(
     }
 
     if (dynamicStateMask & GfxVulkanDynamicState::eTessellationState) {
-      auto tsState = static_cast<const GfxVulkanVertexInputState&>(*m_graphicsState.vertexInputState).getTsState();
+      auto tsState = m_renderStateObject->getTsState();
       vk.vkCmdSetPatchControlPointsEXT(m_cmd, tsState.patchControlPoints);
     }
 
     if (dynamicStateMask & GfxVulkanDynamicState::eRasterizerState) {
-      auto rsState = static_cast<const GfxVulkanRasterizerState&>(*m_graphicsState.rasterizerState).getRsState();
+      auto rsState = m_renderStateObject->getRsState();
 
       vk.vkCmdSetCullMode(m_cmd, rsState.cullMode);
       vk.vkCmdSetFrontFace(m_cmd, rsState.frontFace);
@@ -1083,12 +1154,12 @@ void GfxVulkanContext::updateGraphicsState(
     }
 
     if (dynamicStateMask & GfxVulkanDynamicState::eConservativeRaster) {
-      auto rsConservative = static_cast<const GfxVulkanRasterizerState&>(*m_graphicsState.rasterizerState).getRsConservativeState();
+      auto rsConservative = m_renderStateObject->getRsConservativeState();
       vk.vkCmdSetConservativeRasterizationModeEXT(m_cmd, rsConservative.conservativeRasterizationMode);
     }
 
     if (dynamicStateMask & GfxVulkanDynamicState::eDepthStencilState) {
-      auto dsState = static_cast<const GfxVulkanDepthStencilState&>(*m_graphicsState.depthStencilState).getDsState();
+      auto dsState = m_renderStateObject->getDsState();
 
       vk.vkCmdSetDepthTestEnable(m_cmd, dsState.depthTestEnable);      
       vk.vkCmdSetDepthWriteEnable(m_cmd, dsState.depthWriteEnable);      
@@ -1108,7 +1179,7 @@ void GfxVulkanContext::updateGraphicsState(
     }
 
     if (dynamicStateMask & GfxVulkanDynamicState::eDepthBoundsState) {
-      auto dsState = static_cast<const GfxVulkanDepthStencilState&>(*m_graphicsState.depthStencilState).getDsState();
+      auto dsState = m_renderStateObject->getDsState();
       vk.vkCmdSetDepthBoundsTestEnable(m_cmd, dsState.depthBoundsTestEnable);
     }
 
@@ -1121,8 +1192,7 @@ void GfxVulkanContext::updateGraphicsState(
     }
 
     if (dynamicStateMask & GfxVulkanDynamicState::eMultisampleState) {
-      auto msState = static_cast<const GfxVulkanMultisampleState&>(*m_graphicsState.multisampleState).getMsState(
-        static_cast<const GfxVulkanRenderTargetState&>(*m_graphicsState.renderTargetState),
+      auto msState = m_renderStateObject->getMsState(*m_renderTargetState,
         m_graphicsPipeline->hasSampleRateShading());
 
       vk.vkCmdSetRasterizationSamplesEXT(m_cmd, msState.rasterizationSamples);
@@ -1130,8 +1200,7 @@ void GfxVulkanContext::updateGraphicsState(
     }
 
     if (dynamicStateMask & GfxVulkanDynamicState::eAlphaToCoverage) {
-      auto msState = static_cast<const GfxVulkanMultisampleState&>(*m_graphicsState.multisampleState).getMsState(
-        static_cast<const GfxVulkanRenderTargetState&>(*m_graphicsState.renderTargetState),
+      auto msState = m_renderStateObject->getMsState(*m_renderTargetState,
         m_graphicsPipeline->hasSampleRateShading());
 
       vk.vkCmdSetAlphaToCoverageEnableEXT(m_cmd, msState.alphaToCoverageEnable);
@@ -1141,9 +1210,9 @@ void GfxVulkanContext::updateGraphicsState(
       vk.vkCmdSetBlendConstants(m_cmd, m_blendConstants.float32);
 
     if (dynamicStateMask & GfxVulkanDynamicState::eShadingRate) {
-      auto srState = static_cast<const GfxVulkanRasterizerState&>(*m_graphicsState.rasterizerState).getSrState();
+      auto srState = m_renderStateObject->getSrState();
 
-      if (!m_device->supportsFragmentShadingRateWithState(m_graphicsState)) {
+      if (!m_device->supportsFragmentShadingRateWithState(*m_renderStateObject)) {
         srState.fragmentSize = VkExtent2D { 1u, 1u };
         srState.combinerOps[0] = VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR;
         srState.combinerOps[1] = VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR;
@@ -1329,6 +1398,10 @@ void GfxVulkanContext::invalidateState() {
 
 
 void GfxVulkanContext::resetState() {
+  m_renderState = GfxRenderStateData();
+  m_renderState.flags = GfxRenderStateFlag::eAll;
+  m_renderStateObject = nullptr;
+
   m_graphicsState = m_defaultState;
   m_graphicsPipeline = nullptr;
   m_computePipeline = nullptr;

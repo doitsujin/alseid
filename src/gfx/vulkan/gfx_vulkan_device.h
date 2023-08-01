@@ -462,7 +462,7 @@ public:
    * \returns \c true if shading rates are supported with that state
    */
   bool supportsFragmentShadingRateWithState(
-    const GfxGraphicsStateDesc&         state) const;
+    const GfxVulkanRenderState&         state) const;
 
   /**
    * \brief Sets debug name of a Vulkan object
