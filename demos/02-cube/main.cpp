@@ -164,8 +164,7 @@ public:
     std::memcpy(m_geometryBuffer->map(GfxUsage::eCpuWrite, sizeof(g_vertexData)), g_indexData.data(), sizeof(g_indexData));
 
     // Create vertex input state object
-    GfxVertexInputStateDesc vertexInputDesc;
-    vertexInputDesc.primitiveTopology = GfxPrimitiveType::eTriangleList;
+    GfxVertexLayout vertexInputDesc;
     vertexInputDesc.attributes[0].binding = 0;
     vertexInputDesc.attributes[0].format = GfxFormat::eR32G32B32f;
     vertexInputDesc.attributes[0].offset = offsetof(Vertex, position);
@@ -181,19 +180,29 @@ public:
     vertexInputDesc.attributes[2].offset = offsetof(Vertex, coord);
     vertexInputDesc.attributes[2].stride = sizeof(Vertex);
 
-    m_viState = m_device->createVertexInputState(vertexInputDesc);
+    GfxPrimitiveTopology primitiveTopologyDesc;
+    primitiveTopologyDesc.primitiveType = GfxPrimitiveType::eTriangleList;
+
+    GfxRenderStateDesc vertexStateDesc;
+    vertexStateDesc.primitiveTopology = &primitiveTopologyDesc;
+    vertexStateDesc.vertexLayout = &vertexInputDesc;
+
+    m_viState = m_device->createRenderState(vertexStateDesc);
 
     // Create depth-stencil state objects
-    GfxDepthStencilStateDesc depthStencilDesc;
+    GfxDepthTest depthStencilDesc;
     depthStencilDesc.enableDepthWrite = true;
     depthStencilDesc.depthCompareOp = GfxCompareOp::eGreater;
 
-    m_dsDepthPass = m_device->createDepthStencilState(depthStencilDesc);
+    GfxRenderStateDesc depthStateDesc;
+    depthStateDesc.depthTest = &depthStencilDesc;
+
+    m_dsDepthPass = m_device->createRenderState(depthStateDesc);
 
     depthStencilDesc.enableDepthWrite = false;
     depthStencilDesc.depthCompareOp = GfxCompareOp::eEqual;
 
-    m_dsColorPass = m_device->createDepthStencilState(depthStencilDesc);
+    m_dsColorPass = m_device->createRenderState(depthStateDesc);
 
     // Create the global descriptor array
     GfxDescriptorArrayDesc descriptorArrayDesc;
@@ -323,8 +332,8 @@ public:
     context->setViewport(GfxViewport(Offset2D(0, 0), m_renderTargetSize));
 
     context->bindPipeline(m_depthPassPipeline);
-    context->setVertexInputState(m_viState);
-    context->setDepthStencilState(m_dsDepthPass);
+    context->setRenderState(m_viState);
+    context->setRenderState(m_dsDepthPass);
 
     VertexModelConstants vertexModelConstantData = { };
     vertexModelConstantData.modelMatrix = m_modelMatrix;
@@ -406,8 +415,8 @@ public:
     context->setViewport(GfxViewport(Offset2D(0, 0), m_renderTargetSize));
 
     context->bindPipeline(m_colorPassPipeline);
-    context->setVertexInputState(m_viState);
-    context->setDepthStencilState(m_dsColorPass);
+    context->setRenderState(m_viState);
+    context->setRenderState(m_dsColorPass);
 
     VertexModelConstants vertexModelConstantData = { };
     vertexModelConstantData.modelMatrix = m_modelMatrix;
@@ -578,9 +587,9 @@ private:
   GfxSampler                m_samplerLinear;
   GfxSampler                m_samplerNearest;
 
-  GfxVertexInputState       m_viState;
-  GfxDepthStencilState      m_dsDepthPass;
-  GfxDepthStencilState      m_dsColorPass;
+  GfxRenderState            m_viState;
+  GfxRenderState            m_dsDepthPass;
+  GfxRenderState            m_dsColorPass;
 
   std::array<GfxContext, 3> m_contexts;
   uint32_t                  m_contextId = 0;
