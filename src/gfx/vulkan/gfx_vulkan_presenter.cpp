@@ -677,6 +677,9 @@ void GfxVulkanPresenter::recordBlit(
       if (!m_blitPipelineGraphics)
         m_blitPipelineGraphics = createGraphicsBlitPipeline();
 
+      if (!m_renderState)
+        m_renderState = createRenderState();
+
       context->imageBarrier(dstImage, dstImage->getAvailableSubresources(),
         0, 0, GfxUsage::eRenderTarget, 0, GfxBarrierFlag::eDiscard);
 
@@ -691,11 +694,7 @@ void GfxVulkanPresenter::recordBlit(
       context->beginRendering(renderInfo, 0);
       context->bindPipeline(m_blitPipelineGraphics);
       context->bindDescriptor(0, 0, srcView->getDescriptor());
-      context->setVertexInputState(nullptr);
-      context->setRasterizerState(nullptr);
-      context->setDepthStencilState(nullptr);
-      context->setColorBlendState(nullptr);
-      context->setMultisampleState(nullptr);
+      context->setRenderState(m_renderState);
       context->setViewports(1, &viewport);
       context->draw(3, 1, 0, 0);
       context->endRendering();
@@ -748,6 +747,15 @@ GfxGraphicsPipeline GfxVulkanPresenter::createGraphicsBlitPipeline() {
   pipelineDesc.vertex = createVkBuiltInShader(vs_present_blit);
   pipelineDesc.fragment = createVkBuiltInShader(fs_present_blit);
   return m_device->createGraphicsPipeline(pipelineDesc);
+}
+
+
+GfxRenderState GfxVulkanPresenter::createRenderState() {
+  // Use default state for everything.
+  GfxRenderStateData data;
+  data.flags = GfxRenderStateFlag::eAll;
+
+  return m_device->createRenderState(GfxRenderStateDesc(data));
 }
 
 

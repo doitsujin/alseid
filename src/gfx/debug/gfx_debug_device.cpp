@@ -61,13 +61,6 @@ GfxBuffer GfxDebugDevice::createBuffer(
 }
 
 
-GfxColorBlendState GfxDebugDevice::createColorBlendState(
-  const GfxColorBlendStateDesc&       desc) {
-  // TODO validate state
-  return m_device->createColorBlendState(desc);
-}
-
-
 GfxComputePipeline GfxDebugDevice::createComputePipeline(
   const GfxComputePipelineDesc&       desc) {
   if (!desc.compute)
@@ -87,13 +80,6 @@ GfxContext GfxDebugDevice::createContext(
 
   // TODO wrap context
   return m_device->createContext(queue);          
-}
-
-
-GfxDepthStencilState GfxDebugDevice::createDepthStencilState(
-  const GfxDepthStencilStateDesc&     desc) {
-  // TODO validate state
-  return m_device->createDepthStencilState(desc);
 }
 
 
@@ -141,24 +127,10 @@ GfxImage GfxDebugDevice::createImage(
 }
 
 
-GfxMultisampleState GfxDebugDevice::createMultisampleState(
-  const GfxMultisampleStateDesc&      desc) {
-  // TODO validate state
-  return m_device->createMultisampleState(desc);
-}
-
-
 GfxPresenter GfxDebugDevice::createPresenter(
   const GfxPresenterDesc&             desc) {
   // TODO wrap presenter
   return m_device->createPresenter(desc);
-}
-
-
-GfxRasterizerState GfxDebugDevice::createRasterizerState(
-  const GfxRasterizerStateDesc&       desc) {
-  // TODO validate state
-  return m_device->createRasterizerState(desc);
 }
 
 
@@ -201,13 +173,6 @@ GfxSemaphore GfxDebugDevice::createSemaphore(
   const GfxSemaphoreDesc&             desc) {
   // TODO wrap semaphore
   return m_device->createSemaphore(desc);          
-}
-
-
-GfxVertexInputState GfxDebugDevice::createVertexInputState(
-  const GfxVertexInputStateDesc&      desc) {
-  // TODO validate state
-  return m_device->createVertexInputState(desc);
 }
 
 

@@ -367,12 +367,6 @@ GfxBuffer GfxVulkanDevice::createBuffer(
 }
 
 
-GfxColorBlendState GfxVulkanDevice::createColorBlendState(
-  const GfxColorBlendStateDesc&       desc) {
-  return GfxColorBlendState(m_pipelineManager->createColorBlendState(desc));
-}
-
-
 GfxComputePipeline GfxVulkanDevice::createComputePipeline(
   const GfxComputePipelineDesc&       desc) {
   return GfxComputePipeline(m_pipelineManager->createComputePipeline(desc));
@@ -383,12 +377,6 @@ GfxContext GfxVulkanDevice::createContext(
         GfxQueue                      queue) {
   return GfxContext(std::make_shared<GfxVulkanContext>(
     shared_from_this(), queue));
-}
-
-
-GfxDepthStencilState GfxVulkanDevice::createDepthStencilState(
-  const GfxDepthStencilStateDesc&     desc) {
-  return GfxDepthStencilState(m_pipelineManager->createDepthStencilState(desc));
 }
 
 
@@ -532,22 +520,10 @@ GfxImage GfxVulkanDevice::createImage(
 }
 
 
-GfxMultisampleState GfxVulkanDevice::createMultisampleState(
-  const GfxMultisampleStateDesc&      desc) {
-  return GfxMultisampleState(m_pipelineManager->createMultisampleState(desc));
-}
-
-
 GfxPresenter GfxVulkanDevice::createPresenter(
   const GfxPresenterDesc&             desc) {
   return GfxPresenter(std::make_shared<GfxVulkanPresenter>(
     shared_from_this(), m_gfx->getWsiBridge(), desc));
-}
-
-
-GfxRasterizerState GfxVulkanDevice::createRasterizerState(
-  const GfxRasterizerStateDesc&       desc) {
-  return GfxRasterizerState(m_pipelineManager->createRasterizerState(desc));
 }
 
 
@@ -604,12 +580,6 @@ GfxSemaphore GfxVulkanDevice::createSemaphore(
   const GfxSemaphoreDesc&             desc) {
   return GfxSemaphore(std::make_shared<GfxVulkanSemaphore>(
     shared_from_this(), desc, VK_SEMAPHORE_TYPE_TIMELINE));
-}
-
-
-GfxVertexInputState GfxVulkanDevice::createVertexInputState(
-  const GfxVertexInputStateDesc&      desc) {
-  return GfxVertexInputState(m_pipelineManager->createVertexInputState(desc));
 }
 
 

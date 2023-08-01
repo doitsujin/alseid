@@ -331,230 +331,6 @@ GfxVulkanPipelineLayout::~GfxVulkanPipelineLayout() {
 
 
 
-GfxVulkanVertexInputState::GfxVulkanVertexInputState(
-        GfxVulkanPipelineManager&     mgr,
-  const GfxVertexInputStateDesc&      desc)
-: GfxVertexInputStateIface(desc)
-, m_mgr(mgr) {
-  uint32_t bindingMask = 0;
-
-  // Set up all the state objects
-  for (uint32_t i = 0; i < GfxMaxVertexAttributes; i++) {
-    auto& info = desc.attributes[i];
-
-    if (info.format == GfxFormat::eUnknown)
-      continue;
-
-    auto& att = m_viAttributes[m_viState.vertexAttributeDescriptionCount++];
-    att.location = i;
-    att.format = m_mgr.device().getVkFormat(info.format);
-    att.offset = info.offset;
-    att.binding = info.binding;
-
-    if (!(bindingMask & (1u << info.binding))) {
-      bindingMask |= (1u << info.binding);
-
-      auto& bind = m_viBindings[m_viState.vertexBindingDescriptionCount++];
-      bind.binding = info.binding;
-      bind.stride = info.stride;
-      bind.inputRate = getVkInputRate(info.inputRate);
-    }
-  }
-
-  if (m_viState.vertexAttributeDescriptionCount) {
-    m_viState.pVertexAttributeDescriptions = m_viAttributes.data();
-    m_viState.pVertexBindingDescriptions = m_viBindings.data();
-  }
-
-  m_iaState.topology = getVkPrimitiveTopology(desc.primitiveTopology);
-  m_iaState.primitiveRestartEnable = desc.isPrimitiveRestartEnabled();
-
-  m_tsState.patchControlPoints = desc.patchVertexCount;
-
-  // Compile vertex input pipeline library from this state if supported
-  if (m_mgr.device().getVkFeatures().extGraphicsPipelineLibrary.graphicsPipelineLibrary)
-    createLibrary();
-}
-
-
-GfxVulkanVertexInputState::~GfxVulkanVertexInputState() {
-  auto& vk = m_mgr.device().vk();
-
-  vk.vkDestroyPipeline(vk.device, m_pipeline, nullptr);
-}
-
-
-void GfxVulkanVertexInputState::createLibrary() {
-  auto& vk = m_mgr.device().vk();
-
-  VkGraphicsPipelineLibraryCreateInfoEXT libInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT };
-  libInfo.flags             = VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT;
-
-  VkGraphicsPipelineCreateInfo info = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, &libInfo };
-  info.flags                = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR;
-  info.pVertexInputState    = &m_viState;
-  info.pInputAssemblyState  = &m_iaState;
-  info.basePipelineIndex    = -1;
-
-  VkResult vr = vk.vkCreateGraphicsPipelines(vk.device,
-    VK_NULL_HANDLE, 1, &info, nullptr, &m_pipeline);
-
-  if (vr)
-    throw VulkanError("Vulkan: Failed to create vertex input pipeline library", vr);
-}
-
-
-
-
-GfxVulkanRasterizerState::GfxVulkanRasterizerState(
-        GfxVulkanPipelineManager&     mgr,
-  const GfxRasterizerStateDesc&       desc)
-: GfxRasterizerStateIface(desc) {
-  m_rsState.depthClampEnable = VK_FALSE;
-  m_rsState.rasterizerDiscardEnable = VK_FALSE;
-  m_rsState.polygonMode = VK_POLYGON_MODE_FILL;
-  m_rsState.cullMode = getVkCullMode(desc.cullMode);
-  m_rsState.frontFace = getVkFrontFace(desc.frontFace);
-  m_rsState.depthBiasEnable = desc.isDepthBiasEnabled();
-  m_rsState.depthBiasConstantFactor = desc.depthBias;
-  m_rsState.depthBiasSlopeFactor = desc.depthBiasSlope;
-  m_rsState.depthBiasClamp = desc.depthBiasClamp;
-
-  if (desc.conservativeRasterization) {
-    m_rsConservative.conservativeRasterizationMode = VK_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATE_EXT;
-    m_rsState.pNext = &m_rsConservative;
-  }
-
-  m_srState.fragmentSize = getVkExtent2D(desc.shadingRate);
-  m_srState.combinerOps[0] = VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR;
-  m_srState.combinerOps[1] = getVkShadingRateCombiner(desc.shadingRateOp);
-}
-
-
-GfxVulkanRasterizerState::~GfxVulkanRasterizerState() {
-
-}
-
-
-
-
-GfxVulkanDepthStencilState::GfxVulkanDepthStencilState(
-        GfxVulkanPipelineManager&     mgr,
-  const GfxDepthStencilStateDesc&     desc)
-: GfxDepthStencilStateIface(desc) {
-  m_dsState.depthTestEnable = desc.isDepthTestEnabled();
-  m_dsState.depthWriteEnable = desc.enableDepthWrite;
-  m_dsState.depthCompareOp = getVkCompareOp(desc.depthCompareOp);
-  m_dsState.stencilTestEnable = desc.isStencilTestEnabled();
-  m_dsState.depthBoundsTestEnable = desc.enableDepthBoundsTest;
-  m_dsState.front = getVkStencilState(desc.front);
-  m_dsState.back = getVkStencilState(desc.back);
-
-  if (m_dsState.stencilTestEnable)
-    m_dyList[m_dyState.dynamicStateCount++] = VK_DYNAMIC_STATE_STENCIL_REFERENCE;
-
-  if (m_dsState.depthBoundsTestEnable)
-    m_dyList[m_dyState.dynamicStateCount++] = VK_DYNAMIC_STATE_DEPTH_BOUNDS;
-
-  if (m_dyState.dynamicStateCount)
-    m_dyState.pDynamicStates = m_dyList.data();
-}
-
-
-GfxVulkanDepthStencilState::~GfxVulkanDepthStencilState() {
-
-}
-
-
-VkStencilOpState GfxVulkanDepthStencilState::getVkStencilState(
-  const GfxStencilDesc&               desc) {
-  VkStencilOpState state = { };
-  state.failOp = getVkStencilOp(desc.failOp);
-  state.passOp = getVkStencilOp(desc.passOp);
-  state.depthFailOp = getVkStencilOp(desc.depthFailOp);
-  state.compareOp = getVkCompareOp(desc.compareOp);
-  state.compareMask = desc.compareMask;
-  state.writeMask = desc.writeMask;
-  return state;
-}
-
-
-
-
-GfxVulkanColorBlendState::GfxVulkanColorBlendState(
-        GfxVulkanPipelineManager&     mgr,
-  const GfxColorBlendStateDesc&       desc)
-: GfxColorBlendStateIface(desc) {
-  bool usesBlendConstants = false;
-
-  m_cbState.logicOpEnable = desc.isLogicOpEnabled();
-  m_cbState.logicOp = getVkLogicOp(desc.logicOp);
-
-  for (uint32_t i = 0; i < GfxMaxColorAttachments; i++) {
-    VkPipelineColorBlendAttachmentState& attachment = m_cbAttachments[i];
-    attachment.colorWriteMask = getVkComponentFlags(desc.renderTargets[i].writeMask);
-
-    if (desc.renderTargets[i].isBlendingEnabled()) {
-      usesBlendConstants |= desc.renderTargets[i].usesBlendConstants();
-
-      attachment.blendEnable = VK_TRUE;
-      attachment.srcColorBlendFactor = getVkBlendFactor(desc.renderTargets[i].srcColor);
-      attachment.dstColorBlendFactor = getVkBlendFactor(desc.renderTargets[i].dstColor);
-      attachment.colorBlendOp = getVkBlendOp(desc.renderTargets[i].colorOp);
-      attachment.srcAlphaBlendFactor = getVkBlendFactor(desc.renderTargets[i].srcAlpha);
-      attachment.dstAlphaBlendFactor = getVkBlendFactor(desc.renderTargets[i].dstAlpha);
-      attachment.alphaBlendOp = getVkBlendOp(desc.renderTargets[i].alphaOp);
-    }
-  }
-
-  if (usesBlendConstants)
-    m_dyList[m_dyState.dynamicStateCount++] = VK_DYNAMIC_STATE_BLEND_CONSTANTS;
-
-  if (m_dyState.dynamicStateCount)
-    m_dyState.pDynamicStates = m_dyList.data();
-}
-
-
-GfxVulkanColorBlendState::~GfxVulkanColorBlendState() {
-
-}
-
-
-
-
-GfxVulkanMultisampleState::GfxVulkanMultisampleState(
-        GfxVulkanPipelineManager&     mgr,
-  const GfxMultisampleStateDesc&      desc)
-: GfxMultisampleStateIface(desc) {
-  m_msMask = desc.sampleMask;
-
-  m_msState.rasterizationSamples = VkSampleCountFlagBits(std::max(desc.sampleCount, 1u));
-  m_msState.pSampleMask = &m_msMask;
-  m_msState.alphaToCoverageEnable = desc.enableAlphaToCoverage;
-}
-
-
-GfxVulkanMultisampleState::~GfxVulkanMultisampleState() {
-
-}
-
-
-VkPipelineMultisampleStateCreateInfo GfxVulkanMultisampleState::getMsState(
-  const GfxVulkanRenderTargetState&   rtState,
-        bool                          sampleShading) const {
-  VkPipelineMultisampleStateCreateInfo result = m_msState;
-
-  if (rtState.getSampleCount())
-    result.rasterizationSamples = rtState.getSampleCount();
-
-  result.sampleShadingEnable = sampleShading;
-  result.minSampleShading = sampleShading ? 1.0f : 0.0f;
-  return result;
-}
-
-
-
-
 GfxVulkanRenderTargetState::GfxVulkanRenderTargetState(
         GfxVulkanPipelineManager&     mgr,
   const GfxRenderTargetStateDesc&     desc)
@@ -888,82 +664,6 @@ GfxVulkanFragmentOutputPipeline::GfxVulkanFragmentOutputPipeline(
 
 
 GfxVulkanFragmentOutputPipeline::~GfxVulkanFragmentOutputPipeline() {
-  auto& vk = m_mgr.device().vk();
-
-  vk.vkDestroyPipeline(vk.device, m_pipeline, nullptr);
-}
-
-
-
-
-size_t GfxVulkanFragmentOutputStateKey::hash() const {
-  HashState hash;
-  hash.add(colorBlendState.hash());
-  hash.add(multisampleState.hash());
-  hash.add(renderTargetState.hash());
-  hash.add(sampleRateShading);
-  return hash;
-}
-
-
-
-
-GfxVulkanFragmentOutputState::GfxVulkanFragmentOutputState(
-        GfxVulkanPipelineManager&     mgr,
-  const GfxVulkanFragmentOutputStateKey& key)
-: m_mgr(mgr) {
-  auto& vk = m_mgr.device().vk();
-  auto& features = m_mgr.device().getVkFeatures();
-
-  auto& cbInfo = static_cast<GfxVulkanColorBlendState&>(*key.colorBlendState);
-  auto& msInfo = static_cast<GfxVulkanMultisampleState&>(*key.multisampleState);
-  auto& rtInfo = static_cast<GfxVulkanRenderTargetState&>(*key.renderTargetState);
-
-  auto rtState = rtInfo.getRtState();
-  auto msState = msInfo.getMsState(rtInfo, key.sampleRateShading);
-  auto cbState = cbInfo.getCbState(rtState.colorAttachmentCount);
-
-  small_vector<VkDynamicState, 8> dyStates;
-  cbInfo.getDynamicStates(dyStates);
-
-  if (key.sampleRateShading) {
-    if (features.extExtendedDynamicState3.extendedDynamicState3RasterizationSamples
-     && features.extExtendedDynamicState3.extendedDynamicState3SampleMask) {
-      dyStates.push_back(VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT);
-      dyStates.push_back(VK_DYNAMIC_STATE_SAMPLE_MASK_EXT);
-    }
-
-    if (features.extExtendedDynamicState3.extendedDynamicState3AlphaToCoverageEnable)
-      dyStates.push_back(VK_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT);
-  }
-
-  VkPipelineDynamicStateCreateInfo dyState = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
-  dyState.dynamicStateCount = dyStates.size();
-
-  if (dyState.dynamicStateCount)
-    dyState.pDynamicStates = dyStates.data();
-
-  VkGraphicsPipelineLibraryCreateInfoEXT libInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT, &rtState };
-  libInfo.flags             = VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT;
-
-  VkGraphicsPipelineCreateInfo info = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, &libInfo };
-  info.flags                = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR;
-  info.pMultisampleState    = &msState;
-  info.pColorBlendState     = &cbState;
-  info.pDynamicState        = &dyState;
-  info.basePipelineIndex    = -1;
-
-  VkResult vr = vk.vkCreateGraphicsPipelines(vk.device,
-    VK_NULL_HANDLE, 1, &info, nullptr, &m_pipeline);
-
-  if (vr)
-    throw VulkanError("Vulkan: Failed to create vertex input pipeline library", vr);
-
-  m_dynamic = getDynamicStateFlagsFromState(dyState);
-}
-
-
-GfxVulkanFragmentOutputState::~GfxVulkanFragmentOutputState() {
   auto& vk = m_mgr.device().vk();
 
   vk.vkDestroyPipeline(vk.device, m_pipeline, nullptr);
@@ -1868,13 +1568,11 @@ GfxVulkanGraphicsPipeline& GfxVulkanPipelineManager::createGraphicsPipeline(
 
 GfxVulkanVertexInputPipeline& GfxVulkanPipelineManager::createVertexInputPipeline(
   const GfxVulkanRenderState&         renderState) {
-  GfxRenderStateDesc renderStateDesc = renderState.getDesc();
+  GfxRenderStateData normalizedData = renderState.getState();
+  normalizedData.flags = GfxRenderStateFlag::ePrimitiveTopology
+                       | GfxRenderStateFlag::eVertexLayout;
 
-  GfxRenderStateDesc normalizedDesc;
-  normalizedDesc.primitiveTopology = renderStateDesc.primitiveTopology;
-  normalizedDesc.vertexLayout = renderStateDesc.vertexLayout;
-
-  GfxVulkanRenderState& normalizedState = createRenderState(normalizedDesc);
+  GfxVulkanRenderState& normalizedState = createRenderState(normalizedData);
 
   std::lock_guard lock(m_mutex);
 
@@ -1897,13 +1595,11 @@ GfxVulkanFragmentOutputPipeline& GfxVulkanPipelineManager::createFragmentOutputP
   const GfxVulkanRenderTargetState&   targetState,
   const GfxVulkanRenderState&         renderState,
         VkBool32                      sampleShading) {
-  GfxRenderStateDesc renderStateDesc = renderState.getDesc();
+  GfxRenderStateData normalizedData = renderState.getState();
+  normalizedData.flags = GfxRenderStateFlag::eMultisampling
+                       | GfxRenderStateFlag::eBlending;
 
-  GfxRenderStateDesc normalizedDesc;
-  normalizedDesc.multisampling = renderStateDesc.multisampling;
-  normalizedDesc.blending = renderStateDesc.blending;
-
-  GfxVulkanRenderState& normalizedState = createRenderState(normalizedDesc);
+  GfxVulkanRenderState& normalizedState = createRenderState(normalizedData);
 
   std::lock_guard lock(m_mutex);
 

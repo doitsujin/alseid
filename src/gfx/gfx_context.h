@@ -675,13 +675,6 @@ public:
           GfxColorValue                 constants) = 0;
 
   /**
-   * \brief Sets blend state
-   * \param [in] state Blend state object
-   */
-  virtual void setColorBlendState(
-          GfxColorBlendState            state) = 0;
-
-  /**
    * \brief Sets depth bounds
    *
    * Sets the minimum and maximum depth values to compare the
@@ -693,27 +686,6 @@ public:
   virtual void setDepthBounds(
           float                         minDepth,
           float                         maxDepth) = 0;
-
-  /**
-   * \brief Sets depth-stencil state
-   * \param [in] state Depth-stencil state object
-   */
-  virtual void setDepthStencilState(
-          GfxDepthStencilState          state) = 0;
-
-  /**
-   * \brief Sets multisample state
-   * \param [in] state Multisample state object
-   */
-  virtual void setMultisampleState(
-          GfxMultisampleState           state) = 0;
-
-  /**
-   * \brief Sets rasterizer state
-   * \param [in] state Rasterizer state object
-   */
-  virtual void setRasterizerState(
-          GfxRasterizerState            state) = 0;
 
   /**
    * \brief Sets render state
@@ -764,13 +736,6 @@ public:
   virtual void setStencilReference(
           uint32_t                      front,
           uint32_t                      back) = 0;
-
-  /**
-   * \brief Sets vertex input state
-   * \param [in] state Vertex input state object
-   */
-  virtual void setVertexInputState(
-          GfxVertexInputState           state) = 0;
 
   /**
    * \brief Sets viewports

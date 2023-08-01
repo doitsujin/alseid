@@ -442,13 +442,6 @@ public:
           GfxColorValue                 constants) override;
 
   /**
-   * \brief Sets blend state
-   * \param [in] state Blend state object
-   */
-  void setColorBlendState(
-          GfxColorBlendState            state) override;
-
-  /**
    * \brief Sets depth bounds
    *
    * \param [in] minDepth Minimum depth value
@@ -457,27 +450,6 @@ public:
   void setDepthBounds(
           float                         minDepth,
           float                         maxDepth) override;
-
-  /**
-   * \brief Sets depth-stencil state
-   * \param [in] state Depth-stencil state object
-   */
-  void setDepthStencilState(
-          GfxDepthStencilState          state) override;
-
-  /**
-   * \brief Sets multisample state
-   * \param [in] state Multisample state object
-   */
-  void setMultisampleState(
-          GfxMultisampleState           state) override;
-
-  /**
-   * \brief Sets rasterizer state
-   * \param [in] state Rasterizer state object
-   */
-  void setRasterizerState(
-          GfxRasterizerState            state) override;
 
   /**
    * \brief Sets render state
@@ -509,13 +481,6 @@ public:
           uint32_t                      back) override;
 
   /**
-   * \brief Sets vertex input state
-   * \param [in] state Vertex input state object
-   */
-  void setVertexInputState(
-          GfxVertexInputState           state) override;
-
-  /**
    * \brief Sets viewports
    *
    * \param [in] count Number of viewports to set
@@ -541,10 +506,9 @@ private:
   GfxVulkanContextFlags             m_flags     = 0;
   uint32_t                          m_dirtySets = 0;
 
-  GfxGraphicsStateDesc              m_defaultState;
-  GfxGraphicsStateDesc              m_graphicsState;
   GfxRenderStateData                m_renderState;
   const GfxVulkanRenderState*       m_renderStateObject = nullptr;
+  const GfxVulkanRenderTargetState* m_renderTargetState = nullptr;
   GfxVulkanGraphicsPipeline*        m_graphicsPipeline;
   GfxVulkanComputePipeline*         m_computePipeline;
 

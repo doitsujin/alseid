@@ -211,15 +211,6 @@ public:
           GfxMemoryTypes                memoryTypes) = 0;
 
   /**
-   * \brief Creates a color blend state object
-   *
-   * \param [in] desc Color blend properties
-   * \returns Color blend state object
-   */
-  virtual GfxColorBlendState createColorBlendState(
-    const GfxColorBlendStateDesc&       desc) = 0;
-
-  /**
    * \brief Creates a compute pipeline
    *
    * The pipeline will be compiled in the background.
@@ -250,15 +241,6 @@ public:
    */
   virtual GfxDescriptorArray createDescriptorArray(
     const GfxDescriptorArrayDesc&       desc) = 0;
-
-  /**
-   * \brief Creates a depth-stencil state object
-   *
-   * \param [in] desc Depth-stencil properties
-   * \returns Depth-stencil state object
-   */
-  virtual GfxDepthStencilState createDepthStencilState(
-    const GfxDepthStencilStateDesc&     desc) = 0;
 
   /**
    * \brief Creates a legacy graphics pipeline
@@ -297,15 +279,6 @@ public:
           GfxMemoryTypes                memoryTypes) = 0;
 
   /**
-   * \brief Creates a multisample state object
-   *
-   * \param [in] desc Multisample properties
-   * \returns Multisample state object
-   */
-  virtual GfxMultisampleState createMultisampleState(
-    const GfxMultisampleStateDesc&      desc) = 0;
-
-  /**
    * \brief Creates presenter for a given window
    *
    * \param [in] desc Presenter properties
@@ -313,15 +286,6 @@ public:
    */
   virtual GfxPresenter createPresenter(
     const GfxPresenterDesc&             desc) = 0;
-
-  /**
-   * \brief Creates a rasterizer state object
-   *
-   * \param [in] desc Rasterizer properties
-   * \returns Rasterizer state object
-   */
-  virtual GfxRasterizerState createRasterizerState(
-    const GfxRasterizerStateDesc&       desc) = 0;
 
   /**
    * \brief Creates geometry BVH
@@ -384,15 +348,6 @@ public:
    */
   virtual GfxSemaphore createSemaphore(
     const GfxSemaphoreDesc&             desc) = 0;
-
-  /**
-   * \brief Creates a vertex input state object
-   *
-   * \param [in] desc Vertex input properties
-   * \returns Vertex input state object
-   */
-  virtual GfxVertexInputState createVertexInputState(
-    const GfxVertexInputStateDesc&      desc) = 0;
 
   /**
    * \brief Submits commands to a device queue

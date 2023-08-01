@@ -248,15 +248,6 @@ public:
           GfxMemoryTypes                memoryTypes) override;
 
   /**
-   * \brief Creates a color blend state object
-   *
-   * \param [in] desc Color blend properties
-   * \returns Color blend state object
-   */
-  GfxColorBlendState createColorBlendState(
-    const GfxColorBlendStateDesc&       desc) override;
-
-  /**
    * \brief Creates a compute pipeline
    *
    * \param [in] desc Pipeline description
@@ -273,15 +264,6 @@ public:
    */
   GfxContext createContext(
           GfxQueue                      queue) override;
-
-  /**
-   * \brief Creates a depth-stencil state object
-   *
-   * \param [in] desc Depth-stencil properties
-   * \returns Depth-stencil state object
-   */
-  GfxDepthStencilState createDepthStencilState(
-    const GfxDepthStencilStateDesc&     desc) override;
 
   /**
    * \brief Creates a descriptor array
@@ -324,15 +306,6 @@ public:
           GfxMemoryTypes                memoryTypes) override;
 
   /**
-   * \brief Creates a multisample state object
-   *
-   * \param [in] desc Multisample properties
-   * \returns Multisample state object
-   */
-  GfxMultisampleState createMultisampleState(
-    const GfxMultisampleStateDesc&      desc) override;
-
-  /**
    * \brief Creates presenter for a given window
    *
    * \param [in] desc Presenter properties
@@ -340,15 +313,6 @@ public:
    */
   GfxPresenter createPresenter(
     const GfxPresenterDesc&             desc) override;
-
-  /**
-   * \brief Creates a rasterizer state object
-   *
-   * \param [in] desc Rasterizer properties
-   * \returns Rasterizer state object
-   */
-  GfxRasterizerState createRasterizerState(
-    const GfxRasterizerStateDesc&       desc) override;
 
   /**
    * \brief Creates geometry BVH
@@ -406,15 +370,6 @@ public:
    */
   GfxSemaphore createSemaphore(
     const GfxSemaphoreDesc&             desc) override;
-
-  /**
-   * \brief Creates a vertex input state object
-   *
-   * \param [in] desc Vertex input properties
-   * \returns Vertex input state object
-   */
-  GfxVertexInputState createVertexInputState(
-    const GfxVertexInputStateDesc&      desc) override;
 
   /**
    * \brief Submits commands to a device queue

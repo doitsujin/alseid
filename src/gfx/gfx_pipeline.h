@@ -17,6 +17,10 @@ constexpr uint32_t GfxMaxVertexBindings = 32;
 
 constexpr uint32_t GfxMaxViewportCount = 16;
 
+
+class GfxRenderStateData;
+
+
 /**
  * \brief Mesh shader behaviour flags
  *
@@ -107,76 +111,6 @@ struct GfxVertexInputAttribute {
 
 
 /**
- * \brief Vertex input state description
- */
-struct GfxVertexInputStateDesc {
-  /** Primitive topology. Defines both rasterization behaviour and
-   *  the way vertex data will be passed to the vertex shader. */
-  GfxPrimitiveType primitiveTopology = GfxPrimitiveType::eTriangleList;
-  /** Patch vertex count for tessellation pipelines. */
-  uint32_t patchVertexCount = 0;
-  /** Vertex attributes. The \c n-th entry in this array will define
-   *  the data source for input location \c n in the vertex shader,
-   *  so this array may be sparely populated. Entries with a format
-   *  of \c GfxFormat::eUnknown are considered to be unused. */
-  std::array<GfxVertexInputAttribute, GfxMaxVertexAttributes> attributes;
-
-  /**
-   * \brief Checks whether primitive restart is enabled
-   * \returns \c true for strip topologies.
-   */
-  bool isPrimitiveRestartEnabled() const {
-    return primitiveTopology == GfxPrimitiveType::eLineStrip
-        || primitiveTopology == GfxPrimitiveType::eTriangleStrip;
-  }
-
-  bool operator == (const GfxVertexInputStateDesc&) const = default;
-  bool operator != (const GfxVertexInputStateDesc&) const = default;
-
-  size_t hash() const;
-};
-
-
-/**
- * \brief Vertex input state interface
- */
-class GfxVertexInputStateIface {
-
-public:
-
-  GfxVertexInputStateIface(
-    const GfxVertexInputStateDesc&      desc);
-
-  virtual ~GfxVertexInputStateIface() { }
-
-  /**
-   * \brief Retrieves state description
-   * \returns State description
-   */
-  GfxVertexInputStateDesc getDesc() const {
-    return m_desc;
-  }
-
-  /**
-   * \brief Retrieves vertex buffer mask
-   * \returns Vertex buffer mask
-   */
-  uint32_t getVertexBufferMask() const {
-    return m_vertexBufferMask;
-  }
-
-protected:
-
-  GfxVertexInputStateDesc m_desc;
-  uint32_t m_vertexBufferMask = 0;
-
-};
-
-/** See GfxVertexInputStateIface. */
-using GfxVertexInputState = PtrRef<GfxVertexInputStateIface>;
-
-
-/**
  * \brief Cull mode
  */
 enum class GfxCullMode : uint32_t {
@@ -216,70 +150,6 @@ enum class GfxShadingRateOp : uint32_t {
    *  between context state and attachment. */
   eMax    = 3,
 };
-
-
-/**
- * \brief Rasterizer state description
- */
-struct GfxRasterizerStateDesc {
-  /** Primitive winding order */
-  GfxFrontFace frontFace = GfxFrontFace::eCcw;
-  /** Primitive cull mode */
-  GfxCullMode cullMode = GfxCullMode::eNone;
-  /** Conservative rasterization (overestimate) */
-  bool conservativeRasterization = false;
-  /** Depth bias state. */
-  float depthBias = 0.0f;
-  float depthBiasSlope = 0.0f;
-  float depthBiasClamp = 0.0f;
-  /** Fragment shading rate state */
-  GfxShadingRateOp shadingRateOp = GfxShadingRateOp::eFixed;
-  Extent2D shadingRate = Extent2D(1, 1);
-
-  /**
-   * \brief Checks whether depth bias is enabled
-   *
-   * Convenience method for backends.
-   * \returns \c true if depth bias is enabled
-   */
-  bool isDepthBiasEnabled() const;
-
-  bool operator == (const GfxRasterizerStateDesc&) const = default;
-  bool operator != (const GfxRasterizerStateDesc&) const = default;
-
-  size_t hash() const;
-};
-
-
-/**
- * \brief Rasterizer state interface
- */
-class GfxRasterizerStateIface {
-
-public:
-
-  GfxRasterizerStateIface(
-    const GfxRasterizerStateDesc&       desc)
-  : m_desc(desc) { }
-
-  virtual ~GfxRasterizerStateIface() { }
-
-  /**
-   * \brief Retrieves state description
-   * \returns State description
-   */
-  GfxRasterizerStateDesc getDesc() const {
-    return m_desc;
-  }
-
-protected:
-
-  GfxRasterizerStateDesc m_desc;
-
-};
-
-/** See GfxRasterizerStateIface. */
-using GfxRasterizerState = PtrRef<GfxRasterizerStateIface>;
 
 
 /**
@@ -358,80 +228,6 @@ struct GfxStencilDesc {
 
   size_t hash() const;
 };
-
-
-/**
- * \brief Depth-stencil state description
- */
-struct GfxDepthStencilStateDesc {
-  /** Enables depth writes. */
-  bool enableDepthWrite = false;
-  /** Enables the depth bounds test. Depth bound values to
-   *  test against can be set dynamically on the context. */
-  bool enableDepthBoundsTest = false;
-  /** Depth compare op. If this is \c GfxCompareOp::eAlways
-   *  and depth writes are disabled, the depth test will
-   *  effectively be disabled entirely. */
-  GfxCompareOp depthCompareOp = GfxCompareOp::eAlways;
-  /** Front face stencil operation */
-  GfxStencilDesc front;
-  /** Back face stencil operation */
-  GfxStencilDesc back;
-
-  /**
-   * \brief Checks whether the depth test is enabled
-   * \returns \c true if depth gets accessed
-   */
-  bool isDepthTestEnabled() const;
-
-  /**
-   * \brief Checks whether stencil test is used
-   * \returns \c true if stencil gets accessed
-   */
-  bool isStencilTestEnabled() const;
-
-  /**
-   * \brief Checks whether stencil writes are enabled
-   * \returns \c true if stencil gets written
-   */
-  bool isStencilWriteEnabled() const;
-
-  bool operator == (const GfxDepthStencilStateDesc&) const = default;
-  bool operator != (const GfxDepthStencilStateDesc&) const = default;
-
-  size_t hash() const;
-};
-
-
-/**
- * \brief Depth-stencil state interface
- */
-class GfxDepthStencilStateIface {
-
-public:
-
-  GfxDepthStencilStateIface(
-    const GfxDepthStencilStateDesc&     desc)
-  : m_desc(desc) { }
-
-  virtual ~GfxDepthStencilStateIface() { }
-
-  /**
-   * \brief Retrieves state description
-   * \returns State description
-   */
-  GfxDepthStencilStateDesc getDesc() const {
-    return m_desc;
-  }
-
-protected:
-
-  GfxDepthStencilStateDesc m_desc;
-
-};
-
-/** See GfxDepthStencilStateIface. */
-using GfxDepthStencilState = PtrRef<GfxDepthStencilStateIface>;
 
 
 /**
@@ -566,116 +362,6 @@ enum class GfxLogicOp : uint32_t {
 
 
 /**
- * \brief Blend state description
- *
- * Stores blend state for individual render
- * targets, as well as logic op state.
- */
-struct GfxColorBlendStateDesc {
-  /** Logic op. If this is \c GfxLogicOp::eCopySrc,
-   *  the logic op is effectively disabled. */
-  GfxLogicOp logicOp = GfxLogicOp::eSrc;
-  /** Blend state for individual render targets. */
-  std::array<GfxRenderTargetBlend, GfxMaxColorAttachments> renderTargets;
-
-  /**
-   * \brief Checks whether logic op is enabled
-   * \returns \c true if logic op is enabled
-   */
-  bool isLogicOpEnabled() const;
-
-  bool operator == (const GfxColorBlendStateDesc&) const = default;
-  bool operator != (const GfxColorBlendStateDesc&) const = default;
-
-  size_t hash() const;
-};
-
-
-/**
- * \brief Blend state interface
- */
-class GfxColorBlendStateIface {
-
-public:
-
-  GfxColorBlendStateIface(
-    const GfxColorBlendStateDesc&       desc)
-  : m_desc(desc) { }
-
-  virtual ~GfxColorBlendStateIface() { }
-
-  /**
-   * \brief Retrieves state description
-   * \returns State description
-   */
-  GfxColorBlendStateDesc getDesc() const {
-    return m_desc;
-  }
-
-protected:
-
-  GfxColorBlendStateDesc m_desc;
-
-};
-
-/** See GfxColorBlendStateIface. */
-using GfxColorBlendState = PtrRef<GfxColorBlendStateIface>;
-
-
-/**
- * \brief Multisample state description
- *
- * Defines a sample count override in case no render
- * targets are bound, as well as other related state.
- */
-struct GfxMultisampleStateDesc {
-  /** Sample count override. Only has an effect when
-   *  no render targets are bound to the pipeline. */
-  uint32_t sampleCount = 0;
-  /** Sample mask. By default, all samples are enabled. */
-  uint32_t sampleMask = ~0u;
-  /** Whether to enable alpha-to-coverage */
-  bool enableAlphaToCoverage = false;
-
-  bool operator == (const GfxMultisampleStateDesc&) const = default;
-  bool operator != (const GfxMultisampleStateDesc&) const = default;
-
-  size_t hash() const;
-};
-
-
-/**
- * \brief Multisample state interface
- */
-class GfxMultisampleStateIface {
-
-public:
-
-  GfxMultisampleStateIface(
-    const GfxMultisampleStateDesc&      desc)
-  : m_desc(desc) { }
-
-  virtual ~GfxMultisampleStateIface() { }
-
-  /**
-   * \brief Retrieves state description
-   * \returns State description
-   */
-  GfxMultisampleStateDesc getDesc() const {
-    return m_desc;
-  }
-
-protected:
-
-  GfxMultisampleStateDesc m_desc;
-
-};
-
-/** See GfxMultisampleStateIface. */
-using GfxMultisampleState = PtrRef<GfxMultisampleStateIface>;
-
-
-/**
  * \brief Render target state decription
  *
  * Defines all render target formats as well as
@@ -731,37 +417,6 @@ protected:
 
 /** See GfxRenderTargetStateIface. */
 using GfxRenderTargetState = PtrRef<GfxRenderTargetStateIface>;
-
-
-/**
- * \brief Graphics state description
- *
- * Accumulates all graphics state objects. This is only used to
- * link graphics pipelines with a given set of render state.
- */
-struct GfxGraphicsStateDesc {
-  /** Vertex input state. If the graphics pipeline uses mesh
-   *  shaders, this \e must be \c nullptr, otherwise this
-   *  \e must be a vertex input state object compatible with
-   *  the vertex shader's stage I/O. */
-  GfxVertexInputState vertexInputState;
-  /** Rasterization state. */
-  GfxRasterizerState rasterizerState;
-  /** Depth-stencil state. If no depth-stencil attachment
-   *  format is specified, this \e must be \c nullptr. */
-  GfxDepthStencilState depthStencilState;
-  /** Color blend state. */
-  GfxColorBlendState colorBlendState;
-  /** Multisample state. */
-  GfxMultisampleState multisampleState;
-  /** Render target state. */
-  GfxRenderTargetState renderTargetState;
-
-  bool operator == (const GfxGraphicsStateDesc&) const = default;
-  bool operator != (const GfxGraphicsStateDesc&) const = default;
-
-  size_t hash() const;
-};
 
 
 /**
@@ -992,6 +647,11 @@ struct GfxBlending {
  * or having to set each state individually.
  */
 struct GfxRenderStateDesc {
+  GfxRenderStateDesc() = default;
+
+  GfxRenderStateDesc(
+    const GfxRenderStateData&           data);
+
   /** Primitive topology. */
   const GfxPrimitiveTopology* primitiveTopology = nullptr;
   /** Vertex layout. */
@@ -1053,7 +713,7 @@ using GfxRenderStateFlags = Flags<GfxRenderStateFlag>;
 struct GfxRenderStateData {
   GfxRenderStateData() = default;
 
-  GfxRenderStateData(
+  explicit GfxRenderStateData(
     const GfxRenderStateDesc&           desc);
 
   GfxRenderStateFlags flags = 0;

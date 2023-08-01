@@ -4,51 +4,12 @@
 
 namespace as {
 
-GfxVertexInputStateIface::GfxVertexInputStateIface(
-  const GfxVertexInputStateDesc&      desc)
-: m_desc(desc) {
-  for (uint32_t i = 0; i < GfxMaxVertexAttributes; i++) {
-    if (desc.attributes[i].format != GfxFormat::eUnknown)
-      m_vertexBufferMask |= 1u << i;
-  }
-}
-
-
 size_t GfxVertexInputAttribute::hash() const {
   HashState result;
   result.add(binding);
   result.add(uint32_t(format));
   result.add(offset);
   result.add(uint32_t(inputRate));
-  return result;
-}
-
-
-size_t GfxVertexInputStateDesc::hash() const {
-  HashState result;
-  result.add(uint32_t(primitiveTopology));
-  result.add(patchVertexCount);
-
-  for (size_t i = 0; i < GfxMaxVertexAttributes; i++)
-    result.add(attributes[i].hash());
-
-  return result;
-}
-
-
-bool GfxRasterizerStateDesc::isDepthBiasEnabled() const {
-  return depthBias != 0.0f || depthBiasSlope != 0.0f;
-}
-
-
-size_t GfxRasterizerStateDesc::hash() const {
-  HashState result;
-  result.add(uint32_t(frontFace));
-  result.add(uint32_t(cullMode));
-  result.add(uint32_t(conservativeRasterization));
-  result.add(hashFloat(depthBias));
-  result.add(hashFloat(depthBiasClamp));
-  result.add(hashFloat(depthBiasSlope));
   return result;
 }
 
@@ -83,40 +44,6 @@ size_t GfxStencilDesc::hash() const {
   result.add(uint32_t(compareOp));
   result.add(compareMask);
   result.add(writeMask);
-  return result;
-}
-
-
-bool GfxDepthStencilStateDesc::isDepthTestEnabled() const {
-  bool depthTestCanFail = depthCompareOp != GfxCompareOp::eAlways;
-
-  return depthTestCanFail || enableDepthWrite;
-}
-
-
-bool GfxDepthStencilStateDesc::isStencilTestEnabled() const {
-  bool depthTestCanFail = depthCompareOp != GfxCompareOp::eAlways;
-
-  return front.isStencilTestEnabled(depthTestCanFail)
-      || back.isStencilTestEnabled(depthTestCanFail);
-}
-
-
-bool GfxDepthStencilStateDesc::isStencilWriteEnabled() const {
-  bool depthTestCanFail = depthCompareOp != GfxCompareOp::eAlways;
-
-  return front.isStencilWriteEnabled(depthTestCanFail)
-      || back.isStencilWriteEnabled(depthTestCanFail);
-}
-
-
-size_t GfxDepthStencilStateDesc::hash() const {
-  HashState result;
-  result.add(uint32_t(enableDepthWrite));
-  result.add(uint32_t(enableDepthBoundsTest));
-  result.add(uint32_t(depthCompareOp));
-  result.add(front.hash());
-  result.add(back.hash());
   return result;
 }
 
@@ -185,31 +112,6 @@ size_t GfxRenderTargetBlend::hash() const {
 }
 
 
-bool GfxColorBlendStateDesc::isLogicOpEnabled() const {
-  return logicOp != GfxLogicOp::eSrc;
-}
-
-
-size_t GfxColorBlendStateDesc::hash() const {
-  HashState result;
-  result.add(uint32_t(logicOp));
-
-  for (size_t i = 0; i < GfxMaxColorAttachments; i++)
-    result.add(renderTargets[i].hash());
-
-  return result;
-}
-
-
-size_t GfxMultisampleStateDesc::hash() const {
-  HashState result;
-  result.add(sampleCount);
-  result.add(sampleMask);
-  result.add(uint32_t(enableAlphaToCoverage));
-  return result;
-}
-
-
 size_t GfxRenderTargetStateDesc::hash() const {
   HashState result;
 
@@ -218,18 +120,6 @@ size_t GfxRenderTargetStateDesc::hash() const {
 
   result.add(uint32_t(depthStencilFormat));
   result.add(sampleCount);
-  return result;
-}
-
-
-size_t GfxGraphicsStateDesc::hash() const {
-  HashState result;
-  result.add(vertexInputState.hash());
-  result.add(rasterizerState.hash());
-  result.add(depthStencilState.hash());
-  result.add(colorBlendState.hash());
-  result.add(multisampleState.hash());
-  result.add(renderTargetState.hash());
   return result;
 }
 
@@ -304,6 +194,40 @@ size_t GfxBlending::hash() const {
     result.add(renderTarget.hash());
 
   return result;
+}
+
+
+GfxRenderStateDesc::GfxRenderStateDesc(
+  const GfxRenderStateData&           data) {
+  if (data.flags & GfxRenderStateFlag::ePrimitiveTopology)
+    primitiveTopology = &data.primitiveTopology;
+
+  if (data.flags & GfxRenderStateFlag::eVertexLayout)
+    vertexLayout = &data.vertexLayout;
+
+  if (data.flags & GfxRenderStateFlag::eFrontFace)
+    frontFace = &data.frontFace;
+
+  if (data.flags & GfxRenderStateFlag::eCullMode)
+    cullMode = &data.cullMode;
+
+  if (data.flags & GfxRenderStateFlag::eConservativeRaster)
+    conservativeRaster = &data.conservativeRaster;
+
+  if (data.flags & GfxRenderStateFlag::eDepthBias)
+    depthBias = &data.depthBias;
+
+  if (data.flags & GfxRenderStateFlag::eShadingRate)
+    shadingRate = &data.shadingRate;
+
+  if (data.flags & GfxRenderStateFlag::eStencilTest)
+    stencilTest = &data.stencilTest;
+
+  if (data.flags & GfxRenderStateFlag::eMultisampling)
+    multisampling = &data.multisampling;
+
+  if (data.flags & GfxRenderStateFlag::eBlending)
+    blending = &data.blending;
 }
 
 
@@ -386,27 +310,8 @@ size_t GfxRenderStateData::hash() const {
 
 GfxRenderStateIface::GfxRenderStateIface(
   const GfxRenderStateData&           desc)
-: m_data(desc) {
-  if (desc.flags & GfxRenderStateFlag::ePrimitiveTopology)
-    m_desc.primitiveTopology = &m_data.primitiveTopology;
-  if (desc.flags & GfxRenderStateFlag::eVertexLayout)
-    m_desc.vertexLayout = &m_data.vertexLayout;
-  if (desc.flags & GfxRenderStateFlag::eFrontFace)
-    m_desc.frontFace = &m_data.frontFace;
-  if (desc.flags & GfxRenderStateFlag::eCullMode)
-    m_desc.cullMode = &m_data.cullMode;
-  if (desc.flags & GfxRenderStateFlag::eConservativeRaster)
-    m_desc.conservativeRaster = &m_data.conservativeRaster;
-  if (desc.flags & GfxRenderStateFlag::eDepthBias)
-    m_desc.depthBias = &m_data.depthBias;
-  if (desc.flags & GfxRenderStateFlag::eShadingRate)
-    m_desc.shadingRate = &m_data.shadingRate;
-  if (desc.flags & GfxRenderStateFlag::eStencilTest)
-    m_desc.stencilTest = &m_data.stencilTest;
-  if (desc.flags & GfxRenderStateFlag::eMultisampling)
-    m_desc.multisampling = &m_data.multisampling;
-  if (desc.flags & GfxRenderStateFlag::eBlending)
-    m_desc.blending = &m_data.blending;
+: m_data(desc), m_desc(m_data) {
+
 }
 
 

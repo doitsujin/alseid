@@ -142,6 +142,8 @@ private:
   GfxComputePipeline        m_blitPipelineCompute;
   GfxGraphicsPipeline       m_blitPipelineGraphics;
 
+  GfxRenderState            m_renderState;
+
   GfxFormat                 m_format      = GfxFormat::eUnknown;
   GfxColorSpace             m_colorSpace  = GfxColorSpace::eSrgb;
   GfxPresentMode            m_presentMode = GfxPresentMode::eFifo;
@@ -197,6 +199,8 @@ private:
   GfxComputePipeline createComputeBlitPipeline();
 
   GfxGraphicsPipeline createGraphicsBlitPipeline();
+
+  GfxRenderState createRenderState();
 
   static VkColorSpaceKHR getVkColorSpace(
           GfxColorSpace                 colorSpace);

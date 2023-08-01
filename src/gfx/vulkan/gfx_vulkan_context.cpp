@@ -31,13 +31,6 @@ GfxVulkanContext::GfxVulkanContext(
   // the app can start recording commands
   m_cmd = allocateCommandBuffer();
 
-  // Create default graphics state objects
-  m_defaultState.vertexInputState = m_device->createVertexInputState(GfxVertexInputStateDesc());
-  m_defaultState.rasterizerState = m_device->createRasterizerState(GfxRasterizerStateDesc());
-  m_defaultState.depthStencilState = m_device->createDepthStencilState(GfxDepthStencilStateDesc());
-  m_defaultState.multisampleState = m_device->createMultisampleState(GfxMultisampleStateDesc());
-  m_defaultState.colorBlendState = m_device->createColorBlendState(GfxColorBlendStateDesc());
-
   // Initialize context state
   resetState();
 }
@@ -902,18 +895,6 @@ void GfxVulkanContext::setBlendConstants(
 }
 
 
-void GfxVulkanContext::setColorBlendState(
-        GfxColorBlendState            state) {
-  if (unlikely(!state))
-    state = m_defaultState.colorBlendState;
-
-  if (m_graphicsState.colorBlendState != state) {
-    m_graphicsState.colorBlendState = state;
-    m_flags |= GfxVulkanContextFlag::eDirtyPipeline;
-  }
-}
-
-
 void GfxVulkanContext::setDepthBounds(
         float                         minDepth,
         float                         maxDepth) {
@@ -921,53 +902,6 @@ void GfxVulkanContext::setDepthBounds(
   m_depthBoundsMax = maxDepth;
 
   m_dynamicStatesDirty |= GfxVulkanDynamicState::eDepthBounds;
-}
-
-
-void GfxVulkanContext::setDepthStencilState(
-        GfxDepthStencilState          state) {
-  if (unlikely(!state))
-    state = m_defaultState.depthStencilState;
-
-  if (m_graphicsState.depthStencilState != state) {
-    m_graphicsState.depthStencilState = state;
-    m_flags |= GfxVulkanContextFlag::eDirtyPipeline;
-
-    m_dynamicStatesDirty |= GfxVulkanDynamicState::eDepthStencilState
-                         |  GfxVulkanDynamicState::eDepthBoundsState;
-  }
-}
-
-
-void GfxVulkanContext::setMultisampleState(
-        GfxMultisampleState           state) {
-  if (unlikely(!state))
-    state = m_defaultState.multisampleState;
-
-  if (m_graphicsState.multisampleState != state) {
-    m_graphicsState.multisampleState = state;
-    m_flags |= GfxVulkanContextFlag::eDirtyPipeline;
-
-    m_dynamicStatesDirty |= GfxVulkanDynamicState::eMultisampleState
-                         |  GfxVulkanDynamicState::eAlphaToCoverage
-                         |  GfxVulkanDynamicState::eShadingRate;
-  }
-}
-
-
-void GfxVulkanContext::setRasterizerState(
-        GfxRasterizerState            state) {
-  if (unlikely(!state))
-    state = m_defaultState.rasterizerState;
-
-  if (m_graphicsState.rasterizerState != state) {
-    m_graphicsState.rasterizerState = state;
-    m_flags |= GfxVulkanContextFlag::eDirtyPipeline;
-
-    m_dynamicStatesDirty |= GfxVulkanDynamicState::eRasterizerState
-                         |  GfxVulkanDynamicState::eConservativeRaster
-                         |  GfxVulkanDynamicState::eShadingRate;
-  }
 }
 
 
@@ -1052,20 +986,6 @@ void GfxVulkanContext::setStencilReference(
   m_stencilRefBack = back;
 
   m_dynamicStatesDirty |= GfxVulkanDynamicState::eStencilRef;
-}
-
-
-void GfxVulkanContext::setVertexInputState(
-        GfxVertexInputState           state) {
-  if (unlikely(!state))
-    state = m_defaultState.vertexInputState;
-
-  if (m_graphicsState.vertexInputState != state) {
-    m_graphicsState.vertexInputState = state;
-    m_flags |= GfxVulkanContextFlag::eDirtyPipeline;
-
-    m_dynamicStatesDirty |= GfxVulkanDynamicState::eTessellationState;
-  }
 }
 
 
@@ -1402,7 +1322,6 @@ void GfxVulkanContext::resetState() {
   m_renderState.flags = GfxRenderStateFlag::eAll;
   m_renderStateObject = nullptr;
 
-  m_graphicsState = m_defaultState;
   m_graphicsPipeline = nullptr;
   m_computePipeline = nullptr;
 
