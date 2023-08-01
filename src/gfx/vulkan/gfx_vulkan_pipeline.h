@@ -730,6 +730,56 @@ private:
 
 
 /**
+ * \brief Vertex input pipeline key
+ */
+struct GfxVulkanVertexInputKey {
+  /** Pointer to normalized render state */
+  const GfxVulkanRenderState* renderState = nullptr;
+
+  bool operator == (const GfxVulkanVertexInputKey&) const = default;
+  bool operator != (const GfxVulkanVertexInputKey&) const = default;
+
+  size_t hash() const {
+    return reinterpret_cast<uintptr_t>(renderState);
+  }
+};
+
+
+/**
+ * \brief Vulkan vertex input pipeline
+ *
+ * Manages a pipeline library object.
+ */
+class GfxVulkanVertexInputPipeline {
+
+public:
+
+  GfxVulkanVertexInputPipeline(
+          GfxVulkanPipelineManager&     mgr,
+    const GfxVulkanVertexInputKey&      key);
+
+  ~GfxVulkanVertexInputPipeline();
+
+  /**
+   * \brief Retrieves Vulkan pipeline library
+   *
+   * May be \c VK_NULL_HANDLE if pipeline
+   * libraries are not supported.
+   * \returns Vulkan pipeline library
+   */
+  VkPipeline getHandle() const {
+    return m_pipeline;
+  }
+
+private:
+
+  GfxVulkanPipelineManager&               m_mgr;
+  VkPipeline                              m_pipeline = VK_NULL_HANDLE;
+
+};
+
+
+/**
  * \brief Vulkan fragment output pipeline key
  *
  * Only consists of render target formats and blend state.
@@ -1240,6 +1290,19 @@ public:
     const GfxMeshPipelineDesc&          desc);
 
   /**
+   * \brief Creates a vertex input pipeline
+   *
+   * Note that this will generally try to reduce the number
+   * of redundant pipelines by normalizing render state.
+   * \param [in] renderState Render state object. Must
+   *    contain valid vertex and input assembly state.
+   * \returns Vertex input pipeline for the given
+   *    render state object.
+   */
+  GfxVulkanVertexInputPipeline& createVertexInputPipeline(
+    const GfxVulkanRenderState&         renderState);
+
+  /**
    * \brief Creates render state
    *
    * \param [in] desc State object description
@@ -1387,6 +1450,11 @@ private:
     HashMemberProc>       m_renderStates;
 
   std::unordered_map<
+    GfxVulkanVertexInputKey,
+    GfxVulkanVertexInputPipeline,
+    HashMemberProc>       m_vertexInputPipelines;
+
+  std::unordered_map<
     GfxVertexInputStateDesc,
     GfxVulkanVertexInputState,
     HashMemberProc>       m_vertexInputStates;
@@ -1440,7 +1508,11 @@ private:
   template<typename Map>
   Map::mapped_type& createStateObject(Map& map, const Map::key_type& key) {
     std::lock_guard lock(m_mutex);
+    return createStateObjectLocked<Map>(map, key);
+  }
 
+  template<typename Map>
+  Map::mapped_type& createStateObjectLocked(Map& map, const Map::key_type& key) {
     auto entry = map.find(key);
 
     if (entry != map.end())

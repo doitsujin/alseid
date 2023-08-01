@@ -798,6 +798,41 @@ VkStencilOpState GfxVulkanRenderState::getVkStencilState(
 
 
 
+GfxVulkanVertexInputPipeline::GfxVulkanVertexInputPipeline(
+        GfxVulkanPipelineManager&     mgr,
+  const GfxVulkanVertexInputKey&      key)
+: m_mgr(mgr) {
+  auto& vk = m_mgr.device().vk();
+
+  auto iaState = key.renderState->getIaState();
+  auto viState = key.renderState->getViState();
+
+  VkGraphicsPipelineLibraryCreateInfoEXT libInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT };
+  libInfo.flags             = VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT;
+
+  VkGraphicsPipelineCreateInfo info = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, &libInfo };
+  info.flags                = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR;
+  info.pVertexInputState    = &viState;
+  info.pInputAssemblyState  = &iaState;
+  info.basePipelineIndex    = -1;
+
+  VkResult vr = vk.vkCreateGraphicsPipelines(vk.device,
+    VK_NULL_HANDLE, 1, &info, nullptr, &m_pipeline);
+
+  if (vr)
+    throw VulkanError("Vulkan: Failed to create vertex input pipeline library", vr);
+}
+
+
+GfxVulkanVertexInputPipeline::~GfxVulkanVertexInputPipeline() {
+  auto& vk = m_mgr.device().vk();
+
+  vk.vkDestroyPipeline(vk.device, m_pipeline, nullptr);
+}
+
+
+
+
 size_t GfxVulkanFragmentOutputStateKey::hash() const {
   HashState hash;
   hash.add(colorBlendState.hash());
@@ -1788,6 +1823,33 @@ GfxVulkanGraphicsPipeline& GfxVulkanPipelineManager::createGraphicsPipeline(
 GfxVulkanGraphicsPipeline& GfxVulkanPipelineManager::createGraphicsPipeline(
   const GfxMeshPipelineDesc&          desc) {
   return createGraphicsPipelineTyped(desc);
+}
+
+
+GfxVulkanVertexInputPipeline& GfxVulkanPipelineManager::createVertexInputPipeline(
+  const GfxVulkanRenderState&         renderState) {
+  GfxRenderStateDesc renderStateDesc = renderState.getDesc();
+
+  GfxRenderStateDesc normalizedDesc;
+  normalizedDesc.primitiveTopology = renderStateDesc.primitiveTopology;
+  normalizedDesc.vertexLayout = renderStateDesc.vertexLayout;
+
+  GfxVulkanRenderState& normalizedState = createRenderState(normalizedDesc);
+
+  std::lock_guard lock(m_mutex);
+
+  GfxVulkanVertexInputKey key = { };
+  key.renderState = &normalizedState;
+
+  auto entry = m_vertexInputPipelines.find(key);
+
+  if (entry != m_vertexInputPipelines.end())
+    return entry->second;
+
+  auto insert = m_vertexInputPipelines.emplace(std::piecewise_construct,
+    std::forward_as_tuple(key),
+    std::forward_as_tuple(*this, key));
+  return insert.first->second;
 }
 
 
