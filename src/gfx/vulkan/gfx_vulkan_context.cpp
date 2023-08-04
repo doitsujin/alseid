@@ -720,6 +720,7 @@ void GfxVulkanContext::decompressBuffer(
         uint64_t                      srcOffset,
         uint64_t                      srcSize) {
   auto& vk = m_device->vk();
+  m_barrierBatch.recordCommands(vk, m_cmd);
 
   invalidateState();
 
