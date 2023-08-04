@@ -6,6 +6,9 @@
 
 namespace as {
 
+/** Expected CPU cache line size */
+constexpr static size_t CacheLineSize = 64;
+
 /**
  * \brief Object wrapper for temporary lvalue references
  *

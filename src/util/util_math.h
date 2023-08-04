@@ -36,7 +36,7 @@ constexpr double pi = 3.141592653589793;
  * \returns Aligned value
  */
 template<typename T>
-T align(T value, T alignment) {
+constexpr T align(T value, T alignment) {
   return (value + alignment - 1) & ~(alignment - 1);
 }
 
