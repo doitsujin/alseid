@@ -15,7 +15,7 @@ public:
 };
 
 inline void dbg_assert_(bool cond, const char* file, int line, const char* msg) {
-  if (!cond)
+  if (!cond) [[unlikely]]
     throw Assert(file, line, msg);
 }
 
