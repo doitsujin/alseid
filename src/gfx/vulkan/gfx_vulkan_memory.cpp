@@ -456,7 +456,7 @@ void GfxVulkanMemoryAllocator::freeEmptyChunks(
 bool GfxVulkanMemoryAllocator::isHeapUnderPressure(
         uint32_t                      heapIndex,
         VkDeviceSize                  allocationSize) const {
-  return 5 * (m_memoryHeaps[heapIndex].allocated + allocationSize) > m_memoryHeaps[heapIndex].heap.size;
+  return 5 * (m_memoryHeaps[heapIndex].allocated + allocationSize) > 4 * m_memoryHeaps[heapIndex].heap.size;
 }
 
 
