@@ -88,6 +88,11 @@ uniform push_t {
 };
 
 
+// We force the shader to run with a subgroup size of
+// 32, so this is always going to be correct.
+uint tid = gl_SubgroupInvocationID;
+
+
 // Current input tile address, as well as its
 // compressed size in DWORDs
 tile_data_t g_tile_va;
@@ -190,13 +195,12 @@ uint32_t prefix_sum_exclusive(uint32_t value) {
 
 
 uint32_t prefix_sum_inclusive_16(uint32_t value) {
-  uint32_t lo = gl_LocalInvocationIndex < 16 ? value : 0;
-  uint32_t hi = gl_LocalInvocationIndex < 16 ? 0 : value;
+  uint32_t sum = subgroupInclusiveAdd(value);
 
-  uint32_t loSum = subgroupInclusiveAdd(lo);
-  uint32_t hiSum = subgroupInclusiveAdd(hi);
+  if (tid >= 16)
+    sum -= subgroupBroadcast(sum, 16);
 
-  return gl_LocalInvocationIndex < 16 ? loSum : hiSum;
+  return sum;
 }
 
 
@@ -221,7 +225,7 @@ struct bit_reader_t {
 
 
 void bit_reader_init(out bit_reader_t self) {
-  self.buf = uint64_t(read_input_dword(gl_LocalInvocationIndex));
+  self.buf = uint64_t(read_input_dword(tid));
   self.base = BIT_READER_WIDTH;
   self.cnt = BIT_READER_WIDTH;
 }
@@ -277,8 +281,8 @@ struct scratch_t {
 shared scratch_t g_buf;
 
 void scratch_clear() {
-  g_buf.data[gl_LocalInvocationIndex] = 0u;
-  g_buf.data[gl_LocalInvocationIndex + 32u] = 0u;
+  g_buf.data[tid] = 0u;
+  g_buf.data[tid + 32u] = 0u;
 }
 
 
@@ -325,36 +329,36 @@ uint32_t symbol_table_scatter(uint32_t sym, uint32_t len, uint32_t offset) {
 
 void symbol_table_init(uint32_t hlit, uint32_t offsets) {
   for (uint32_t i = 0; i < SYMTBL_MAX_SYMBOLS; i += NUM_THREADS) {
-    if (gl_LocalInvocationIndex + i < SYMTBL_MAX_SYMBOLS)
-      g_lut.symbols[gl_LocalInvocationIndex + i] = 0;
+    if (tid + i < SYMTBL_MAX_SYMBOLS)
+      g_lut.symbols[tid + i] = 0;
   }
 
-  g_tmp[gl_LocalInvocationIndex] = 0u;
+  g_tmp[tid] = 0u;
 
   barrier();
 
-  if (gl_LocalInvocationIndex != 15 && gl_LocalInvocationIndex != 31)
-    g_tmp[gl_LocalInvocationIndex + 1] = offsets;
+  if (tid != 15 && tid != 31)
+    g_tmp[tid + 1] = offsets;
 
   barrier();
 
   for (uint32_t i = 0; i < 256 / NUM_THREADS; i++) {
-    uint32_t sym = i * NUM_THREADS + gl_LocalInvocationIndex;
+    uint32_t sym = i * NUM_THREADS + tid;
     uint32_t len = scratch_get4b(sym);
     uint32_t match = symbol_table_scatter(sym, len, g_tmp[len]);
 
-    if (gl_LocalInvocationIndex == firstbitlow(match))
+    if (tid == firstbitlow(match))
       g_tmp[len] += countbits(match);
 
     barrier();
   }
 
-  uint32_t sym = 8 * NUM_THREADS + gl_LocalInvocationIndex;
+  uint32_t sym = 8 * NUM_THREADS + tid;
   uint32_t len = sym < hlit ? scratch_get4b(sym) : 0;
   symbol_table_scatter(sym, len, g_tmp[len]);
 
-  len = scratch_get4b(gl_LocalInvocationIndex + hlit);
-  symbol_table_scatter(gl_LocalInvocationIndex, len, SYMTBL_DISTANCE_CODE_BASE + g_tmp[16 + len]);
+  len = scratch_get4b(tid + hlit);
+  symbol_table_scatter(tid, len, SYMTBL_DISTANCE_CODE_BASE + g_tmp[16 + len]);
 }
 
 // Decoder class. For simplicity, only the subgroup-optimized implementation was
@@ -378,14 +382,14 @@ void decoder_pair_init(out decoder_pair_t self, uint32_t counts, uint32_t maxlen
   uint32_t base_code = 0;
 
   for (uint32_t i = 1; i < maxlen; i++) {
-    uint lane = gl_LocalInvocationIndex & 15;
-    uint count = shuffle(counts, (gl_LocalInvocationIndex & 16) + i);
+    uint lane = tid & 15;
+    uint count = shuffle(counts, (tid & 16) + i);
 
     if (lane >= i)
       base_code += shl(count, lane - i);
   }
 
-  uint lane = gl_LocalInvocationIndex & 15;
+  uint lane = tid & 15;
   uint tmp = shl(base_code, 32 - lane);
   self.base_code = (tmp < base_code || lane >= maxlen) ? 0xffffffff : tmp;
 }
@@ -424,14 +428,14 @@ uint32_t decoder_decode(in decoder_pair_t self, uint32_t bits, out uint32_t len,
 
 
 uint32_t get_histogram(uint32_t cnt, uint32_t len, uint32_t maxlen) {
-  g_tmp[gl_LocalInvocationIndex] = 0;
+  g_tmp[tid] = 0;
   barrier();
 
-  if (len != 0 && gl_LocalInvocationIndex < cnt)
+  if (len != 0 && tid < cnt)
     atomicAdd(g_tmp[len], 1);
 
   barrier();
-  return g_tmp[gl_LocalInvocationIndex & 15];
+  return g_tmp[tid & 15];
 }
 
 
@@ -449,7 +453,7 @@ void update_histograms(uint32_t len, int i, int n, int hlit) {
 
 
 void clear_histogram() {
-  g_tmp[gl_LocalInvocationIndex] = 0;
+  g_tmp[tid] = 0;
 }
 
 
@@ -457,9 +461,9 @@ uint32_t read_length_codes(inout bit_reader_t br, uint hclen) {
   const uint lane_for_id[32] = { 3, 17, 15, 13, 11, 9, 7, 5, 4, 6, 8, 10, 12, 14, 16, 18,
                                  0,  1,  2,  0,  0, 0, 0, 0, 0, 0, 0,  0,  0,  0,  0,  0 };
 
-  uint32_t len = bit_reader_read(br, 3, gl_LocalInvocationIndex < hclen);
-  len = shuffle(len, lane_for_id[gl_LocalInvocationIndex]);
-  len &= gl_LocalInvocationIndex < 19 ? 0xf : 0;
+  uint32_t len = bit_reader_read(br, 3, tid < hclen);
+  len = shuffle(len, lane_for_id[tid]);
+  len &= tid < 19 ? 0xf : 0;
   return len;
 }
 
@@ -471,7 +475,7 @@ uint32_t unpack_code_lengths(inout bit_reader_t br, uint32_t hlit, uint32_t hdis
   decoder_pair_t dec;
   decoder_pair_init(dec, cnts, 7);
 
-  symbol_table_scatter(gl_LocalInvocationIndex, len, decoder_pair_offset(dec, len - 1));
+  symbol_table_scatter(tid, len, decoder_pair_offset(dec, len - 1));
 
   uint32_t count = hlit + hdist;
   uint32_t baseOffset = 0;
@@ -522,7 +526,7 @@ uint32_t unpack_code_lengths(inout bit_reader_t br, uint32_t hlit, uint32_t hdis
   } while (all_in_group(baseOffset < count));
 
   barrier();
-  return g_tmp[gl_LocalInvocationIndex];
+  return g_tmp[tid];
 }
 
 void write_output(uint32_t dst, uint32_t offset, uint32_t dist, uint32_t length_in, uint32_t byte, bool iscopy) {
@@ -537,9 +541,9 @@ void write_output(uint32_t dst, uint32_t offset, uint32_t dist, uint32_t length_
   while (mask != 0) {
     uint32_t lane = firstbitlow(mask);
 
-    uint32_t off = broadcast(dist, lane);
-    uint32_t len = broadcast(length_in, lane);
-    uint32_t outval = broadcast(dst, lane);
+    uint32_t off = shuffle(dist, lane);
+    uint32_t len = shuffle(length_in, lane);
+    uint32_t outval = shuffle(dst, lane);
 
     controlBarrier(
       gl_ScopeWorkgroup,
@@ -548,7 +552,7 @@ void write_output(uint32_t dst, uint32_t offset, uint32_t dist, uint32_t length_
       gl_SemanticsAcquireRelease);
 
     // Copy using all threads in the wave
-    for (uint32_t i = gl_LocalInvocationIndex; i < len; i += NUM_THREADS) {
+    for (uint32_t i = tid; i < len; i += NUM_THREADS) {
       uint32_t data = read_output_byte(outval + (i % off) - off);
       store_output_byte(i + outval, data);
     }
@@ -647,17 +651,17 @@ uint32_t process_uncompressed_block(inout bit_reader_t br, uint32_t dst, uint32_
   uint32_t nrounds = size / NUM_THREADS;
 
   for (uint32_t i = 0; i < nrounds; i++) {
-    store_output_byte(dst + gl_LocalInvocationIndex, bit_reader_read(br, 8, true));
+    store_output_byte(dst + tid, bit_reader_read(br, 8, true));
     dst += NUM_THREADS;
   }
 
   uint32_t rem = size % NUM_THREADS;
 
   if (rem != 0) {
-    uint32_t byte = bit_reader_read(br, 8, gl_LocalInvocationIndex < rem);
+    uint32_t byte = bit_reader_read(br, 8, tid < rem);
 
-    if (gl_LocalInvocationIndex < rem)
-        store_output_byte(dst + gl_LocalInvocationIndex, byte);
+    if (tid < rem)
+        store_output_byte(dst + tid, byte);
 
     dst += rem;
   }
@@ -667,7 +671,6 @@ uint32_t process_uncompressed_block(inout bit_reader_t br, uint32_t dst, uint32_
 
 
 uint32_t init_fixed_code_lengths() {
-  uint32_t tid = gl_LocalInvocationIndex;
   g_buf.data[tid] = tid < 18 ? 0x88888888 : 0x99999999;
   g_buf.data[tid + 32] = tid < 3 ? 0x77777777 : (tid < 4 ? 0x88888888 : 0x55555555);
   return tid == 7 ? 24 : (tid == 8 ? 152 : (tid == 9 ? 112 : tid == 16 + 5 ? 32 : 0));
@@ -685,14 +688,6 @@ void main() {
   bit_reader_init(br);
 
   uint32_t out_dst = tile_idx * BLOCK_SIZE;
-  uint32_t out_size = min(BLOCK_SIZE, tile_list.uncompressed_size - out_dst);
-
-  for (uint32_t i = 0; i < out_size; i += NUM_THREADS) {
-    uint32_t offset = i + gl_LocalInvocationIndex;
-
-    if (i < out_size)
-      store_output_byte(out_dst + offset, 0);
-  }
 
   bool done;
 
@@ -709,11 +704,11 @@ void main() {
     done = extract(header, 0, 1, 0) != 0;
     uint32_t btype = extract(header, 1, 2, 0);
 
-    bit_reader_eat(br, 3, gl_LocalInvocationIndex == 0);
+    bit_reader_eat(br, 3, tid == 0);
 
     switch (btype) {
       case 2: {
-        bit_reader_eat(br, 14, gl_LocalInvocationIndex == 0);
+        bit_reader_eat(br, 14, tid == 0);
 
         uint32_t hlit = extract(header, 3, 5, 257);
         uint32_t hdist = extract(header, 8, 5, 1);
@@ -730,7 +725,7 @@ void main() {
       } break;
 
       case 0: {
-        uint32_t size = broadcast(bit_reader_read(br, 16, gl_LocalInvocationIndex == 0), 0);
+        uint32_t size = broadcast(bit_reader_read(br, 16, tid == 0), 0);
         out_dst = process_uncompressed_block(br, out_dst, size);
       } break;
 
