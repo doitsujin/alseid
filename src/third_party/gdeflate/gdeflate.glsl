@@ -205,10 +205,16 @@ uint32_t prefix_sum_inclusive_16(uint32_t value) {
 
 
 uint32_t match(uint32_t value) {
-  uint32_t mask = 0;
+  uint32_t mask;
 
-  for (uint i = 0; i < NUM_THREADS; i++)
-    mask |= uint32_t(subgroupBroadcast(value, i) == value ? 1u : 0) << i;
+  while (true) {
+    uint32_t first = subgroupBroadcastFirst(value);
+
+    if (value == first) {
+      mask = subgroupBallot(true).x;
+      break;
+    }
+  }
 
   return mask;
 }
