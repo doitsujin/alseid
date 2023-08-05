@@ -2,7 +2,7 @@
 
 #include <string_view>
 
-#include <nlohmann/json.hpp>
+#include "../../src/third_party/nlohmann/json.hpp"
 
 #include "../../src/io/io.h"
 #include "../../src/io/io_stream.h"
