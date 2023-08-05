@@ -4,5 +4,5 @@ lib_gltfimport_files = files(
 )
 
 lib_gltfimport = static_library('gltfimport', lib_gltfimport_files,
-  dependencies  : [ nlohmann_json_dep, meshoptimizer_dep ],
+  dependencies  : [ meshoptimizer_dep ],
   link_with     : [ lib_alseid ])

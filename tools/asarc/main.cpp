@@ -1,6 +1,6 @@
 #include <fstream>
 
-#include <nlohmann/json.hpp>
+#include "../../src/third_party/nlohmann/json.hpp"
 
 #include "../../src/gfx/gfx_format.h"
 
