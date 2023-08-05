@@ -205,9 +205,11 @@ uint32_t prefix_sum_inclusive_16(uint32_t value) {
 
 
 uint32_t match(uint32_t value) {
-  uint32_t mask;
+  uint32_t mask = 0;
 
-  while (true) {
+  // This should technically only be while (mask == 0),
+  // but Nvidia miscompiles that into an infinite loop.
+  while (subgroupAny(mask == 0)) {
     uint32_t first = subgroupBroadcastFirst(value);
 
     if (value == first) {
