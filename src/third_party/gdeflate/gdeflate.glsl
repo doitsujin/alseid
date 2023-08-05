@@ -549,9 +549,9 @@ void write_output(uint32_t dst, uint32_t offset, uint32_t dist, uint32_t length_
   while (mask != 0) {
     uint32_t lane = firstbitlow(mask);
 
-    uint32_t off = shuffle(dist, lane);
-    uint32_t len = shuffle(length_in, lane);
-    uint32_t outval = shuffle(dst, lane);
+    uint32_t off = broadcast(dist, lane);
+    uint32_t len = broadcast(length_in, lane);
+    uint32_t outval = broadcast(dst, lane);
 
     controlBarrier(
       gl_ScopeWorkgroup,
