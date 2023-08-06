@@ -195,8 +195,10 @@ struct GfxMeshletHeader {
    *  immediately follows the meshlet header as an array of 16-bit
    *  indices, which in turn indexes into the mesh instance skin. */
   uint16_t jointCount;
-  /** Reserved for future use */
-  uint16_t reserved0;
+  /** Dominant joint. If this is a valid joint index, all vertices
+   *  within the meshlet must be transformed using this joint with
+   *  a weight of 1. \c jointCount will be 0 in that case. */
+  uint16_t jointIndex;
   uint32_t reserved1;
 };
 
@@ -255,9 +257,13 @@ struct GfxMeshletRayTracingInfo {
    *  Indices for BVH builds are stored as 16-bit. */
   uint32_t indexOffset;
   /** Number of vertices in the meshlet. */
-  uint16_t vertexCount;
+  uint8_t vertexCount;
   /** Number of primitives in the meshlet. */
-  uint16_t primitiveCount;
+  uint8_t primitiveCount;
+  /** Dominant joint. If this is a valid joint index, a single
+   *  transform can be computed for the entire meshlet rather
+   *  than having to rebuild the bottom-level BVH. */
+  uint16_t jointIndex;
 };
 
 static_assert(sizeof(GfxMeshletRayTracingInfo) == 16);

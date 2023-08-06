@@ -231,7 +231,8 @@ struct Meshlet {
   uint16_t  morphDataOffset;
   uint16_t  morphTargetOffset;
   uint16_t  morphTargetCount;
-  uint32_t  jointCount; // Declare as 32-bit to work around ACO bug
+  uint16_t  jointCount;
+  uint16_t  jointIndex;
   uint32_t  reserved1;
 };
 

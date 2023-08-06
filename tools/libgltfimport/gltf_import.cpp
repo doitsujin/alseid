@@ -1122,6 +1122,18 @@ bool GltfMeshletBuilder::processJoints(
     }
   }
 
+  // If there is a dominant joint, simply assign it to the meshlet and
+  // leave it at that. No joint influence data is needed in that case,
+  // and we can leave all culling enabled since the meshlet will only
+  // be transformed in its entirety, rather than be deformed.
+  m_metadata.info.jointIndex = uint16_t(dominantJoint);
+  m_metadata.header.jointIndex = uint16_t(dominantJoint);
+
+  if (dominantJoint != ~0u) {
+    m_localJoints.clear();
+    return true;
+  }
+
   // Repack joint indices for each vertex and order them by weight,
   // and resolve local indexing at the same time if enabled.
   std::vector<std::pair<uint32_t, float>> repackBuffer(attributeOffsets.size());
@@ -1186,11 +1198,8 @@ bool GltfMeshletBuilder::processJoints(
     }
   }
 
-  // Assign dominant joint to the meshlet. If there are multiple joints
-  // or we do not have a dominant joint, disable culling for now.
-  m_metadata.info.jointIndex = uint16_t(dominantJoint);
-
-  return dominantJoint != ~0u && m_localJoints.size() == 1;
+  // Disable culling since multiple joints affect the meshlet.
+  return false;
 }
 
 
@@ -1389,6 +1398,7 @@ void GltfMeshletBuilder::buildMeshletBuffer(
     m_meshlet.triangle_count * 3 * sizeof(uint16_t)) * 16;
   m_metadata.rayTracing.vertexCount = m_meshlet.vertex_count;
   m_metadata.rayTracing.primitiveCount = m_meshlet.triangle_count;
+  m_metadata.rayTracing.jointIndex = m_metadata.header.jointIndex;
 
   // Allocate buffer and write the header
   m_buffer.resize(offset * 16);

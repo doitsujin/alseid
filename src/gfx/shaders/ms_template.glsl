@@ -376,7 +376,7 @@ DualQuat msLoadJointDualQuatFromMemory(in MsContext context, uint joint) {
 }
 
 // Loads joint from LDS or memory, depending on meshlet flags.
-DualQuat msLoadJointDualQuat(in MsContext context, in Meshlet meshlet, uint joint) {
+DualQuat msLoadJointDualQuat(in Meshlet meshlet, uint joint) {
   return DualQuat(
     quatUnpack(msJointDualQuatRShared[joint]),
     msJointDualQuatDShared[joint]);
@@ -384,17 +384,32 @@ DualQuat msLoadJointDualQuat(in MsContext context, in Meshlet meshlet, uint join
 
 // Loads local joints into shared memory.
 void msLoadLocalJointsFromMemory(in MsContext context, in Meshlet meshlet) {
-  uint jointCount = min(uint(meshlet.jointCount), MESHLET_LOCAL_JOINT_COUNT);
+  uint jointIndex = uint(meshlet.jointIndex);
 
-  MS_LOOP_WORKGROUP(index, jointCount, MESHLET_LOCAL_JOINT_COUNT) {
-    uint joint = uint(MeshletRef(context.meshlet).jointIndices[index]);
+  if (jointIndex < 0xffffu) {
+    // If there's only one joint active for the entire meshlet, we do not need
+    // to convert it into the dual-quaternion representation since there will
+    // be no interpolation.
+    if (gl_LocalInvocationIndex == 0) {
+      uint joint = MeshSkinningRef(context.skinData).joints[meshlet.jointIndex];
 
-    if (joint < 0xffffu) {
-      joint = MeshSkinningRef(context.skinData).joints[context.skinOffset + joint];
+      Transform transform = msLoadJointTransform(context, joint);
+      msJointDualQuatRShared[0] = quatPack(transform.rot);
+      msJointDualQuatDShared[0].xyz = transform.pos;
+    }
+  } else {
+    uint jointCount = min(uint(meshlet.jointCount), MESHLET_LOCAL_JOINT_COUNT);
 
-      DualQuat dq = msLoadJointDualQuatFromMemory(context, joint);
-      msJointDualQuatRShared[index] = quatPack(dq.r);
-      msJointDualQuatDShared[index] = dq.d;
+    MS_LOOP_WORKGROUP(index, jointCount, MESHLET_LOCAL_JOINT_COUNT) {
+      uint joint = uint(MeshletRef(context.meshlet).jointIndices[index]);
+
+      if (joint < 0xffffu) {
+        joint = MeshSkinningRef(context.skinData).joints[context.skinOffset + joint];
+
+        DualQuat dq = msLoadJointDualQuatFromMemory(context, joint);
+        msJointDualQuatRShared[index] = quatPack(dq.r);
+        msJointDualQuatDShared[index] = dq.d;
+      }
     }
   }
 }
@@ -403,43 +418,54 @@ void msLoadLocalJointsFromMemory(in MsContext context, in Meshlet meshlet) {
 // essentially iterate over the per-vertex list of joint influences
 // and interpolate the dual quaternions using the joint weights.
 Transform msComputeJointTransform(in MsContext context, in Meshlet meshlet, in JointInfluenceRef jointData, uint vertexIndex) {
-  // If the weight of the first joint is zero, the vertex is not
-  // attached to any joints. This works because joint influences
-  // are ordered by weight.
-  JointInfluence joint = JointInfluence(0u, 0.0f);
+  uint jointIndex = uint(meshlet.jointIndex);
 
-  if (meshlet.jointCountPerVertex > 0)
-    joint = jointInfluenceUnpack(jointData.data[vertexIndex]);
+  if (jointIndex < 0xffffu) {
+    // We stored the raw transform for this joint in shared memory
+    // without conversion, so just load it as-is.
+    Transform result;
+    result.rot = quatUnpack(msJointDualQuatRShared[0]);
+    result.pos = msJointDualQuatDShared[0].xyz;
+    return result;
+  } else {
+    // If the weight of the first joint is zero, the vertex is not
+    // attached to any joints. This works because joint influences
+    // are ordered by weight.
+    JointInfluence joint = JointInfluence(0u, 0.0f);
 
-  if (joint.weight > 0) {
-    // Load first joint and skip all the expensive code below if
-    // vertices in this meshlet are only influenced by one joint.
-    DualQuat accum = msLoadJointDualQuat(context, meshlet, joint.index);
+    if (meshlet.jointCountPerVertex > 0)
+      joint = jointInfluenceUnpack(jointData.data[vertexIndex]);
 
-    if (meshlet.jointCountPerVertex > 1) {
-      accum.r *= joint.weight;
-      accum.d *= joint.weight;
+    if (joint.weight > 0) {
+      // Load first joint and skip all the expensive code below if
+      // vertices in this meshlet are only influenced by one joint.
+      DualQuat accum = msLoadJointDualQuat(meshlet, joint.index);
 
-      for (uint i = 1; i < meshlet.jointCountPerVertex; i++) {
-        JointInfluence joint = jointInfluenceUnpack(
-          jointData.data[i * meshlet.vertexDataCount + vertexIndex]);
+      if (meshlet.jointCountPerVertex > 1) {
+        accum.r *= joint.weight;
+        accum.d *= joint.weight;
 
-        if (joint.weight == 0.0f)
-          break;
+        for (uint i = 1; i < meshlet.jointCountPerVertex; i++) {
+          JointInfluence joint = jointInfluenceUnpack(
+            jointData.data[i * meshlet.vertexDataCount + vertexIndex]);
 
-        DualQuat dq = msLoadJointDualQuat(context, meshlet, joint.index);
-        accum.r = fma(dq.r, vec4(joint.weight), accum.r);
-        accum.d = fma(dq.d, vec4(joint.weight), accum.d);
+          if (joint.weight == 0.0f)
+            break;
+
+          DualQuat dq = msLoadJointDualQuat(meshlet, joint.index);
+          accum.r = fma(dq.r, vec4(joint.weight), accum.r);
+          accum.d = fma(dq.d, vec4(joint.weight), accum.d);
+        }
+
+        accum = dualQuatNormalize(accum);
       }
 
-      accum = dualQuatNormalize(accum);
+      return dualQuatToTrans(accum);
+    } else {
+      // Return identity transform. Note that this different
+      // from running the above code with zero iterations.
+      return transIdentity();
     }
-
-    return dualQuatToTrans(accum);
-  } else {
-    // Return identity transform. Note that this different
-    // from running the above code with zero iterations.
-    return transIdentity();
   }
 }
 
