@@ -18,14 +18,14 @@ public:
 
   Handle() { }
 
-  explicit Handle(uint64_t raw)
+  explicit Handle(uint32_t raw)
   : m_raw(raw) { }
 
   /**
    * \brief Retrieves raw handle value
    * \returns Raw handle value
    */
-  uint64_t getRaw() const {
+  explicit operator uint32_t () const {
     return m_raw;
   }
 
@@ -33,12 +33,12 @@ public:
   bool operator != (const Handle& other) const { return m_raw != other.m_raw; }
 
   operator bool () const {
-    return m_raw != 0ull;
+    return m_raw != 0u;
   }
 
 private:
 
-  uint64_t m_raw = 0ull;
+  uint32_t m_raw = 0u;
 
 };
 
