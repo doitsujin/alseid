@@ -27,6 +27,7 @@
 #extension GL_KHR_shader_subgroup_basic : require
 #extension GL_KHR_shader_subgroup_ballot : require
 #extension GL_KHR_shader_subgroup_shuffle : require
+#extension GL_KHR_shader_subgroup_shuffle_relative : require
 #extension GL_KHR_shader_subgroup_vote : require
 #extension GL_EXT_buffer_reference2 : require
 #extension GL_EXT_shader_8bit_storage : require
@@ -195,10 +196,13 @@ uint32_t prefix_sum_exclusive(uint32_t value) {
 
 
 uint32_t prefix_sum_inclusive_16(uint32_t value) {
-  uint32_t sum = subgroupInclusiveAdd(value);
+  uint32_t lid = tid & 0xf;
+  uint32_t sum = value;
 
-  if (tid >= 16)
-    sum -= subgroupBroadcast(sum, 16);
+  for (uint32_t i = 1; i < 16; i <<= 1) {
+    uint32_t delta = subgroupShuffleUp(sum, i);
+    sum += lid >= i ? delta : 0u;
+  }
 
   return sum;
 }
