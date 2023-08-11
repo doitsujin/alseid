@@ -115,6 +115,9 @@ struct uint24_t {
 
 static_assert(sizeof(uint24_t) == 3 && alignof(uint24_t) == 1);
 
+inline uint24_t operator ""_u24(unsigned long long int u) {
+  return uint24_t(u);
+}
 
 /**
  * \brief 16-bit float type
