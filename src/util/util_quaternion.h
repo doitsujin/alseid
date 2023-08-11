@@ -1,5 +1,6 @@
 #pragma once
 
+#include "util_matrix.h"
 #include "util_vector.h"
 
 namespace as {
