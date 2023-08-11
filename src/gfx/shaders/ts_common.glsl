@@ -32,7 +32,7 @@ uint tsAllocateOutputs(uint count) {
   if (subgroupAny(count > 1)) {
     // Having to do the double-reduction is kind of bad but
     // there's no way to broadcast data from the last lane
-    localIndex = subgroupInclusiveAdd(count);
+    localIndex = subgroupExclusiveAdd(count);
     localCount = subgroupAdd(count);
   } else {
     // When only allocating one output, take a fast path.
