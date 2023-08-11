@@ -20,6 +20,21 @@
 #define FACE_CULL_MODE_CCW                            (2)
 
 
+// Convenience macro to generate a scalarization loop for a potentially
+// non-uniform value. Will execute one iteration per unique value. Note
+// that for floats, you may need to use floatBitsToUint, or otherwise
+// this may turn into an infinite loop if any number is NaN.
+//
+// The subgroupAny condition is only necessary for Nvidia not to hang
+// in some situations, other drivers should be able to optimize it away.
+//
+// Note that for some driver optimizations to kick in, it may be necessary
+// to explicitly assign subgroupBroadcastFirst(value) to a local variable.
+#define SUBGROUP_SCALARIZE(value)                                           \
+  for (bool processed_ = false; !processed_ && subgroupAny(!processed_); )  \
+    if (processed_ = (value == subgroupBroadcastFirst(value)))
+
+
 // Decodes three 10-bit signed normalized integers.
 // This is a useful data format for vertex normals.
 vec3 unpackSnorm3x10(uint32_t dword) {
