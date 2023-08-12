@@ -354,4 +354,17 @@ struct GfxDispatchArgs {
   uint32_t z;
 };
 
+
+/**
+ * \brief Buffer range
+ *
+ * Convenience structure.
+ */
+struct GfxRange {
+  /** Range offset, in bytes */
+  uint64_t offset;
+  /** Range length, in bytes */
+  uint64_t length;
+};
+
 }
