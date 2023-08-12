@@ -8,17 +8,17 @@
 namespace as {
 
 GfxVulkanBufferView::GfxVulkanBufferView(
-        std::shared_ptr<GfxVulkanDevice> device,
+        GfxVulkanDevice&              device,
   const GfxVulkanBuffer&              buffer,
   const GfxBufferViewDesc&            desc)
 : GfxBufferViewIface(desc)
-, m_device(std::move(device)) {
+, m_device(device) {
 
 }
 
 
 GfxVulkanBufferView::~GfxVulkanBufferView() {
-  auto& vk = m_device->vk();
+  auto& vk = m_device.vk();
 
   vk.vkDestroyBufferView(vk.device, m_bufferView, nullptr);
 }
@@ -35,21 +35,21 @@ GfxDescriptor GfxVulkanBufferView::getDescriptor() const {
 
 
 GfxVulkanBuffer::GfxVulkanBuffer(
-        std::shared_ptr<GfxVulkanDevice> device,
+        GfxVulkanDevice&              device,
   const GfxBufferDesc&                desc,
         VkBuffer                      buffer,
         VkDeviceAddress               va,
         GfxVulkanMemorySlice&&        memory)
 : GfxBufferIface(desc, va, memory.getMapPtr())
-, m_device(std::move(device))
+, m_device(device)
 , m_memory(std::move(memory))
 , m_buffer(buffer) {
-  m_device->setDebugName(m_buffer, desc.debugName);
+  m_device.setDebugName(m_buffer, desc.debugName);
 }
 
 
 GfxVulkanBuffer::~GfxVulkanBuffer() {
-  auto& vk = m_device->vk();
+  auto& vk = m_device.vk();
 
   vk.vkDestroyBuffer(vk.device, m_buffer, nullptr);
 }
@@ -96,7 +96,7 @@ GfxMemoryInfo GfxVulkanBuffer::getMemoryInfo() const {
 
 
 void GfxVulkanBuffer::invalidateMappedRegion() {
-  auto& vk = m_device->vk();
+  auto& vk = m_device.vk();
 
   VkMappedMemoryRange range = { VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE };
   range.memory = m_memory.getHandle();
@@ -108,7 +108,7 @@ void GfxVulkanBuffer::invalidateMappedRegion() {
 
 
 void GfxVulkanBuffer::flushMappedRegion() {
-  auto& vk = m_device->vk();
+  auto& vk = m_device.vk();
 
   VkMappedMemoryRange range = { VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE };
   range.memory = m_memory.getHandle();

@@ -92,7 +92,7 @@ public:
    * \param [in] size Size of the memory slice
    */
   GfxVulkanMemorySlice(
-          std::shared_ptr<GfxVulkanDevice> device,
+          GfxVulkanDevice&              device,
           std::shared_ptr<GfxVulkanMemoryChunk> chunk,
           VkDeviceSize                  offset,
           VkDeviceSize                  size);
@@ -108,7 +108,7 @@ public:
    * \param [in] type Memory type
    */
   GfxVulkanMemorySlice(
-          std::shared_ptr<GfxVulkanDevice> device,
+          GfxVulkanDevice&              device,
           VkDeviceMemory                memory,
           VkDeviceSize                  size,
           void*                         mapPtr,
@@ -180,16 +180,16 @@ public:
 
 private:
 
-  std::shared_ptr<GfxVulkanDevice>      m_device;
   std::shared_ptr<GfxVulkanMemoryChunk> m_chunk;
 
-  VkDeviceMemory  m_memory  = VK_NULL_HANDLE;
-  VkDeviceSize    m_offset  = 0;
-  VkDeviceSize    m_size    = 0;
-  void*           m_mapPtr  = nullptr;
+  GfxVulkanDevice*  m_device  = nullptr;
+  VkDeviceMemory    m_memory  = VK_NULL_HANDLE;
+  VkDeviceSize      m_offset  = 0;
+  VkDeviceSize      m_size    = 0;
+  void*             m_mapPtr  = nullptr;
 
-  uint32_t        m_typeId  = 0;
-  GfxMemoryType   m_type    = GfxMemoryType::eVideoMemory;
+  uint32_t          m_typeId  = 0;
+  GfxMemoryType     m_type    = GfxMemoryType::eVideoMemory;
 
   void freeMemory();
 

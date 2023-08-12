@@ -363,7 +363,7 @@ GfxBuffer GfxVulkanDevice::createBuffer(
   }
 
   return GfxBuffer(std::make_shared<GfxVulkanBuffer>(
-    shared_from_this(), desc, buffer, va, std::move(memorySlice)));
+    *this, desc, buffer, va, std::move(memorySlice)));
 }
 
 
@@ -382,8 +382,7 @@ GfxContext GfxVulkanDevice::createContext(
 
 GfxDescriptorArray GfxVulkanDevice::createDescriptorArray(
   const GfxDescriptorArrayDesc&       desc) {
-  return GfxDescriptorArray(std::make_shared<GfxVulkanDescriptorArray>(
-    shared_from_this(), desc));
+  return GfxDescriptorArray(std::make_shared<GfxVulkanDescriptorArray>(*this, desc));
 }
 
 
@@ -516,7 +515,7 @@ GfxImage GfxVulkanDevice::createImage(
   }
 
   return GfxImage(std::make_shared<GfxVulkanImage>(
-    shared_from_this(), desc, image, std::move(memorySlice)));
+    *this, desc, image, std::move(memorySlice)));
 }
 
 
@@ -571,15 +570,14 @@ GfxRenderTargetState GfxVulkanDevice::createRenderTargetState(
 
 GfxSampler GfxVulkanDevice::createSampler(
   const GfxSamplerDesc&               desc) {
-  return GfxSampler(std::make_shared<GfxVulkanSampler>(
-    shared_from_this(), desc));
+  return GfxSampler(std::make_shared<GfxVulkanSampler>(*this, desc));
 }
 
 
 GfxSemaphore GfxVulkanDevice::createSemaphore(
   const GfxSemaphoreDesc&             desc) {
   return GfxSemaphore(std::make_shared<GfxVulkanSemaphore>(
-    shared_from_this(), desc, VK_SEMAPHORE_TYPE_TIMELINE));
+    *this, desc, VK_SEMAPHORE_TYPE_TIMELINE));
 }
 
 
@@ -905,7 +903,7 @@ GfxRayTracingBvh GfxVulkanDevice::createRayTracingBvh(
 
   VkDeviceAddress va = m_vk.vkGetAccelerationStructureDeviceAddressKHR(m_vk.device, &vaInfo);
 
-  return GfxRayTracingBvh(std::make_shared<GfxVulkanRayTracingBvh>(shared_from_this(),
+  return GfxRayTracingBvh(std::make_shared<GfxVulkanRayTracingBvh>(*this,
     desc, std::move(info), size, buffer, rtas, va, std::move(memorySlice)));
 }
 

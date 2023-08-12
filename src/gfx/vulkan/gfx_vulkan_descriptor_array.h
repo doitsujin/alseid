@@ -17,7 +17,7 @@ class GfxVulkanDescriptorArray : public GfxDescriptorArrayIface {
 public:
 
   GfxVulkanDescriptorArray(
-          std::shared_ptr<GfxVulkanDevice> device,
+          GfxVulkanDevice&              device,
     const GfxDescriptorArrayDesc&       desc);
 
   ~GfxVulkanDescriptorArray();
@@ -44,7 +44,7 @@ public:
 
 private:
 
-  std::shared_ptr<GfxVulkanDevice> m_device;
+  GfxVulkanDevice&  m_device;
 
   VkDescriptorType  m_type  = VK_DESCRIPTOR_TYPE_MAX_ENUM;
   uint32_t          m_size  = 0;

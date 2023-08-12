@@ -14,7 +14,7 @@ class GfxVulkanSemaphore : public GfxSemaphoreIface {
 public:
 
   GfxVulkanSemaphore(
-          std::shared_ptr<GfxVulkanDevice> device,
+          GfxVulkanDevice&              device,
     const GfxSemaphoreDesc&             desc,
           VkSemaphoreType               type);
 
@@ -54,7 +54,7 @@ public:
 
 private:
 
-  std::shared_ptr<GfxVulkanDevice>  m_device;
+  GfxVulkanDevice&                  m_device;
   VkSemaphore                       m_semaphore = VK_NULL_HANDLE;
 
 };

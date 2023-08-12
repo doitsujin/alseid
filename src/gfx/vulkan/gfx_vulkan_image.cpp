@@ -8,13 +8,13 @@
 namespace as {
 
 GfxVulkanImageView::GfxVulkanImageView(
-        std::shared_ptr<GfxVulkanDevice> device,
+        GfxVulkanDevice&              device,
   const GfxVulkanImage&               image,
   const GfxImageViewDesc&             desc)
 : GfxImageViewIface (image, desc)
-, m_device          (std::move(device))
+, m_device          (device)
 , m_layout          (getVkImageLayoutFromUsage(image, desc.usage)) {
-  auto& vk = m_device->vk();
+  auto& vk = m_device.vk();
 
   VkImageViewUsageCreateInfo usageInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO };
   usageInfo.usage = getVkImageUsage(desc.format, desc.usage);
@@ -22,7 +22,7 @@ GfxVulkanImageView::GfxVulkanImageView(
   VkImageViewCreateInfo viewInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, &usageInfo };
   viewInfo.image = image.getHandle();
   viewInfo.viewType = getVkImageViewType(desc.type);
-  viewInfo.format = m_device->getVkFormat(desc.format);
+  viewInfo.format = m_device.getVkFormat(desc.format);
   viewInfo.subresourceRange = getVkImageSubresourceRange(desc.subresource);
 
   VkResult vr = vk.vkCreateImageView(vk.device, &viewInfo, nullptr, &m_view);
@@ -33,7 +33,7 @@ GfxVulkanImageView::GfxVulkanImageView(
 
 
 GfxVulkanImageView::~GfxVulkanImageView() {
-  auto& vk = m_device->vk();
+  auto& vk = m_device.vk();
 
   vk.vkDestroyImageView(vk.device, m_view, nullptr);
 }
@@ -49,39 +49,39 @@ GfxDescriptor GfxVulkanImageView::getDescriptor() const {
 
 
 GfxVulkanImage::GfxVulkanImage(
-        std::shared_ptr<GfxVulkanDevice> device,
+        GfxVulkanDevice&              device,
   const GfxImageDesc&                 desc,
         VkImage                       image,
         GfxVulkanMemorySlice&&        memory)
 : GfxImageIface   (desc)
-, m_device        (std::move(device))
+, m_device        (device)
 , m_memory        (std::move(memory))
 , m_image         (image)
 , m_isConcurrent  (desc.flags & GfxImageFlag::eSimultaneousAccess) {
-  m_device->setDebugName(m_image, desc.debugName);
+  m_device.setDebugName(m_image, desc.debugName);
 
   setupStageAccessFlags();
 }
 
 
 GfxVulkanImage::GfxVulkanImage(
-        std::shared_ptr<GfxVulkanDevice> device,
+        GfxVulkanDevice&              device,
   const GfxImageDesc&                 desc,
         VkImage                       image,
         VkBool32                      isConcurrent)
 : GfxImageIface   (desc)
-, m_device        (std::move(device))
+, m_device        (device)
 , m_image         (image)
 , m_isExternal    (VK_TRUE)
 , m_isConcurrent  (isConcurrent) {
-  m_device->setDebugName(m_image, desc.debugName);
+  m_device.setDebugName(m_image, desc.debugName);
 
   setupStageAccessFlags();
 }
 
 
 GfxVulkanImage::~GfxVulkanImage() {
-  auto& vk = m_device->vk();
+  auto& vk = m_device.vk();
 
   if (!m_isExternal)
     vk.vkDestroyImage(vk.device, m_image, nullptr);

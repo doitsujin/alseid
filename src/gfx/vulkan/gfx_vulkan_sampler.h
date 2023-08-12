@@ -16,7 +16,7 @@ class GfxVulkanSampler : public GfxSamplerIface {
 public:
 
   GfxVulkanSampler(
-          std::shared_ptr<GfxVulkanDevice> device,
+          GfxVulkanDevice&              device,
     const GfxSamplerDesc&               desc);
 
   ~GfxVulkanSampler();
@@ -41,7 +41,7 @@ public:
 
 private:
 
-  std::shared_ptr<GfxVulkanDevice> m_device;
+  GfxVulkanDevice& m_device;
 
   VkSampler m_sampler = VK_NULL_HANDLE;
 

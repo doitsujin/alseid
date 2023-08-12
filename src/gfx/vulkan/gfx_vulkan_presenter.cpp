@@ -588,11 +588,11 @@ VkResult GfxVulkanPresenter::createSwapchain() {
   for (uint32_t i = 0; i < m_objects.size(); i++) {
     auto& objects = m_objects.at(i);
 
-    objects.image = GfxImage(std::make_shared<GfxVulkanImage>(m_device, imageDesc,
+    objects.image = GfxImage(std::make_shared<GfxVulkanImage>(*m_device, imageDesc,
       imageHandles[i], swapchainInfo.imageSharingMode == VK_SHARING_MODE_CONCURRENT));
     objects.context = m_device->createContext(m_desc.queue);
     objects.timeline = GfxSemaphore(std::make_shared<GfxVulkanSemaphore>(
-      m_device, timelineDesc, VK_SEMAPHORE_TYPE_TIMELINE));
+      *m_device, timelineDesc, VK_SEMAPHORE_TYPE_TIMELINE));
     objects.timelineValue = 0;
   }
 
@@ -601,9 +601,9 @@ VkResult GfxVulkanPresenter::createSwapchain() {
 
   for (uint32_t i = 0; i < m_semaphores.size(); i++) {
     m_semaphores[i].acquire = GfxSemaphore(std::make_shared<GfxVulkanSemaphore>(
-      m_device, acquireSemaphoreDesc, VK_SEMAPHORE_TYPE_BINARY));
+      *m_device, acquireSemaphoreDesc, VK_SEMAPHORE_TYPE_BINARY));
     m_semaphores[i].present = GfxSemaphore(std::make_shared<GfxVulkanSemaphore>(
-      m_device, presentSemaphoreDesc, VK_SEMAPHORE_TYPE_BINARY));
+      *m_device, presentSemaphoreDesc, VK_SEMAPHORE_TYPE_BINARY));
   }
 
   m_frameIdCreated = m_frameId;

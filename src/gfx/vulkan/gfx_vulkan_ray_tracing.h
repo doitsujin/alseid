@@ -65,7 +65,7 @@ class GfxVulkanRayTracingBvh : public GfxRayTracingBvhIface {
 public:
 
   GfxVulkanRayTracingBvh(
-          std::shared_ptr<GfxVulkanDevice> device,
+          GfxVulkanDevice&              device,
     const GfxRayTracingBvhDesc&         desc,
           GfxVulkanRayTracingBvhInfo&&  info,
     const GfxVulkanRayTracingBvhSize&   size,
@@ -116,8 +116,7 @@ public:
 
 private:
 
-  std::shared_ptr<GfxVulkanDevice> m_device;
-
+  GfxVulkanDevice&            m_device;
   GfxVulkanRayTracingBvhInfo  m_info;
   GfxVulkanRayTracingBvhSize  m_size;
   GfxVulkanMemorySlice        m_memory;

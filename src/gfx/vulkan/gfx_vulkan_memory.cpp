@@ -14,12 +14,12 @@ GfxVulkanMemorySlice::GfxVulkanMemorySlice() {
 
 
 GfxVulkanMemorySlice::GfxVulkanMemorySlice(
-        std::shared_ptr<GfxVulkanDevice> device,
+        GfxVulkanDevice&              device,
         std::shared_ptr<GfxVulkanMemoryChunk> chunk,
         VkDeviceSize                  offset,
         VkDeviceSize                  size)
-: m_device      (std::move(device))
-, m_chunk       (std::move(chunk))
+: m_chunk       (std::move(chunk))
+, m_device      (&device)
 , m_memory      (m_chunk->getHandle())
 , m_offset      (offset)
 , m_size        (size)
@@ -31,14 +31,14 @@ GfxVulkanMemorySlice::GfxVulkanMemorySlice(
 
 
 GfxVulkanMemorySlice::GfxVulkanMemorySlice(
-        std::shared_ptr<GfxVulkanDevice> device,
+        GfxVulkanDevice&              device,
         VkDeviceMemory                memory,
         VkDeviceSize                  size,
         void*                         mapPtr,
         uint32_t                      typeId,
         GfxMemoryType                 type)
-: m_device      (std::move(device))
-, m_chunk       (nullptr)
+: m_chunk       (nullptr)
+, m_device      (&device)
 , m_memory      (memory)
 , m_offset      (0)
 , m_size        (size)
@@ -50,8 +50,8 @@ GfxVulkanMemorySlice::GfxVulkanMemorySlice(
 
 
 GfxVulkanMemorySlice::GfxVulkanMemorySlice(GfxVulkanMemorySlice&& other)
-: m_device      (std::move(other.m_device))
-, m_chunk       (std::move(other.m_chunk))
+: m_chunk       (std::move(other.m_chunk))
+, m_device      (std::exchange(other.m_device, nullptr))
 , m_memory      (std::exchange(other.m_memory, VK_NULL_HANDLE))
 , m_offset      (std::exchange(other.m_offset, 0))
 , m_size        (std::exchange(other.m_size, 0))
@@ -66,8 +66,8 @@ GfxVulkanMemorySlice& GfxVulkanMemorySlice::operator = (GfxVulkanMemorySlice&& o
   if (m_device)
     freeMemory();
 
-  m_device    = std::move(other.m_device);
   m_chunk     = std::move(other.m_chunk);
+  m_device    = std::exchange(other.m_device, nullptr);
   m_memory    = std::exchange(other.m_memory, VK_NULL_HANDLE);
   m_offset    = std::exchange(other.m_offset, 0);
   m_size      = std::exchange(other.m_size, 0);
@@ -315,7 +315,7 @@ GfxVulkanMemorySlice GfxVulkanMemoryAllocator::tryAllocateDedicatedMemoryFromTyp
   m_memoryHeaps[heapIndex].allocated += allocateInfo.allocationSize;
   m_memoryHeaps[heapIndex].used += allocateInfo.allocationSize;
 
-  return GfxVulkanMemorySlice(m_device.shared_from_this(), memory,
+  return GfxVulkanMemorySlice(m_device, memory,
     allocateInfo.allocationSize, mapPtr, memoryTypeId, memoryType);
 }
 
@@ -357,7 +357,7 @@ GfxVulkanMemorySlice GfxVulkanMemoryAllocator::tryAllocateChunkMemoryFromType(
     auto offset = chunk->allocRange(size, alignment);
 
     if (offset) {
-      result = GfxVulkanMemorySlice(m_device.shared_from_this(), chunk, *offset, size);
+      result = GfxVulkanMemorySlice(m_device, chunk, *offset, size);
       break;
     }
   }
@@ -374,7 +374,7 @@ GfxVulkanMemorySlice GfxVulkanMemoryAllocator::tryAllocateChunkMemoryFromType(
     m_chunks.push_back(chunk);
 
     auto offset = chunk->allocRange(size, alignment);
-    result = GfxVulkanMemorySlice(m_device.shared_from_this(), std::move(chunk), *offset, size);
+    result = GfxVulkanMemorySlice(m_device, std::move(chunk), *offset, size);
   }
 
   uint32_t heapIndex = m_memoryTypes[memoryTypeId].type.heapIndex;

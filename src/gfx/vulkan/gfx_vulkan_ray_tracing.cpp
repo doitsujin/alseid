@@ -138,7 +138,7 @@ void GfxVulkanRayTracingBvhInfo::fixupPointers() {
 
 
 GfxVulkanRayTracingBvh::GfxVulkanRayTracingBvh(
-        std::shared_ptr<GfxVulkanDevice> device,
+        GfxVulkanDevice&              device,
   const GfxRayTracingBvhDesc&         desc,
         GfxVulkanRayTracingBvhInfo&&  info,
   const GfxVulkanRayTracingBvhSize&   size,
@@ -147,19 +147,19 @@ GfxVulkanRayTracingBvh::GfxVulkanRayTracingBvh(
         VkDeviceAddress               va,
         GfxVulkanMemorySlice&&        memory)
 : GfxRayTracingBvhIface(desc, va)
-, m_device  (std::move(device))
+, m_device  (device)
 , m_info    (std::move(info))
 , m_size    (size)
 , m_memory  (std::move(memory))
 , m_buffer  (buffer)
 , m_rtas    (rtas) {
-  m_device->setDebugName(m_buffer, desc.debugName);
-  m_device->setDebugName(m_rtas, desc.debugName);
+  m_device.setDebugName(m_buffer, desc.debugName);
+  m_device.setDebugName(m_rtas, desc.debugName);
 }
 
 
 GfxVulkanRayTracingBvh::~GfxVulkanRayTracingBvh() {
-  auto& vk = m_device->vk();
+  auto& vk = m_device.vk();
 
   vk.vkDestroyAccelerationStructureKHR(vk.device, m_rtas, nullptr);
   vk.vkDestroyBuffer(vk.device, m_buffer, nullptr);

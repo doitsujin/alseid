@@ -22,7 +22,7 @@ class GfxVulkanImageView : public GfxImageViewIface {
 public:
 
   GfxVulkanImageView(
-          std::shared_ptr<GfxVulkanDevice> device,
+          GfxVulkanDevice&              device,
     const GfxVulkanImage&               image,
     const GfxImageViewDesc&             desc);
 
@@ -55,7 +55,7 @@ public:
 
 private:
 
-  std::shared_ptr<GfxVulkanDevice> m_device;
+  GfxVulkanDevice& m_device;
 
   VkImageView   m_view    = VK_NULL_HANDLE;
   VkImageLayout m_layout  = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -71,13 +71,13 @@ class GfxVulkanImage : public GfxImageIface {
 public:
 
   GfxVulkanImage(
-          std::shared_ptr<GfxVulkanDevice> device,
+          GfxVulkanDevice&              device,
     const GfxImageDesc&                 desc,
           VkImage                       image,
           GfxVulkanMemorySlice&&        memory);
 
   GfxVulkanImage(
-          std::shared_ptr<GfxVulkanDevice> device,
+          GfxVulkanDevice&              device,
     const GfxImageDesc&                 desc,
           VkImage                       image,
           VkBool32                      isConcurrent);
@@ -144,8 +144,7 @@ public:
 
 private:
 
-  std::shared_ptr<GfxVulkanDevice>  m_device;
-
+  GfxVulkanDevice&      m_device;
   GfxVulkanMemorySlice  m_memory;
 
   VkImage               m_image         = VK_NULL_HANDLE;

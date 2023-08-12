@@ -4,11 +4,11 @@
 namespace as {
 
 GfxVulkanSampler::GfxVulkanSampler(
-        std::shared_ptr<GfxVulkanDevice> device,
+        GfxVulkanDevice&              device,
   const GfxSamplerDesc&               desc)
 : GfxSamplerIface(desc)
-, m_device(std::move(device)) {
-  auto& vk = m_device->vk();
+, m_device(device) {
+  auto& vk = m_device.vk();
 
   VkSamplerCreateInfo info = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
   info.magFilter = getVkFilter(desc.magFilter);
@@ -31,12 +31,12 @@ GfxVulkanSampler::GfxVulkanSampler(
   if (vr)
     throw VulkanError("Vulkan: Failed to create sampler", vr);
 
-  m_device->setDebugName(m_sampler, desc.debugName);
+  m_device.setDebugName(m_sampler, desc.debugName);
 }
 
 
 GfxVulkanSampler::~GfxVulkanSampler() {
-  auto& vk = m_device->vk();
+  auto& vk = m_device.vk();
 
   vk.vkDestroySampler(vk.device, m_sampler, nullptr);
 }

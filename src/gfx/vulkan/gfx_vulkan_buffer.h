@@ -24,7 +24,7 @@ class GfxVulkanBufferView : public GfxBufferViewIface {
 public:
 
   GfxVulkanBufferView(
-          std::shared_ptr<GfxVulkanDevice> device,
+          GfxVulkanDevice&              device,
     const GfxVulkanBuffer&              buffer,
     const GfxBufferViewDesc&            desc);
 
@@ -46,7 +46,7 @@ public:
 
 protected:
 
-  std::shared_ptr<GfxVulkanDevice> m_device;
+  GfxVulkanDevice& m_device;
 
   VkBufferView m_bufferView = VK_NULL_HANDLE;
 
@@ -61,7 +61,7 @@ class GfxVulkanBuffer : public GfxBufferIface {
 public:
 
   GfxVulkanBuffer(
-          std::shared_ptr<GfxVulkanDevice> device,
+          GfxVulkanDevice&              device,
     const GfxBufferDesc&                desc,
           VkBuffer                      buffer,
           VkDeviceAddress               va,
@@ -107,7 +107,7 @@ public:
 
 protected:
 
-  std::shared_ptr<GfxVulkanDevice> m_device;
+  GfxVulkanDevice&      m_device;
 
   GfxVulkanMemorySlice  m_memory;
   VkBuffer              m_buffer = VK_NULL_HANDLE;

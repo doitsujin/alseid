@@ -6,13 +6,13 @@
 namespace as {
 
 GfxVulkanDescriptorArray::GfxVulkanDescriptorArray(
-        std::shared_ptr<GfxVulkanDevice> device,
+        GfxVulkanDevice&              device,
   const GfxDescriptorArrayDesc&       desc)
 : GfxDescriptorArrayIface(desc)
-, m_device  (std::move(device))
+, m_device  (device)
 , m_type    (getVkDescriptorType(desc.bindingType))
 , m_size    (desc.descriptorCount) {
-  auto& vk = m_device->vk();
+  auto& vk = m_device.vk();
 
   VkDescriptorPoolSize poolSize;
   poolSize.type = m_type;
@@ -29,7 +29,7 @@ GfxVulkanDescriptorArray::GfxVulkanDescriptorArray(
   if (vr)
     throw VulkanError("Vulkan: Failed to create descriptor pool", vr);
 
-  VkDescriptorSetLayout setLayout = m_device->getPipelineManager().getDescriptorArrayLayout(desc.bindingType)->getSetLayout();
+  VkDescriptorSetLayout setLayout = m_device.getPipelineManager().getDescriptorArrayLayout(desc.bindingType)->getSetLayout();
 
   VkDescriptorSetVariableDescriptorCountAllocateInfo countInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO };
   countInfo.descriptorSetCount = 1;
@@ -47,7 +47,7 @@ GfxVulkanDescriptorArray::GfxVulkanDescriptorArray(
     throw VulkanError("Vulkan: Failed to allocate descriptor array", vr);
   }
 
-  m_device->setDebugName(m_set, desc.debugName);
+  m_device.setDebugName(m_set, desc.debugName);
 
   // Null descriptors do not support samplers, so create a dummy sampler
   if (m_type == VK_DESCRIPTOR_TYPE_SAMPLER) {
@@ -66,7 +66,7 @@ GfxVulkanDescriptorArray::GfxVulkanDescriptorArray(
     if (vr)
       throw VulkanError("Vulkan: Failed to create dummy sampler", vr);
 
-    m_device->setDebugName(m_sampler, "null");
+    m_device.setDebugName(m_sampler, "null");
   }
 
   // Explicitly initialize the descriptor set with null
@@ -78,7 +78,7 @@ GfxVulkanDescriptorArray::GfxVulkanDescriptorArray(
 
 
 GfxVulkanDescriptorArray::~GfxVulkanDescriptorArray() {
-  auto& vk = m_device->vk();
+  auto& vk = m_device.vk();
 
   vk.vkDestroyDescriptorPool(vk.device, m_pool, nullptr);
   vk.vkDestroySampler(vk.device, m_sampler, nullptr);
@@ -89,7 +89,7 @@ void GfxVulkanDescriptorArray::setDescriptors(
         uint32_t                      index,
         uint32_t                      count,
   const GfxDescriptor*                descriptors) {
-  auto& vk = m_device->vk();
+  auto& vk = m_device.vk();
 
   VkWriteDescriptorSet write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
   write.dstSet = m_set;
