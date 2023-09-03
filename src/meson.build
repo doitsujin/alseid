@@ -14,6 +14,10 @@ as_files = files([
 
   'gfx/debug/gfx_debug_device.cpp',
 
+  'gfx/scene/gfx_scene_node.cpp',
+  'gfx/scene/gfx_scene_pass.cpp',
+  'gfx/scene/gfx_scene_pipelines.cpp',
+
   'io/io.cpp',
   'io/io_archive.cpp',
   'io/io_request.cpp',
@@ -68,7 +72,8 @@ endforeach
 
 subdir('third_party')
 
+subdir('gfx/shaders')
+
 lib_alseid = static_library('alseid', as_files,
   dependencies  : as_dependencies)
 
-subdir('gfx/shaders')
