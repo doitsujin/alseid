@@ -923,6 +923,16 @@ public:
    */
   virtual bool isAvailable() const = 0;
 
+  /**
+   * \brief Computes number of workgroups based on workgroup size
+   *
+   * \param [in] threadCount Number of threads to dispatch
+   * \returns Number of workgroups that need to be dispatched
+   */
+  Extent3D computeWorkgroupCount(Extent3D threadCount) {
+    return gfxComputeWorkgroupCount(threadCount, getWorkgroupSize());
+  }
+
 protected:
 
   std::string m_debugName;
