@@ -53,8 +53,13 @@
 // to declare a convenient struct containing FS inputs.
 #define FS_INPUT_VAR(l, t, n) t n;
 
-// Macro to declare FS input structure
+// Macros to declare FS input structures
 #define FS_DECLARE_INPUT(iface)   \
   struct FsInput {                \
+    iface                         \
+  }
+
+#define FS_DECLARE_UNIFORM(iface) \
+  struct FsUniform {              \
     iface                         \
   }

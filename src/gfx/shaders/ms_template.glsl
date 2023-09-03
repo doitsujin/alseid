@@ -22,10 +22,6 @@
 //                          target animations.
 //    MS_NO_SKINNING:       Set if the geometry is not skinned. Disables
 //                          all joint-related computations.
-//    MS_NO_UNIFORM_OUTPUT: Set if there are no uniform fragment shader
-//                          input values to compute for this shader.
-//                          Note that uniform output is required if the
-//                          shader exports layer or viewport indices.
 //    MS_EXPORT_LAYER:      Set if the render pass needs to export
 //                          the gl_Layer built-in.
 //    MS_EXPORT_VIEWPORT:   Set if the render pass needs to export
@@ -34,6 +30,8 @@
 //                          If not defined, clip planes will be disabled.
 //    FS_INPUT:             List of fragment shader input variables.
 //                          Each item must use the FS_INPUT_VAR macro.
+//    FS_UNIFORM:           List of per-primitive fragment shader input
+//                          variables. Works the same way as FS_INPUT.
 //
 //
 // The interface is designed in such a way that most functions
@@ -87,14 +85,6 @@
 // endif
 //
 //
-// Per-vertex fragment shader inputs. This is structure is passed
-// directly to the fragment shader at the given location.
-//
-// #ifdef FS_INPUT
-//    struct FsInput { ... };
-// #endif
-//
-//
 // Per-vertex output data. Stores built-in vertex outputs such as
 // the position, and can be passed back to functions that compute
 // fragment shader inputs. Should be as compact as possible since
@@ -110,7 +100,7 @@
 // Workgroup-uniform data used to compute fragment shader inputs.
 //
 // #ifndef MS_NO_UNIFORM_OUTPUT
-//    struct FsUniform {
+//    struct MsUniformOut {
 //      uint layer;             /* if MS_EXPORT_LAYER is set */
 //      uint viewport;          /* if MS_EXPORT_VIEWPORT is set */
 //      ...
@@ -131,7 +121,7 @@
 // and may use shared memory and emit barriers.
 //
 // #ifndef MS_NO_UNIFORM_OUTPUT
-//    FsUniform msComputeFsUniform(in MsContext context)
+//    MsUniformOut msComputeUniformOutput(in MsContext context)
 // #endif
 //
 //
@@ -197,8 +187,13 @@
 //              uint        index,      /* Vertex index */
 //      in      MsVertexOut vertexOut,  /* Final vertex position, etc. */
 //      in      MsShadingIn shading,    /* if MS_NO_SHADING_DATA is not set */
-//      in      FsUniform   fsUniform); /* if MS_NO_UNIFORM_OUTPUT is not set */
+//      in      MsUniformOut uniformOut); /* if MS_NO_UNIFORM_OUTPUT is not set */
 
+
+// Disable uniform output if no per-primitive outputs are used.
+#if !defined(FS_UNIFORM) && !defined(MS_EXPORT_LAYER) && !defined(MS_EXPORT_VIEWPORT)
+  #define MS_NO_UNIFORM_OUTPUT 1
+#endif
 
 
 // Disable shading data entirely if we do not
@@ -229,12 +224,21 @@ layout(triangles,
   max_primitives = MAX_PRIM_COUNT) out;
 
 
-// Fragment shader inputs
+// Per-vertex fragment shader inputs
 #ifdef FS_INPUT
 #undef FS_INPUT_VAR
 #define FS_INPUT_VAR(l, t, n) layout l out t fs_##n[];
 FS_INPUT
 #endif // FS_INPUT
+
+
+// Per-primitive fragment shader inputs
+#ifdef FS_UNIFORM
+#undef FS_INPUT_VAR
+#define FS_INPUT_VAR(l, t, n) layout l perprimitiveEXT flat out t fs_##n[];
+FS_UNIFORM
+#endif // FS_UNIFORM
+
 
 // Re-declare built-in vertex outputs with position
 // as invariant, so that depth passes are reliable.
@@ -271,18 +275,24 @@ void msExportVertexFsInput(uint index, in FsInput data) {
 // Helper function to export primitive data, including indices.
 void msExportPrimitive(uint index, u8vec3 indices
 #ifndef MS_NO_UNIFORM_OUTPUT
-  , in FsUniform fsUniform
+  , in MsUniformOut msUniform
 #endif
 ) {
   gl_PrimitiveTriangleIndicesEXT[index] = indices;
 
 #ifdef MS_EXPORT_LAYER
-  gl_MeshPrimitivesEXT[index].gl_Layer = uint(fsUniform.layer);
+  gl_MeshPrimitivesEXT[index].gl_Layer = uint(msUniform.layer);
 #endif // MS_EXPORT_LAYER
 
 #ifdef MS_EXPORT_VIEWPORT
-  gl_MeshPrimitivesEXT[index].gl_ViewportIndex = uint(fsUniform.viewport);
+  gl_MeshPrimitivesEXT[index].gl_ViewportIndex = uint(msUniform.viewport);
 #endif // MS_EXPORT_VIEWPORT
+
+#ifdef FS_UNIFORM
+#undef FS_INPUT_VAR
+#define FS_INPUT_VAR(l, t, n) fs_##n[index] = msUniform.n;
+  FS_UNIFORM
+#endif // FS_UNIFORM
 }
 
 
@@ -876,7 +886,7 @@ void msMain() {
 
   // Compute uniform fragment shader inputs
 #ifndef MS_NO_UNIFORM_OUTPUT
-  FsUniform fsUniform = msComputeFsUniform(context);
+  MsUniformOut msUniform = msComputeUniformOut(context);
 #endif
 
   // Export vertex positions and fragment shader inputs
@@ -925,7 +935,7 @@ void msMain() {
       , vertexIn.shading
 #endif // MS_NO_SHADING_DATA
 #ifndef MS_NO_UNIFORM_OUTPUT
-      , fsUniform
+      , msUniform
 #endif // MS_NO_UNIFORM_OUTPUT
     );
 
@@ -939,7 +949,7 @@ void msMain() {
     u8vec3 indices = msIndexDataShared[index].xyz;
     msExportPrimitive(index, indices
 #ifndef MS_NO_UNIFORM_OUTPUT
-      , fsUniform
+      , msUniform
 #endif // MS_NO_UNIFORM_OUTPUT
     );
   }

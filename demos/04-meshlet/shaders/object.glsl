@@ -14,16 +14,21 @@
 // could provide its own set of FS templates
 #define FS_MAIN fsMain
 
-#define MS_NO_UNIFORM_OUTPUT
+struct MsUniformOut {
+  uint meshlet;
+};
 
 // Data structures shared between FS and VS/MS
 #define FS_INPUT                                  \
   FS_INPUT_VAR((location = 0), vec3, normal)      \
-  FS_INPUT_VAR((location = 1), vec2, texcoord)    \
-  FS_INPUT_VAR((location = 2) flat, uint, meshlet)
+  FS_INPUT_VAR((location = 1), vec2, texcoord)
 
 FS_DECLARE_INPUT(FS_INPUT);
 
+#define FS_UNIFORM                                \
+  FS_INPUT_VAR((location = 2), uint, meshlet)
+
+FS_DECLARE_UNIFORM(FS_UNIFORM);
 
 ////////////////////////////
 //    FRAGMENT SHADER     //
@@ -32,13 +37,13 @@ FS_DECLARE_INPUT(FS_INPUT);
 
 layout(location = 0) out vec4 fsColor;
 
-void fsMain(in FsInput fsInput) {
+void fsMain(in FsInput fsInput, in FsUniform fsUniform) {
   float factor = 0.5f + 0.5f * dot(normalize(fsInput.normal), vec3(0.0f, 1.0f, 0.0f));
 
   vec3 color = 0.25f + 0.125f * vec3(
-    float((fsInput.meshlet & 0x007) >> 0),
-    float((fsInput.meshlet & 0x031) >> 3),
-    float((fsInput.meshlet & 0x1c0) >> 6));
+    float((fsUniform.meshlet & 0x007) >> 0),
+    float((fsUniform.meshlet & 0x031) >> 3),
+    float((fsUniform.meshlet & 0x1c0) >> 6));
 
   fsColor = vec4(color * factor, 1.0f);
 }
@@ -68,11 +73,6 @@ struct MsMorphIn {
 
 struct MsVertexOut {
   vec4 position;
-};
-
-
-struct FsUniform {
-  float frog;
 };
 
 
@@ -109,20 +109,19 @@ MsVertexOut msComputeVertexPos(in MsContext context, uint vertexIndex, in MsVert
 }
 
 
-FsInput msComputeFsInput(in MsContext context, uint vertexIndex, in MsVertexIn vertex, in MsVertexOut vertexOut, in MsShadingIn shading) {
+FsInput msComputeFsInput(in MsContext context, uint vertexIndex, in MsVertexIn vertex, in MsVertexOut vertexOut, in MsShadingIn shading, in MsUniformOut uniformOut) {
   vec4 transform = vec4(rotations[vertexIndex]);
 
   FsInput result;
   result.normal = normalize(quatApplyNorm(transform, unpackSnorm3x10(shading.normal)));
   result.texcoord = unpackUnorm2x16(shading.texcoord);
-  result.meshlet = payload.meshletIndices[gl_WorkGroupID.x];
   return result;
 }
 
 
-FsUniform msComputeFsUniform(in MsContext context) {
-  FsUniform result;
-  result.frog = 1.0f;
+MsUniformOut msComputeUniformOut(in MsContext context) {
+  MsUniformOut result;
+  result.meshlet = payload.meshletIndices[gl_WorkGroupID.x];
   return result;
 }
 
