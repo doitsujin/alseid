@@ -250,6 +250,18 @@ public:
     const GfxRayTracingBvhData*         data) override;
 
   /**
+   * \brief Clears buffer data
+   *
+   * \param [in] dstBuffer Buffer to write to
+   * \param [in] dstOffset Destination offset, in bytes
+   * \param [in] size Number of bytes to copy
+   */
+  void clearBuffer(
+    const GfxBuffer&                    dstBuffer,
+          uint64_t                      dstOffset,
+          uint64_t                      size) override;
+
+  /**
    * \brief Copies buffer data
    *
    * \param [in] dstBuffer Buffer to write to

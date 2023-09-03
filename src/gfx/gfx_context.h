@@ -411,6 +411,22 @@ public:
     const GfxRayTracingBvhData*         data) = 0;
 
   /**
+   * \brief Clears buffer
+   *
+   * Writes zeroes to a given buffer range. Regardless of how this is
+   * implemented in the backend, this behaves like other copy operations
+   * and must be synchronized with the \c GfxUsage::eTransferDst flag.
+   * Offset and size must be aligned to dword boundaries.
+   * \param [in] dstBuffer Destination buffer
+   * \param [in] dstOffset Buffer offset, in bytes
+   * \param [in] size Number of bytes to clear
+   */
+  virtual void clearBuffer(
+    const GfxBuffer&                    dstBuffer,
+          uint64_t                      dstOffset,
+          uint64_t                      size) = 0;
+
+  /**
    * \brief Copies buffer data
    *
    * \param [in] dstBuffer Buffer to write to

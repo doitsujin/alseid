@@ -596,6 +596,18 @@ void GfxVulkanContext::buildRayTracingBvh(
 }
 
 
+void GfxVulkanContext::clearBuffer(
+  const GfxBuffer&                    dstBuffer,
+        uint64_t                      dstOffset,
+        uint64_t                      size) {
+  auto& vk = m_device->vk();
+  m_barrierBatch.recordCommands(vk, m_cmd);
+
+  auto& vkDstBuffer = static_cast<GfxVulkanBuffer&>(*dstBuffer);
+  vk.vkCmdFillBuffer(m_cmd, vkDstBuffer.getHandle(), dstOffset, size, 0u);
+}
+
+
 void GfxVulkanContext::copyBuffer(
   const GfxBuffer&                    dstBuffer,
         uint64_t                      dstOffset,
