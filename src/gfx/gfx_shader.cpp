@@ -4,6 +4,7 @@
 #include "../util/util_string.h"
 
 #include "gfx_shader.h"
+#include "gfx_spirv.h"
 #include "gfx_utils.h"
 
 namespace as {
@@ -170,6 +171,26 @@ GfxShader::GfxShader(
 : IfaceRef<GfxShaderIface>(std::make_shared<GfxShaderIface>(
     std::move(desc), std::move(binary))) {
   
+}
+
+
+GfxShader GfxShader::createBuiltIn(
+        GfxShaderFormat               format,
+        size_t                        size,
+  const uint32_t*                     code) {
+  auto shaderDesc = spirvReflectBinary(size, code);
+
+  if (!shaderDesc)
+    return GfxShader();
+
+  GfxShaderBinaryDesc shaderBinary = { };
+  shaderBinary.format = format;
+  shaderBinary.data.resize(size);
+  std::memcpy(shaderBinary.data.data(), code, size);
+
+  return GfxShader(
+    std::move(*shaderDesc),
+    std::move(shaderBinary));
 }
 
 }

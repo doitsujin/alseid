@@ -362,6 +362,20 @@ public:
           GfxShaderDesc&&               desc,
           GfxShaderBinaryDesc&&         binary);
 
+  /**
+   * \brief Creates built-in shader
+   *
+   * Expects shader code to be provided as a SPIR-V binary.
+   * \param [in] format Shader format
+   * \param [in] size Shader code size
+   * \param [in] code Shader code
+   * \returns Shader object
+   */
+  static GfxShader createBuiltIn(
+          GfxShaderFormat               format,
+          size_t                        size,
+    const uint32_t*                     code);
+
 };
 
 
