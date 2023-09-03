@@ -1,0 +1,61 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csUpdateNodes
+
+#include "../as_include_head.glsl"
+
+#include "../as_scene.glsl"
+#include "../as_pass.glsl"
+
+layout(local_size_x = 128) in;
+
+// Indices of destination nodes to update
+layout(buffer_reference, scalar)
+readonly buffer IndexBuffer {
+  uint32_t indices[];
+};
+
+
+// Output node buffer
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+writeonly buffer DstNodeBuffer {
+  u32vec4     dstData[];
+};
+
+
+// Input node buffer
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+readonly buffer SrcNodeBuffer {
+  u32vec4     srcData[];
+};
+
+
+// Push constants
+layout(push_constant)
+uniform PushData {
+  DstNodeBuffer dstNodeBuffer;
+  SrcNodeBuffer srcNodeBuffer;
+  IndexBuffer   indexBuffer;
+  uint32_t      nodeCount;
+  uint32_t      nodeSize;
+};
+
+
+void csUpdateNodes() {
+  uint32_t elementCount = nodeSize / 16u;
+  uint32_t srcIndex = uint32_t(gl_GlobalInvocationID.x);
+
+  if (srcIndex < nodeCount) {
+    uint32_t dstIndex = indexBuffer.indices[srcIndex];
+
+    srcIndex *= elementCount;
+    dstIndex *= elementCount;
+
+    for (uint32_t i = 0; i < elementCount; i++)
+      dstNodeBuffer.dstData[dstIndex + i] = srcNodeBuffer.srcData[srcIndex + i];
+  }
+}
+
+#include "../as_include_tail.glsl"

@@ -95,3 +95,47 @@ uvec2 approxIdiv(uint a, uint b) {
   uint quot = uint((float(a) + 0.5f) / float(b));
   return uvec2(quot, a - b * quot);
 }
+
+
+// Computes sin(arccos(s))
+float sinForCos(float c) {
+  return sqrt(1.0f - c * c);
+}
+
+
+// Computes tan(arccos(s))
+float tanForCos(float c) {
+  return sinForCos(c) / c;
+}
+
+
+// Tests whether a point lies within a cone. The cone axis must
+// be normalized, and the cone cutoff is equal to cos(angle/2).
+bool testConePoint(vec3 point, vec3 coneOrigin, vec3 coneAxis, float coneCutoff) {
+  vec3 dir = normalize(point - coneOrigin);
+  return dot(dir, coneAxis) > coneCutoff;
+}
+
+
+// Tests whether a sphere intersects a cone. The cone axis must be
+// normalized, and the absolute cone cutoff must be less than 1.
+bool testConeSphere(vec3 sphereCenter, float sphereRadius, vec3 coneOrigin, vec3 coneAxis, float coneCutoff) {
+  vec3 dir = sphereCenter - coneOrigin;
+
+  float coneSin = sinForCos(coneCutoff);
+  float coneDot = dot(dir, coneAxis);
+
+  // Use Charles Bloom's algorithm to compute the distance
+  // between the sphere center and the surface of the cone
+  float s = sqrt(dot(dir, dir) - coneDot * coneDot);
+  float x = coneCutoff * s - coneDot * coneSin;
+  return x <= sphereRadius;
+}
+
+
+// Computes number of workgroups to dispatch for a desired thread
+// or item count. Takes the number of items to process, as well as
+// the number of items that can be processed in a single workgroup.
+uint32_t asComputeWorkgroupCount1D(uint32_t count, uint32_t workgroupSize) {
+  return (count + workgroupSize - 1u) / workgroupSize;
+}

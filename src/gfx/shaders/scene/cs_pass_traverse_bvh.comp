@@ -1,0 +1,180 @@
+// BVH traversal shader.
+//
+// Resets list headers and copies BVH root node indices to the first BVH
+// list for subsequent traversal. Requires that the pass buffer header
+// as well as the first level of BVH nodes are pre-initialized.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csTraverseBvh
+
+// Prefer small workgroups. Most of the code in this shader only scales
+// with the active render pass count, which is expected to be low.
+// BVH node chains are designed to operate on this assumption as well.
+#define CS_WORKGROUP_SIZE (32)
+
+layout(local_size_x = CS_WORKGROUP_SIZE) in;
+
+#include "../as_include_head.glsl"
+#include "../as_pass.glsl"
+#include "../as_scene.glsl"
+
+#include "as_scene_node_transform.glsl"
+
+// Helper to enable more optimal subgroup-only code paths
+bool IsSingleSubgroup = (gl_NumSubgroups == 1u && gl_SubgroupSize == CS_WORKGROUP_SIZE);
+
+
+// Buffer pointers and parameters
+layout(push_constant)
+uniform PushData {
+  uint64_t  passBuffer;
+  uint64_t  sceneBuffer;
+  uint64_t  groupBuffer;
+  uint32_t  bvhLayer;
+  uint32_t  frameId;
+};
+
+
+void csTraverseBvh() {
+  // On the subgroup-optimized path, we make some assumptions about
+  // the layout of invocations, so use the subgroup invocation ID.
+  uint32_t tid = IsSingleSubgroup
+    ? gl_SubgroupID * gl_SubgroupSize + gl_SubgroupInvocationID
+    : gl_LocalInvocationIndex;
+
+  // Render pass info buffer
+  PassInfoBuffer passInfos = PassInfoBuffer(passBuffer);
+
+  // Node property and transform buffers, used to load the BVH transform as well
+  // as to update child node transforms.
+  SceneHeader scene = SceneHeader(sceneBuffer); 
+
+  SceneNodeInfoBuffer nodeInfos = SceneNodeInfoBuffer(sceneBuffer + scene.nodeParameterOffset);
+  SceneNodeTransformBufferOut nodeTransforms = SceneNodeTransformBufferOut(sceneBuffer + scene.nodeTransformOffset);
+
+  // Node residency array. This shader will submit stream requests for the
+  // BVH node itself if it passes the distance test but is not resident.
+  SceneNodeResidencyBuffer nodeResidency = SceneNodeResidencyBuffer(sceneBuffer + scene.nodeResidencyOffset);
+
+  // BVH node and chain infos. Aliasing is intentional here since both structures
+  // are packed into the same array, just with slightly different memory layouts.
+  SceneBvhNodeBuffer bvhNodes = SceneBvhNodeBuffer(sceneBuffer + scene.bvhOffset);
+  SceneBvhChainBuffer bvhChains = SceneBvhChainBuffer(sceneBuffer + scene.bvhOffset);
+
+  // BVH node list, both for processing the current set of nodes as well as
+  // generating a list for the next iteration.
+  PassGroupBuffer group = PassGroupBuffer(groupBuffer);
+
+  PassGroupBvhList bvhList = PassGroupBvhList(groupBuffer + group.bvhListOffset);
+
+  // BVH visibility buffer. Indexed via the actual BVH index from the
+  // node reference, stores occlusion test results from prior frames.
+  PassGroupBvhVisibilityBuffer bvhVisibilityBuffer = PassGroupBvhVisibilityBuffer(groupBuffer + group.bvhVisibilityOffset);
+
+  // Instance and light node lists for processing child nodes
+  PassGroupNodeList instanceList = PassGroupNodeList(groupBuffer + group.instanceListOffset);
+  PassGroupNodeList lightList = PassGroupNodeList(groupBuffer + group.lightListOffset);
+
+  // Load info about the BVH node that the current workgroup processes.
+  uint32_t itemIndex = bvhList.header.args[bvhLayer & 1u].entryIndex + uint32_t(gl_WorkGroupID.x);
+
+  PassGroupNodeListItem bvhNodeItem = bvhList.items[itemIndex];
+  uint32_t bvhIndex = getNodeIndexFromRef(bvhNodeItem.nodeRef);
+
+  // Load absolute BVH transform. The previous iteration will have updated
+  // transforms for all relevant BVH nodes at this point, so this is safe.
+  Transform bvhTransform = nodeTransforms.nodeTransforms[bvhIndex].absoluteTransform;
+
+  // TODO implement culling
+  uint32_t passMask = (2u << (group.passCount - 1u)) - 1u;
+  passMask &= bvhNodeItem.partialVisibilityMask;
+
+  u32vec2 visibilityMask = u32vec2(passMask, 0u);
+
+  // Combine visibility with occlusion test results from the previous frame,
+  // and write back occlusion test properties for the current frame. Ensure
+  // that we perform the occlusion test even if the test failed in previous
+  // frames, or otherwise nodes will stay invisible indefinitely.
+  PassGroupBvhVisibility bvhVisibility = bvhVisibilityBuffer.bvhs[bvhIndex];
+
+  // TODO also apply the per-pass ignore mask
+  uint32_t occlusionTestFailedMask =  bvhVisibility.prevFrameOcclusionTestPerformedMask
+                                   & ~bvhVisibility.prevFrameOcclusionTestPassedMask
+                                   & ~group.ignoreOcclusionTestMask;
+
+  // TODO AND this with occlusion test mask
+  bvhVisibility.prevFrameOcclusionTestPerformedMask = visibilityMask.x;
+  bvhVisibility.prevFrameOcclusionTestPassedMask = 0u;
+
+  visibilityMask &= uvec2(~occlusionTestFailedMask);
+
+  if (tid == 0u)
+    bvhVisibilityBuffer.bvhs[bvhIndex] = bvhVisibility;
+
+  // If the BVH is partially visible in any enabled pass, process child nodes,
+  // update their absolute transform, and make them resident as necessary.
+  if (visibilityMask.x != 0u) {
+    // Read child nodes and the chained node from the base node outside the
+    // loop. This is necessary since chained nodes use a different structure.
+    uint32_t childCount = uint32_t(bvhNodes.nodes[bvhIndex].childCount);
+    uint32_t childNode = 0u;
+
+    if (tid < childCount)
+      childNode = uint32_t(bvhNodes.nodes[bvhIndex].childNodes[tid]);
+
+    // Find node containing next set of child nodes
+    int32_t nextChain = bvhNodes.nodes[bvhIndex].chainedNode;
+
+    while (true) {
+      if (tid < childCount) {
+        // Update node transform. Let subsequent passes deal with residency
+        // for each added node as necessary.
+        csComputeNodeTransform(nodeInfos, nodeTransforms, childNode, frameId);
+
+        PassGroupNodeListItem item;
+        item.nodeRef = nodeInfos.nodeInfos[childNode].nodeRef;
+        item.partialVisibilityMask = visibilityMask.x;
+        item.fullVisibilityMask = visibilityMask.y;
+
+        switch (getNodeTypeFromRef(item.nodeRef)) {
+          case NODE_TYPE_BVH:
+            bvhListAddItem(bvhList, bvhLayer, item);
+            break;
+
+          case NODE_TYPE_INSTANCE:
+            nodeListAddItem(instanceList, item, 128);
+            break;
+
+          case NODE_TYPE_LIGHT: {
+            nodeListAddItem(lightList, item, 128);
+          } break;
+        }
+      }
+
+      // Exit loop if there are no more chained nodes
+      if (nextChain < 0)
+        break;
+
+      // Read next set of child nodes from the next chained node
+      childCount = bvhChains.nodes[nextChain].childCount;
+      childNode = 0u;
+
+      if (tid < childCount)
+        childNode = bvhChains.nodes[nextChain].childNodes[tid];
+
+      nextChain = bvhChains.nodes[nextChain].chainedNode;
+    }
+  }
+
+  // Wait for all invocations to finish writing nodes to the BVH list and
+  // write out the final dispatch parameters for the next iteration.
+  controlBarrier(gl_ScopeWorkgroup, gl_ScopeQueueFamily,
+    gl_StorageSemanticsBuffer, gl_SemanticsAcquireRelease);
+
+  if (tid == 0u)
+    bvhListCommitArgs(bvhList, bvhLayer);
+}
+
+#include "../as_include_tail.glsl"

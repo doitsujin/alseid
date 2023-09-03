@@ -1,0 +1,81 @@
+// Pass buffer initialization shader.
+//
+// Resets list headers and copies BVH root node indices to the first BVH
+// list for subsequent traversal. Copies one node reference per thread,
+// which is fine since we generally expect to run only one workgroup.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csInitPassBuffer
+
+// Prefer small workgroups, since we're not expecting
+// to have a large number of root BVH nodes anyway.
+#define CS_WORKGROUP_SIZE   (32)
+
+layout(local_size_x = CS_WORKGROUP_SIZE) in;
+
+#include "../as_include_head.glsl"
+#include "../as_pass.glsl"
+#include "../as_scene.glsl"
+
+#include "as_scene_node_transform.glsl"
+
+
+// List of root node references, should be passed
+// in via a scratch buffer
+layout(set = 0, binding = 0, scalar)
+readonly buffer IndexBuffer {
+  uint32_t  nodeRefs[];
+};
+
+
+// Buffer pointers and parameters
+layout(push_constant)
+uniform PushData {
+  uint64_t  sceneBuffer;
+  uint64_t  groupBuffer;
+  uint32_t  nodeCount;
+  uint32_t  frameId;
+};
+
+
+void csInitPassBuffer() {
+  // Use a single workgroup to initialize list headers
+  PassGroupBuffer passes = PassGroupBuffer(groupBuffer);
+  PassGroupBvhList bvhList = PassGroupBvhList(groupBuffer + passes.bvhListOffset);
+
+  if (gl_WorkGroupID.x == 0u) {
+    bvhListInit(bvhList, nodeCount);
+
+    PassGroupNodeList instanceList = PassGroupNodeList(groupBuffer + passes.instanceListOffset);
+    nodeListInit(instanceList);
+
+    PassGroupNodeList lightList = PassGroupNodeList(groupBuffer + passes.lightListOffset);
+    nodeListInit(lightList);
+  }
+
+  // Copy all root nodes to the first BVH node list, while making no
+  // assumptions about their visibility. Also update the transforms.
+  SceneHeader scene = SceneHeader(sceneBuffer);
+  SceneNodeInfoBuffer nodeInfos = SceneNodeInfoBuffer(sceneBuffer + scene.nodeParameterOffset);
+  SceneNodeTransformBufferOut nodeTransforms = SceneNodeTransformBufferOut(sceneBuffer + scene.nodeTransformOffset);
+  SceneBvhNodeBuffer bvhNodes = SceneBvhNodeBuffer(sceneBuffer + scene.bvhOffset);
+
+  if (gl_GlobalInvocationID.x < nodeCount) {
+    uint32_t nodeRef = nodeRefs[gl_GlobalInvocationID.x];
+    int32_t nodeIndex = bvhNodes.nodes[getNodeIndexFromRef(nodeRef)].nodeIndex;
+
+    if (nodeIndex >= 0)
+      csComputeNodeTransform(nodeInfos, nodeTransforms, uint32_t(nodeIndex), frameId);
+
+    PassGroupNodeListItem item;
+    item.nodeRef = nodeRef;
+    item.partialVisibilityMask = (2u << (passes.passCount - 1u)) - 1u;
+    item.fullVisibilityMask = 0u;
+
+    bvhList.items[gl_GlobalInvocationID.x] = item;
+  }
+}
+
+#include "../as_include_tail.glsl"

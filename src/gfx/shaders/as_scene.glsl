@@ -10,7 +10,7 @@
 
 
 // Node types as encoded in node references
-#define NODE_TYPE_NONE                  (0u)
+#define NODE_TYPE_UNDEFINED             (0u)
 #define NODE_TYPE_BVH                   (1u)
 #define NODE_TYPE_LIGHT                 (2u)
 #define NODE_TYPE_INSTANCE              (3u)
@@ -27,6 +27,11 @@ struct SceneNode {
   uint32_t  nodeRef;
 };
 
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+readonly buffer SceneNodeInfoBuffer {
+  SceneNode nodeInfos[];
+};
+
 
 // Absolute transform of a node. The frame ID is used
 // to track and commit updates to the transform.
@@ -34,6 +39,58 @@ struct SceneNodeTransform {
   Transform absoluteTransform;
   uint32_t  updateFrameId;
 };
+
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+queuefamilycoherent buffer SceneNodeTransformBufferOut {
+  SceneNodeTransform nodeTransforms[];
+};
+
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+readonly buffer SceneNodeTransformBufferIn {
+  SceneNodeTransform nodeTransforms[];
+};
+
+
+// Node residency buffer. Stores one byte for each node. The frame
+// ID of when the node was last used should be taken from the node
+// transform array.
+layout(buffer_reference, buffer_reference_align = 4, scalar)
+writeonly buffer SceneNodeResidencyBufferOut {
+  uint8_t nodeResidency[];
+};
+
+layout(buffer_reference, buffer_reference_align = 4, scalar)
+buffer SceneNodeResidencyBuffer {
+  uint32_t nodeResidency[];
+};
+
+
+// Atomically sets streaming or eviction flag for a given node, and
+// returns the previous residency status from before the operation.
+// This is useful to only submit stream requests once per node.
+uint32_t setNodeResidencyFlags(SceneNodeResidencyBuffer nodes, uint32_t nodeIndex, uint32_t flags) {
+  uint32_t dword = nodeIndex / 4;
+  uint32_t byte  = nodeIndex % 4;
+
+  uint32_t prev = atomicOr(nodes.nodeResidency[dword], flags << (8 * byte));
+  return bitfieldExtract(prev, 8 * int32_t(byte), 8);
+}
+
+
+// Reads node residency status for a given node.
+uint32_t getNodeResidency(SceneNodeResidencyBuffer nodes, uint32_t nodeIndex) {
+  uint32_t dword = nodeIndex / 4;
+  uint32_t byte  = nodeIndex % 4;
+
+  return bitfieldExtract(nodes.nodeResidency[dword], 8 * int32_t(byte), 8);
+}
+
+
+// Sets residency status, including flags, for a given node. Must
+// not be used in conjunction with atomically setting status flags.
+void setNodeResidency(SceneNodeResidencyBufferOut nodes, uint32_t nodeIndex, uint32_t residency) {
+  nodes.nodeResidency[nodeIndex] = uint8_t(residency);
+}
 
 
 // Extracts node type from a node reference.
@@ -49,3 +106,45 @@ uint32_t getNodeIndexFromRef(uint32_t nodeRef) {
   return bitfieldExtract(nodeRef, 8, 24);
 }
 
+
+// BVH node info
+struct SceneBvhNode {
+  int32_t   nodeIndex;
+  Aabb16    aabb;
+  float16_t maxDistance;
+  uint16_t  childCount;
+  int32_t   chainedNode;
+  uint32_t  childNodes[26];
+};
+
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+readonly buffer SceneBvhNodeBuffer {
+  SceneBvhNode nodes[];
+};
+
+
+// Chained BVH node info. Stored along with BVH node parameters in
+// the same buffer, which works because the struct size is the same.
+struct SceneBvhChain {
+  uint32_t  childCount;
+  int32_t   chainedNode;
+  uint32_t  childNodes[30];
+};
+
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+readonly buffer SceneBvhChainBuffer {
+  SceneBvhChain nodes[];
+};
+
+
+// Scene buffer info. Stores a bunch of offsets to various node lists
+// that can be both written and read by various compute passes.
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+readonly buffer SceneHeader {
+  uint32_t  nodeParameterOffset;
+  uint32_t  nodeTransformOffset;
+  uint32_t  nodeResidencyOffset;
+  uint32_t  bvhOffset;
+  uint32_t  instanceOffset;
+  uint32_t  lightOffset;
+};

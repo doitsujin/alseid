@@ -1,16 +1,5 @@
 #define MAX_NODE_DEPTH (16u)
 
-layout(set = 0, binding = 0, scalar)
-readonly buffer SceneNodeBuffer {
-  SceneNode nodeInfos[];
-};
-
-layout(set = 0, binding = 1, scalar)
-queuefamilycoherent buffer SceneNodeTransformBuffer {
-  SceneNodeTransform nodeTransforms[];
-};
-
-
 // Helper function to load a sub-transform for a given node.
 // Takes the node reference rather than the actual node index.
 Transform csLoadSubTransform(uint32_t nodeRef, int32_t index) {
@@ -53,13 +42,15 @@ uint32_t csPickInvocationForNode(int32_t node) {
 // Computes and updates the absolute transform of a node using a
 // known parent transform as a starting point. Other invocations
 // will be able to observe the updated transform afterwards. 
-Transform csUpdateNodeTransform(uint32_t node, uint32_t frameId, Transform parentTransform) {
+Transform csUpdateNodeTransform(SceneNodeInfoBuffer nodes,
+    SceneNodeTransformBufferOut transforms, uint32_t node,
+    uint32_t frameId, Transform parentTransform) {
   // Compute the relative node transform, including the sub-transform
-  Transform relativeTransform = nodeInfos[node].transform;
-  int32_t subTransformIndex = nodeInfos[node].parentTransform;
+  Transform relativeTransform = nodes.nodeInfos[node].transform;
+  int32_t subTransformIndex = nodes.nodeInfos[node].parentTransform;
 
   if (subTransformIndex >= 0) {
-    Transform subTransform = csLoadSubTransform(nodeInfos[node].parentNodeRef, subTransformIndex);
+    Transform subTransform = csLoadSubTransform(nodes.nodeInfos[node].parentNodeRef, subTransformIndex);
     relativeTransform = transChain(subTransform, relativeTransform);
   }
 
@@ -69,9 +60,9 @@ Transform csUpdateNodeTransform(uint32_t node, uint32_t frameId, Transform paren
   // Write back absolute transform to the node array, and update the frame
   // ID to commit the change and make it visible to other workgroups that
   // may access the same set of nodes.
-  nodeTransforms[node].absoluteTransform = absoluteTransform;
+  transforms.nodeTransforms[node].absoluteTransform = absoluteTransform;
 
-  atomicStore(nodeTransforms[node].updateFrameId, frameId,
+  atomicStore(transforms.nodeTransforms[node].updateFrameId, frameId,
     gl_ScopeQueueFamily, gl_StorageSemanticsBuffer,
     gl_SemanticsRelease | gl_SemanticsMakeAvailable);
 
@@ -82,7 +73,9 @@ Transform csUpdateNodeTransform(uint32_t node, uint32_t frameId, Transform paren
 // Recursively computes absolute transform for a given node. This
 // actively tries to reduce the number of invocations writing to
 // each node in order to avoid redundant memory accesses.
-Transform csComputeNodeTransform(uint32_t nodeIndex, uint32_t frameId) {
+Transform csComputeNodeTransform(SceneNodeInfoBuffer nodes,
+    SceneNodeTransformBufferOut transforms, uint32_t nodeIndex,
+    uint32_t frameId) {
   // We want the node index to be signed so that we can easily
   // check for the root node, which is generally encoded as -1.
   int32_t node = int32_t(nodeIndex);
@@ -97,12 +90,13 @@ Transform csComputeNodeTransform(uint32_t nodeIndex, uint32_t frameId) {
   // Frame ID of when the current node has last been updated, and use
   // appropriate memory semantics to ensure we can correctly read the
   // updated absolute transform if the frame ID is already up to date.
-  uint32_t updateFrameId = atomicLoad(nodeTransforms[node].updateFrameId,
+  uint32_t updateFrameId = atomicLoad(
+    transforms.nodeTransforms[node].updateFrameId,
     gl_ScopeQueueFamily, gl_StorageSemanticsBuffer,
     gl_SemanticsAcquire | gl_SemanticsMakeVisible);
 
   while (updateFrameId < frameId && node >= 0 && curDepth <= MAX_NODE_DEPTH) {
-    int32_t parent = nodeInfos[node].parentNode;
+    int32_t parent = nodes.nodeInfos[node].parentNode;
 
     // Pick an invocation to update the parent node should it be necessary,
     // and write the node + parent invocation pair to the stack.
@@ -116,7 +110,8 @@ Transform csComputeNodeTransform(uint32_t nodeIndex, uint32_t frameId) {
     }
 
     if (parent >= 0) {
-      updateFrameId = atomicLoad(nodeTransforms[parent].updateFrameId,
+      updateFrameId = atomicLoad(
+        transforms.nodeTransforms[parent].updateFrameId,
         gl_ScopeQueueFamily, gl_StorageSemanticsBuffer,
         gl_SemanticsAcquire | gl_SemanticsMakeVisible);
     }
@@ -134,7 +129,7 @@ Transform csComputeNodeTransform(uint32_t nodeIndex, uint32_t frameId) {
   Transform absoluteTransform = transIdentity();
 
   if (node >= 0 && !needsParentTransform)
-    absoluteTransform = nodeTransforms[node].absoluteTransform;
+    absoluteTransform = transforms.nodeTransforms[node].absoluteTransform;
 
   for (uint32_t i = 1; i <= maxDepth; i++) {
     uint32_t layer = maxDepth - i;
@@ -148,7 +143,8 @@ Transform csComputeNodeTransform(uint32_t nodeIndex, uint32_t frameId) {
       absoluteTransform.pos = subgroupShuffle(absoluteTransform.pos, next.y);
 
       // Compute and store the absolute transform of the current node
-      absoluteTransform = csUpdateNodeTransform(next.x, frameId, absoluteTransform);
+      absoluteTransform = csUpdateNodeTransform(nodes,
+        transforms, next.x, frameId, absoluteTransform);
     }
   }
 
