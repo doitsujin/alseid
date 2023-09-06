@@ -10,11 +10,12 @@
 
 
 // Node types as encoded in node references
-#define NODE_TYPE_UNDEFINED             (0u)
+#define NODE_TYPE_ABSTRACT              (0u)
 #define NODE_TYPE_BVH                   (1u)
-#define NODE_TYPE_LIGHT                 (2u)
-#define NODE_TYPE_INSTANCE              (3u)
 
+
+#define NODE_TYPE_BUILTIN_COUNT         (2u)
+#define NODE_TYPE_COUNT                 (32u + NODE_TYPE_BUILTIN_COUNT)
 
 // Node info. Stores the relative transform
 // and the node's place within the hierarchy.
@@ -145,6 +146,4 @@ readonly buffer SceneHeader {
   uint32_t  nodeTransformOffset;
   uint32_t  nodeResidencyOffset;
   uint32_t  bvhOffset;
-  uint32_t  instanceOffset;
-  uint32_t  lightOffset;
 };

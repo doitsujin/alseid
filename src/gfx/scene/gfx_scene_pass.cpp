@@ -70,9 +70,12 @@ void GfxScenePassGroupBuffer::updateBuffer(
 GfxBuffer GfxScenePassGroupBuffer::resizeBuffer(
   const GfxScenePassGroupBufferDesc&  desc) {
   // Do nothing if the none of the capacities grow
-  if (desc.maxBvhNodes <= m_desc.maxBvhNodes
-   && desc.maxInstanceNodes <= m_desc.maxInstanceNodes
-   && desc.maxLightNodes <= m_desc.maxLightNodes)
+  bool hasGrownCapacity = false;
+
+  for (uint32_t i = 1; i < uint32_t(GfxSceneNodeType::eCount) && !hasGrownCapacity; i++)
+    hasGrownCapacity = desc.maxNodeCounts.at(i) > m_desc.maxNodeCounts.at(i);
+
+  if (!hasGrownCapacity)
     return GfxBuffer();
 
   // Clear buffer on next update. While technically unnecessary since
@@ -85,28 +88,37 @@ GfxBuffer GfxScenePassGroupBuffer::resizeBuffer(
 
   // Align capacities in such a way that we're unlikely to need to
   // resize or restructure the buffer again very soon
-  m_desc.maxBvhNodes      = align(desc.maxBvhNodes,       4096u);
-  m_desc.maxInstanceNodes = align(desc.maxInstanceNodes, 65536u);
-  m_desc.maxLightNodes    = align(desc.maxLightNodes,     4096u);
+  for (uint32_t i = 1; i < uint32_t(GfxSceneNodeType::eCount); i++)
+    m_desc.maxNodeCounts.at(i) = align(desc.maxNodeCounts.at(i), 4096u);
 
   // Compute minimum buffer size required to store everything
+  uint32_t maxBvhNodes = m_desc.maxNodeCounts[size_t(GfxSceneNodeType::eBvh)];
+
   uint32_t allocator = 0u;
   allocStorage(allocator, sizeof(m_header));
 
   m_header.bvhListOffset = allocStorage(allocator,
     sizeof(GfxSceneBvhListHeader) +
-    sizeof(GfxSceneNodeListEntry) * m_desc.maxBvhNodes);
+    sizeof(GfxSceneNodeListEntry) * maxBvhNodes);
 
   m_header.bvhVisibilityOffset = allocStorage(allocator,
-    sizeof(GfxSceneBvhVisibility) * m_desc.maxBvhNodes);
+    sizeof(GfxSceneBvhVisibility) * maxBvhNodes);
 
-  m_header.instanceListOffset = allocStorage(allocator,
-    sizeof(GfxSceneNodeListHeader) +
-    sizeof(GfxSceneNodeListEntry) * m_desc.maxInstanceNodes);
+  // Keep the offset for any unused node type at zero. This also allows
+  // us to ignore certain node types for certain pass groups entirely,
+  // e.g. light nodes during shadow passes.
+  for (uint32_t i = uint32_t(GfxSceneNodeType::eBuiltInCount); i < uint32_t(GfxSceneNodeType::eCount); i++) {
+    uint32_t count = m_desc.maxNodeCounts.at(i);
+    uint32_t offset = 0u;
 
-  m_header.lightListOffset = allocStorage(allocator,
-    sizeof(GfxSceneNodeListHeader) +
-    sizeof(GfxSceneNodeListEntry) * m_desc.maxLightNodes);
+    if (count) {
+      offset = allocStorage(allocator,
+        sizeof(GfxSceneNodeListHeader) +
+        sizeof(GfxSceneNodeListEntry) * count);
+    }
+
+    m_header.nodeListOffsets.at(i - uint32_t(GfxSceneNodeType::eBuiltInCount)) = offset;
+  }
 
   // If possible, just reuse the existing buffer. We don't need to do
   // anything, the header update and the required initialization pass

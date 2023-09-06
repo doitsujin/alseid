@@ -21,16 +21,12 @@ GfxBuffer GfxSceneBuffer::resizeBuffer(
   GfxSceneBufferDesc oldDesc = m_desc;
 
   if (desc.nodeCount <= oldDesc.nodeCount
-   && desc.bvhCount <= oldDesc.bvhCount
-   && desc.instanceCount <= oldDesc.instanceCount
-   && desc.lightCount <= oldDesc.lightCount)
+   && desc.bvhCount <= oldDesc.bvhCount)
     return GfxBuffer();
 
   // Align all capacities to large enough numbers to reduce reallocations.
-  m_desc.nodeCount      = std::max(m_desc.nodeCount,      align(desc.nodeCount,     1u << 16));
-  m_desc.bvhCount       = std::max(m_desc.bvhCount,       align(desc.bvhCount,      1u << 12));
-  m_desc.instanceCount  = std::max(m_desc.instanceCount,  align(desc.instanceCount, 1u << 16));
-  m_desc.lightCount     = std::max(m_desc.lightCount,     align(desc.lightCount,    1u << 12));
+  m_desc.nodeCount = std::max(m_desc.nodeCount, align(desc.nodeCount, 1u << 16));
+  m_desc.bvhCount  = std::max(m_desc.bvhCount,  align(desc.bvhCount,  1u << 12));
 
   // Compute the actual buffer layout.
   uint32_t allocator = 0;
@@ -48,12 +44,6 @@ GfxBuffer GfxSceneBuffer::resizeBuffer(
 
   newHeader.bvhOffset = allocStorage(allocator,
     sizeof(GfxSceneBvhInfo) * m_desc.bvhCount);
-
-  newHeader.instanceOffset = allocStorage(allocator,
-    sizeof(GfxSceneInstanceInfo) * m_desc.instanceCount);
-
-  newHeader.lightOffset = allocStorage(allocator,
-    sizeof(GfxSceneInstanceInfo) * m_desc.lightCount);
 
   GfxSceneHeader oldHeader = m_header;
 
@@ -105,20 +95,6 @@ GfxBuffer GfxSceneBuffer::resizeBuffer(
       newBuffer, newHeader.bvhOffset,
       oldBuffer, oldHeader.bvhOffset,
       sizeof(GfxSceneBvhInfo) * oldDesc.bvhCount);
-  }
-
-  if (oldDesc.instanceCount) {
-    context->copyBuffer(
-      newBuffer, newHeader.instanceOffset,
-      oldBuffer, oldHeader.instanceOffset,
-      sizeof(GfxSceneInstanceInfo) * oldDesc.instanceCount);
-  }
-
-  if (oldDesc.lightCount) {
-    context->copyBuffer(
-      newBuffer, newHeader.lightOffset,
-      oldBuffer, oldHeader.lightOffset,
-      sizeof(GfxSceneLightInfo) * oldDesc.lightCount);
   }
 
   context->endDebugLabel();

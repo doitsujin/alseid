@@ -34,9 +34,8 @@ readonly buffer PassGroupBuffer {
   uint32_t  ignoreOcclusionTestMask;
   uint32_t  bvhListOffset;
   uint32_t  bvhVisibilityOffset;
-  uint32_t  instanceListOffset;
-  uint32_t  lightListOffset;
-  uint16_t  passIndices[];
+  uint16_t  passIndices[PASS_COUNT_PER_GROUP];
+  uint32_t  nodeListOffsets[];
 };
 
 
@@ -70,12 +69,17 @@ buffer PassGroupNodeList {
 // Initializes node list header with an entry count of zero and
 // appropriate defaults for the indirect dispatch arguments.
 void nodeListInit(
-        PassGroupNodeList               list) {
-  uint32_t tid = gl_LocalInvocationIndex;
+        uint64_t                        groupBuffer,
+        uint32_t                        tid) {
+  PassGroupBuffer group = PassGroupBuffer(groupBuffer);
 
-  if (tid == 0u) {
-    list.header = PassGroupNodeListHeader(
-      u32vec3(0u, 1u, 1u), 0u);
+  if (tid < (NODE_TYPE_COUNT - NODE_TYPE_BUILTIN_COUNT)) {
+    uint32_t offset = group.nodeListOffsets[tid];
+
+    if (offset != 0u) {
+      PassGroupNodeList list = PassGroupNodeList(groupBuffer + offset);
+      list.header = PassGroupNodeListHeader(u32vec3(0u, 1u, 1u), 0u);
+    }
   }
 }
 
@@ -83,26 +87,51 @@ void nodeListInit(
 // Adds node entry to the list. Requries the header to be zero-initialized
 // before adding the first item, and initializes the dispatch argument with
 // the required workgroup count as the entrycount increases. The workgroup
-// count must be a power of two. Note that the list parameter must be uniform.
-void nodeListAddItem(
-        PassGroupNodeList               list,
+// count must be a power of two.
+void nodeListAdd(
+        uint64_t                        groupBuffer,
   in    PassGroupNodeListItem           item,
         uint32_t                        workgroupSize) {
-  u32vec4 ballot = subgroupBallot(true);
-  uint32_t localCount = subgroupBallotBitCount(ballot);
-  uint32_t localIndex = subgroupBallotExclusiveBitCount(ballot);
+  // Exit early if the node type is not valid
+  uint32_t nodeType = getNodeTypeFromRef(item.nodeRef);
+
+  if (nodeType < NODE_TYPE_BUILTIN_COUNT)
+    return;
+
+  // Exit early if there is no list for the given node type
+  PassGroupBuffer group = PassGroupBuffer(groupBuffer);
+  uint32_t offset = group.nodeListOffsets[nodeType - NODE_TYPE_BUILTIN_COUNT];
+
+  if (offset == 0u)
+    return;
+
+  // For each unique node type within a subgroup, compute the
+  // number of nodes and pick an invoaction to do the atomic.
+  uint32_t localFirst;
+  uint32_t localCount;
+  uint32_t localIndex;
+
+  SUBGROUP_SCALARIZE(offset) {
+    u32vec4 ballot = subgroupBallot(true);
+    localCount = subgroupBallotBitCount(ballot);
+    localIndex = subgroupBallotExclusiveBitCount(ballot);
+    localFirst = subgroupBallotFindLSB(ballot);
+  }
+
+  // Add the node item to the given list
+  PassGroupNodeList list = PassGroupNodeList(groupBuffer + offset);
 
   uint32_t entry;
 
-  if (subgroupElect())
+  if (localIndex == 0u)
     entry = atomicAdd(list.header.entryCount, localCount);
 
-  entry = subgroupBroadcastFirst(entry) + localIndex;
+  entry = subgroupShuffle(entry, localFirst) + localIndex;
+  list.items[entry] = item;
 
+  // Update the dispatch workgroup count as necessary
   if ((entry % workgroupSize) == 0u)
     atomicMax(list.header.dispatch.x, (entry / workgroupSize) + 1u);
-
-  list.items[entry] = item;
 }
 
 
@@ -145,11 +174,10 @@ buffer PassGroupBvhList {
 // number of root items, and initializes dispatch parameters as necessary.
 void bvhListInit(
         PassGroupBvhList                list,
-        uint32_t                        rootCount) {
-  uint32_t tid = gl_LocalInvocationIndex;
-  uint32_t entryCount = tid == 0u ? rootCount : 0u;
-
+        uint32_t                        rootCount,
+        uint32_t                        tid) {
   if (tid < 2u) {
+    uint32_t entryCount = tid == 0u ? rootCount : 0u;
     list.header.args[tid] = PassGroupBvhListArgs(
       u32vec3(entryCount, 1u, 1u), entryCount, 0u);
   }

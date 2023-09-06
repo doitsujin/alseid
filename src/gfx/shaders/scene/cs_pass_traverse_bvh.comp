@@ -17,8 +17,8 @@
 layout(local_size_x = CS_WORKGROUP_SIZE) in;
 
 #include "../as_include_head.glsl"
-#include "../as_pass.glsl"
 #include "../as_scene.glsl"
+#include "../as_pass.glsl"
 
 #include "as_scene_node_transform.glsl"
 
@@ -72,10 +72,6 @@ void csTraverseBvh() {
   // BVH visibility buffer. Indexed via the actual BVH index from the
   // node reference, stores occlusion test results from prior frames.
   PassGroupBvhVisibilityBuffer bvhVisibilityBuffer = PassGroupBvhVisibilityBuffer(groupBuffer + group.bvhVisibilityOffset);
-
-  // Instance and light node lists for processing child nodes
-  PassGroupNodeList instanceList = PassGroupNodeList(groupBuffer + group.instanceListOffset);
-  PassGroupNodeList lightList = PassGroupNodeList(groupBuffer + group.lightListOffset);
 
   // Load info about the BVH node that the current workgroup processes.
   uint32_t itemIndex = bvhList.header.args[bvhLayer & 1u].entryIndex + uint32_t(gl_WorkGroupID.x);
@@ -138,19 +134,12 @@ void csTraverseBvh() {
         item.partialVisibilityMask = visibilityMask.x;
         item.fullVisibilityMask = visibilityMask.y;
 
-        switch (getNodeTypeFromRef(item.nodeRef)) {
-          case NODE_TYPE_BVH:
-            bvhListAddItem(bvhList, bvhLayer, item);
-            break;
+        uint32_t nodeType = getNodeTypeFromRef(item.nodeRef);
 
-          case NODE_TYPE_INSTANCE:
-            nodeListAddItem(instanceList, item, 128);
-            break;
-
-          case NODE_TYPE_LIGHT: {
-            nodeListAddItem(lightList, item, 128);
-          } break;
-        }
+        if (nodeType == NODE_TYPE_BVH)
+          bvhListAddItem(bvhList, bvhLayer, item);
+        else
+          nodeListAdd(groupBuffer, item, 64u);
       }
 
       // Exit loop if there are no more chained nodes

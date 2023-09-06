@@ -16,18 +16,28 @@ namespace as {
  * \brief Node type
  */
 enum class GfxSceneNodeType : uint8_t {
-  /** Abstract node. */
-  eNone     = 0,
-  /** BVH node. */
-  eBvh      = 1,
-  /** Light node. */
-  eLight    = 2,
-  /** Geometry instance. */
-  eInstance = 3,
+  /** Abstract node. The value of this must not change,
+   *  since node references may be zero-initialized. */
+  eNone             = 0,
+  /** BVH node. The value of this must not be changed,
+   *  since  */
+  eBvh              = 1,
 
-  /** Number of different node types. Used to
-   *  determine the size of some lookup tables. */
-  eCount
+  /** Instance node. */
+  eInstance         = 2,
+  /** Light node. */
+  eLight            = 3,
+  /** Reflection probe. */
+  eReflectionProbe  = 4,
+  /** First custom node type. */
+  eFirstCustom      = 16,
+
+  /** Number of special node types. */
+  eBuiltInCount     = 2,
+
+  /** Maximum number of different node types. Used
+   *  to determine the size of some lookup tables. */
+  eCount            = 32 + uint8_t(eBuiltInCount)
 };
 
 
@@ -276,24 +286,6 @@ using GfxSceneNodeResidencyFlags = Flags<GfxSceneNodeResidencyFlag>;
 
 
 /**
- * \brief Instance node
- */
-struct GfxSceneInstanceInfo {
-  /** Node index of where the transform is stored. */
-  int32_t nodeIndex;
-};
-
-
-/**
- * \brief Light node
- */
-struct GfxSceneLightInfo {
-  /** Node index of where the transform is stored. */
-  int32_t nodeIndex;
-};
-
-
-/**
  * \brief Scene buffer header
  *
  * Stores the data layout of the scene buffer.
@@ -311,15 +303,9 @@ struct GfxSceneHeader {
   /** Offset of BVH infos in bytes, relative to the start of the buffer.
    *  Points to an array of \c GfxSceneBvhInfo structures. */
   uint32_t bvhOffset;
-  /** Offset of instance infos relative to the start of the buffer.
-   *  Points to an array of \c GfxSceneInstanceInfo structures. */
-  uint32_t instanceOffset;
-  /** Offset of light infos relative to the start of the buffer.
-   *  Points to an array of \c GfxSceneLightInfo structures. */
-  uint32_t lightOffset;
 };
 
-static_assert(sizeof(GfxSceneHeader) == 24);
+static_assert(sizeof(GfxSceneHeader) == 16);
 
 
 /**
@@ -329,14 +315,10 @@ static_assert(sizeof(GfxSceneHeader) == 24);
  * used to compute the buffer size and layout.
  */
 struct GfxSceneBufferDesc {
-  /** Total number of abstract nodes */
+  /** Total number of generic nodes */
   uint32_t nodeCount = 0u;
   /** Total number of BVH nodes */
   uint32_t bvhCount = 0u;
-  /** Total number of instance nodes */
-  uint32_t instanceCount = 0u;
-  /** Total number of light nodes */
-  uint32_t lightCount = 0u;
 };
 
 

@@ -53,28 +53,6 @@ using GfxScenePassFlags = Flags<GfxScenePassFlag>;
 
 
 /**
- * \brief Render pass description
- *
- * Used as input when pre-processing render passes. Stores the projection,
- * relative world-space transforms, and links to the parent node as necessary.
- * For any render pass attached to a joint, the corresponding instance must
- * have all its joint transforms updated before computing view transforms.
- */
-struct GfxScenePassDesc {
-  /** Projection for the render pass. */
-  Projection projection;
-  /** World space rotation of the camera. */
-  Vector4D worldSpaceRotation;
-  /** World space translation of the camera. */
-  Vector3D worldSpaceTranslation;
-  /** Render pass type */
-  GfxScenePassType type;
-  /** Render pass flags */
-  GfxScenePassFlags flags;
-};
-
-
-/**
  * \brief Render pass info
  *
  * Stores properties of a single render pass. Render passes must be
@@ -145,19 +123,13 @@ struct GfxScenePassGroupHeader {
   /** Offset of persistent BVH visibility buffer. Stores masks of which
    *  passes performed and passed occlusion testing for any given BVH node. */
   uint32_t bvhVisibilityOffset;
-  /** Offset of the instance node buffer, relative to the start of the header.
-   *  Stores instance visibility information as well as a set of indirect
-   *  dispatch parameters for generating draw lists. */
-  uint32_t instanceListOffset;
-  /** Offset of the light node list. Stores a set of passes where the light
-   *  is potentially visible, as well as a set of indirect dispatch parameters
-   *  for generating a tighter light list for use in rendering. */
-  uint32_t lightListOffset;
   /** Render pass indices. */
   std::array<uint16_t, GfxMaxPassesPerGroup> passes;
+  /** Offset of each typed node list, except for BVHs and abstract nodes. */
+  std::array<uint32_t, size_t(GfxSceneNodeType::eCount) - size_t(GfxSceneNodeType::eBuiltInCount)> nodeListOffsets;
 };
 
-static_assert(sizeof(GfxScenePassGroupHeader) == 88);
+static_assert(sizeof(GfxScenePassGroupHeader) == 208);
 
 
 /**
@@ -200,12 +172,9 @@ static_assert(sizeof(GfxSceneBvhListHeader) == 48);
  * that need to be stored in the pass group buffer.
  */
 struct GfxScenePassGroupBufferDesc {
-  /** Maximum number of BHV nodes. */
-  uint32_t maxBvhNodes = 0u;
-  /** Maximum number of instance nodes. */
-  uint32_t maxInstanceNodes = 0u;
-  /** Maximum number of light nodes. */
-  uint32_t maxLightNodes = 0u;
+  /** Maximum number of nodes for each type. Nodes used in rendering
+   *  will be distributed to one list per node type. */
+  std::array<uint32_t, size_t(GfxSceneNodeType::eCount)> maxNodeCounts = { };
 };
 
 

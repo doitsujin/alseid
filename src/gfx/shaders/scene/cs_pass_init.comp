@@ -16,8 +16,8 @@
 layout(local_size_x = CS_WORKGROUP_SIZE) in;
 
 #include "../as_include_head.glsl"
-#include "../as_pass.glsl"
 #include "../as_scene.glsl"
+#include "../as_pass.glsl"
 
 #include "as_scene_node_transform.glsl"
 
@@ -41,18 +41,15 @@ uniform PushData {
 
 
 void csInitPassBuffer() {
+  uint32_t gid = gl_GlobalInvocationID.x;
+
   // Use a single workgroup to initialize list headers
   PassGroupBuffer passes = PassGroupBuffer(groupBuffer);
   PassGroupBvhList bvhList = PassGroupBvhList(groupBuffer + passes.bvhListOffset);
 
   if (gl_WorkGroupID.x == 0u) {
-    bvhListInit(bvhList, nodeCount);
-
-    PassGroupNodeList instanceList = PassGroupNodeList(groupBuffer + passes.instanceListOffset);
-    nodeListInit(instanceList);
-
-    PassGroupNodeList lightList = PassGroupNodeList(groupBuffer + passes.lightListOffset);
-    nodeListInit(lightList);
+    bvhListInit(bvhList, nodeCount, gid);
+    nodeListInit(groupBuffer, gid);
   }
 
   // Copy all root nodes to the first BVH node list, while making no
@@ -62,8 +59,8 @@ void csInitPassBuffer() {
   SceneNodeTransformBufferOut nodeTransforms = SceneNodeTransformBufferOut(sceneBuffer + scene.nodeTransformOffset);
   SceneBvhNodeBuffer bvhNodes = SceneBvhNodeBuffer(sceneBuffer + scene.bvhOffset);
 
-  if (gl_GlobalInvocationID.x < nodeCount) {
-    uint32_t nodeRef = nodeRefs[gl_GlobalInvocationID.x];
+  if (gid < nodeCount) {
+    uint32_t nodeRef = nodeRefs[gid];
     int32_t nodeIndex = bvhNodes.nodes[getNodeIndexFromRef(nodeRef)].nodeIndex;
 
     if (nodeIndex >= 0)
@@ -74,7 +71,7 @@ void csInitPassBuffer() {
     item.partialVisibilityMask = (2u << (passes.passCount - 1u)) - 1u;
     item.fullVisibilityMask = 0u;
 
-    bvhList.items[gl_GlobalInvocationID.x] = item;
+    bvhList.items[gid] = item;
   }
 }
 
