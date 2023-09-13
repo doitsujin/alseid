@@ -6,8 +6,6 @@
 
 namespace as {
 
-constexpr size_t CacheLineSize = 64;
-
 /**
  * \brief Offsets a pointer by the given amount
  *
