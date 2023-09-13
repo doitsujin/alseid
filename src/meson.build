@@ -1,6 +1,7 @@
 as_files = files([
   'gfx/gfx.cpp',
   'gfx/gfx_buffer.cpp',
+  'gfx/gfx_buffer_pool.cpp',
   'gfx/gfx_format.cpp',
   'gfx/gfx_geometry.cpp',
   'gfx/gfx_image.cpp',
