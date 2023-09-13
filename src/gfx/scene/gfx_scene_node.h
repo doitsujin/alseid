@@ -49,6 +49,18 @@ enum class GfxSceneNodeType : uint8_t {
  * node is stored, including the original scene node index.
  */
 struct GfxSceneNodeRef {
+  GfxSceneNodeRef() = default;
+
+  GfxSceneNodeRef(
+          GfxSceneNodeType              type_,
+          uint32_t                      index_)
+  : type(type_), index(index_) { }
+
+  GfxSceneNodeRef(
+          GfxSceneNodeType              type_,
+          uint24_t                      index_)
+  : type(type_), index(index_) { }
+
   /** Node type. */
   GfxSceneNodeType type;
   /** Index into the typed node array. Not the scene node index. */
