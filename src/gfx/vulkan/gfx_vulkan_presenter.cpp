@@ -649,7 +649,7 @@ void GfxVulkanPresenter::recordBlit(
         GfxContext                    context,
         GfxImage                      srcImage,
         GfxImage                      dstImage) {
-  context->beginDebugLabel("Vulkan swap chain blit", { 0.8f, 0.8f, 0.8f, 1.0f });
+  context->beginDebugLabel("Vulkan swap chain blit", 0xffccccccu);
 
   GfxImageDesc srcImageDesc = srcImage->getDesc();
   GfxImageDesc dstImageDesc = dstImage->getDesc();

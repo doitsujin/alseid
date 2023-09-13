@@ -49,7 +49,7 @@ void GfxScenePassGroupBuffer::setPasses(
 
 void GfxScenePassGroupBuffer::updateBuffer(
   const GfxContext&                   context) {
-  context->beginDebugLabel("Pass buffer update", GfxColorValue(0.6f, 0.6f, 0.6f, 1.0f));
+  context->beginDebugLabel("Update pass buffer", 0xffffb096u);
 
   auto scratch = context->allocScratch(GfxUsage::eCpuWrite | GfxUsage::eTransferSrc, sizeof(m_header));
   std::memcpy(scratch.map(GfxUsage::eCpuWrite, 0), &m_header, sizeof(m_header));

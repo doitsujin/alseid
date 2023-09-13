@@ -3,6 +3,7 @@
 #include <array>
 
 #include "../util/util_flags.h"
+#include "../util/util_math.h"
 
 #include "gfx_image.h"
 #include "gfx_types.h"
@@ -88,6 +89,12 @@ union GfxColorValue {
 
   GfxColorValue(int32_t r, int32_t g, int32_t b, int32_t a)
   : i(r, g, b, a) { }
+
+  GfxColorValue(uint32_t rgba) : f(
+    float(bextract(rgba,  0, 8)) / 255.0f,
+    float(bextract(rgba,  8, 8)) / 255.0f,
+    float(bextract(rgba, 16, 8)) / 255.0f,
+    float(bextract(rgba, 24, 8)) / 255.0f) { }
 
   GfxTypedColorValue<float>     f;  ///< Float representation
   GfxTypedColorValue<uint32_t>  u;  ///< Unsigned integer representation

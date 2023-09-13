@@ -64,7 +64,7 @@ GfxBuffer GfxSceneBuffer::resizeBuffer(
 
   // Zero-initialize entire buffer. This is more robust and easier
   // to reason about than just clearing the parts that require it.
-  context->beginDebugLabel("Scene buffer copy", GfxColorValue(0.8f, 0.8f, 0.8f, 1.0f));
+  context->beginDebugLabel("Copy scene buffer", 0xffffb096u);
   context->clearBuffer(newBuffer, 0, allocator);
   context->memoryBarrier(GfxUsage::eTransferDst, 0, GfxUsage::eTransferDst, 0);
 
