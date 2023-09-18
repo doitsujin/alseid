@@ -132,6 +132,9 @@ namespace as {
           T& operator [] (size_t idx)       { return *ptr(idx); }
     const T& operator [] (size_t idx) const { return *ptr(idx); }
 
+    T* begin() { return ptr(0); }
+    T* end() { return ptr(m_size); }
+
           T& front()       { return *ptr(0); }
     const T& front() const { return *ptr(0); }
 
