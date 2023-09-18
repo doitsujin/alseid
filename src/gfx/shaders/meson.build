@@ -26,6 +26,7 @@ as_shader_includes = files(
 as_shader_builtins = [
   'scene/cs_pass_init.comp',
   'scene/cs_pass_traverse_bvh.comp',
+  'scene/cs_pass_traverse_reset.comp',
 
   'scene/cs_scene_update.comp',
 ]

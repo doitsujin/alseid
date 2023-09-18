@@ -108,6 +108,12 @@ uint32_t getNodeIndexFromRef(uint32_t nodeRef) {
 }
 
 
+// Builds node reference from a type and index pair.
+uint32_t makeNodeRef(uint32_t type, uint32_t index) {
+  return type | (index << 8u);
+}
+
+
 // BVH node info
 struct SceneBvhNode {
   int32_t   nodeIndex;
@@ -121,20 +127,6 @@ struct SceneBvhNode {
 layout(buffer_reference, buffer_reference_align = 16, scalar)
 readonly buffer SceneBvhNodeBuffer {
   SceneBvhNode nodes[];
-};
-
-
-// Chained BVH node info. Stored along with BVH node parameters in
-// the same buffer, which works because the struct size is the same.
-struct SceneBvhChain {
-  uint32_t  childCount;
-  int32_t   chainedNode;
-  uint32_t  childNodes[30];
-};
-
-layout(buffer_reference, buffer_reference_align = 16, scalar)
-readonly buffer SceneBvhChainBuffer {
-  SceneBvhChain nodes[];
 };
 
 

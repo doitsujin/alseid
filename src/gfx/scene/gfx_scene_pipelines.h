@@ -1,8 +1,10 @@
 #pragma once
 
+#include "../../util/util_object_map.h"
+
 #include "../gfx.h"
 
-#include "gfx_scene_node.h"
+#include "gfx_scene_common.h"
 
 namespace as {
 
@@ -113,7 +115,7 @@ public:
           uint64_t                      nodeDataVa,
           uint32_t                      nodeCount,
     const uint32_t*                     nodeIndices,
-    const T*                            srcNodes) const {
+    const ObjectMap<T>&                 srcNodes) const {
     static_assert(!(sizeof(T) % 16));
 
     auto indexBuffer = context->writeScratch(GfxUsage::eShaderResource,
@@ -121,7 +123,7 @@ public:
 
     auto dataBuffer = context->allocScratch(
       GfxUsage::eCpuWrite | GfxUsage::eShaderResource,
-      sizeof(*srcNodes) * nodeCount);
+      sizeof(T) * nodeCount);
 
     // Pack node data into the linear scratch buffer, unpacking
     // will happen in the shader based on the index buffer
@@ -150,12 +152,14 @@ public:
    * must insert a barrier between layers to ensure the buffers can be used for
    * both \c GfxUsage::eShaderResource and \c GfxUsage::eShaderStorage.
    * \param [in] context Context object
-   * \param [in] dispatch Indirect dispatch descriptor
+   * \param [in] dispatchTraverse Indirect dispatch descriptor for traversal
+   * \param [in] dispatchTraverse Indirect dispatch descriptor for reset
    * \param [in] args Push constants, including buffer addresses
    */
   void processBvhLayer(
     const GfxContext&                   context,
-    const GfxDescriptor&                dispatch,
+    const GfxDescriptor&                dispatchTraverse,
+    const GfxDescriptor&                dispatchReset,
     const GfxSceneTraverseBvhArgs&      args) const;
 
 private:
@@ -164,6 +168,7 @@ private:
 
   GfxComputePipeline  m_csPassInit;
   GfxComputePipeline  m_csPassTraverseBvh;
+  GfxComputePipeline  m_csPassTraverseReset;
 
   GfxComputePipeline  m_csSceneUpdate;
 

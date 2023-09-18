@@ -1,0 +1,38 @@
+// BVH reset shader.
+//
+// Only executed to overwrite the traversal workgroup
+// count to 0 for the next iteration as necessary.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csResetBvh
+
+// Trivial shader, only needs one thread
+layout(local_size_x = 1) in;
+
+#include "../as_include_head.glsl"
+#include "../as_scene.glsl"
+#include "../as_pass.glsl"
+
+// Buffer pointers and parameters. Must match the structure of
+// the actual traversal shader exactly, even if some of these
+// are unused.
+layout(push_constant)
+uniform PushData {
+  uint64_t  passBuffer;
+  uint64_t  sceneBuffer;
+  uint64_t  groupBuffer;
+  uint32_t  bvhLayer;
+  uint32_t  frameId;
+};
+
+
+void csResetBvh() {
+  PassGroupBuffer group = PassGroupBuffer(groupBuffer);
+  PassGroupBvhList bvhList = PassGroupBvhList(groupBuffer + group.bvhListOffset);
+
+  bvhListResetArgs(bvhList, bvhLayer);
+}
+
+#include "../as_include_tail.glsl"

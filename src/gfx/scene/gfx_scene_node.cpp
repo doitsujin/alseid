@@ -1,24 +1,29 @@
+#include <algorithm>
+
+#include "../../util/util_small_vector.h"
+
 #include "gfx_scene_node.h"
+#include "gfx_scene_pass.h"
 
 namespace as {
 
-GfxSceneBuffer::GfxSceneBuffer(
+GfxSceneNodeBuffer::GfxSceneNodeBuffer(
         GfxDevice                     device)
 : m_device(std::move(device)) {
 
 }
 
 
-GfxSceneBuffer::~GfxSceneBuffer() {
+GfxSceneNodeBuffer::~GfxSceneNodeBuffer() {
 
 }
 
 
-GfxBuffer GfxSceneBuffer::resizeBuffer(
+GfxBuffer GfxSceneNodeBuffer::resizeBuffer(
   const GfxContext&                   context,
-  const GfxSceneBufferDesc&           desc) {
+  const GfxSceneNodeBufferDesc&       desc) {
   // Don't do anything if the buffer layout does not change
-  GfxSceneBufferDesc oldDesc = m_desc;
+  GfxSceneNodeBufferDesc oldDesc = m_desc;
 
   if (desc.nodeCount <= oldDesc.nodeCount
    && desc.bvhCount <= oldDesc.bvhCount)
@@ -30,9 +35,9 @@ GfxBuffer GfxSceneBuffer::resizeBuffer(
 
   // Compute the actual buffer layout.
   uint32_t allocator = 0;
-  allocStorage(allocator, sizeof(GfxSceneHeader));
+  allocStorage(allocator, sizeof(GfxSceneNodeHeader));
 
-  GfxSceneHeader newHeader = { };
+  GfxSceneNodeHeader newHeader = { };
   newHeader.nodeParameterOffset = allocStorage(allocator,
     sizeof(GfxSceneNodeInfo) * m_desc.nodeCount);
 
@@ -45,7 +50,7 @@ GfxBuffer GfxSceneBuffer::resizeBuffer(
   newHeader.bvhOffset = allocStorage(allocator,
     sizeof(GfxSceneBvhInfo) * m_desc.bvhCount);
 
-  GfxSceneHeader oldHeader = m_header;
+  GfxSceneNodeHeader oldHeader = m_header;
 
   // Create a new buffer that's large enough to hold all data
   std::string name = strcat("Scene buffer v", ++m_version);
@@ -64,7 +69,7 @@ GfxBuffer GfxSceneBuffer::resizeBuffer(
 
   // Zero-initialize entire buffer. This is more robust and easier
   // to reason about than just clearing the parts that require it.
-  context->beginDebugLabel("Copy scene buffer", 0xffffb096u);
+  context->beginDebugLabel("Copy scene buffer", 0xffffc096u);
   context->clearBuffer(newBuffer, 0, allocator);
   context->memoryBarrier(GfxUsage::eTransferDst, 0, GfxUsage::eTransferDst, 0);
 
@@ -106,7 +111,7 @@ GfxBuffer GfxSceneBuffer::resizeBuffer(
 }
 
 
-uint32_t GfxSceneBuffer::allocStorage(
+uint32_t GfxSceneNodeBuffer::allocStorage(
         uint32_t&                     allocator,
         size_t                        size) {
   uint32_t offset = allocator;

@@ -4,6 +4,7 @@
 
 #include <cs_pass_init.h>
 #include <cs_pass_traverse_bvh.h>
+#include <cs_pass_traverse_reset.h>
 
 #include <cs_scene_update.h>
 
@@ -14,6 +15,7 @@ GfxScenePipelines::GfxScenePipelines(
 : m_device              (std::move(device))
 , m_csPassInit          (createComputePipeline("cs_pass_init", cs_pass_init))
 , m_csPassTraverseBvh   (createComputePipeline("cs_pass_traverse_bvh", cs_pass_traverse_bvh))
+, m_csPassTraverseReset (createComputePipeline("cs_pass_traverse_reset", cs_pass_traverse_reset))
 , m_csSceneUpdate       (createComputePipeline("cs_scene_update", cs_scene_update)) {
 
 }
@@ -40,11 +42,18 @@ void GfxScenePipelines::initPassGroupBuffer(
 
 void GfxScenePipelines::processBvhLayer(
   const GfxContext&                   context,
-  const GfxDescriptor&                dispatch,
+  const GfxDescriptor&                dispatchTraverse,
+  const GfxDescriptor&                dispatchReset,
   const GfxSceneTraverseBvhArgs&      args) const {
+  // Dispatch the shader to process relevant child nodes.
   context->bindPipeline(m_csPassTraverseBvh);
   context->setShaderConstants(0, args);
-  context->dispatchIndirect(dispatch);
+  context->dispatchIndirect(dispatchTraverse);
+
+  // No barrier needed since execution of these shaders is mutually
+  // exclusive, in that the dispatch args for one will always be 0.
+  context->bindPipeline(m_csPassTraverseReset);
+  context->dispatchIndirect(dispatchReset);
 }
 
 }

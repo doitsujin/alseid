@@ -1,74 +1,19 @@
 #pragma once
 
+#include "../../util/util_object_map.h"
 #include "../../util/util_quaternion.h"
-#include "../../util/util_small_vector.h"
-#include "../../util/util_types.h"
 
 #include "../gfx.h"
 #include "../gfx_geometry.h"
 #include "../gfx_types.h"
 
+#include "gfx_scene_common.h"
 #include "gfx_scene_draw.h"
+#include "gfx_scene_pipelines.h"
 
 namespace as {
 
-/**
- * \brief Node type
- */
-enum class GfxSceneNodeType : uint8_t {
-  /** Abstract node. The value of this must not change,
-   *  since node references may be zero-initialized. */
-  eNone             = 0,
-  /** BVH node. The value of this must not be changed,
-   *  since  */
-  eBvh              = 1,
-
-  /** Instance node. */
-  eInstance         = 2,
-  /** Light node. */
-  eLight            = 3,
-  /** Reflection probe. */
-  eReflectionProbe  = 4,
-  /** First custom node type. */
-  eFirstCustom      = 16,
-
-  /** Number of special node types. */
-  eBuiltInCount     = 2,
-
-  /** Maximum number of different node types. Used
-   *  to determine the size of some lookup tables. */
-  eCount            = 32 + uint8_t(eBuiltInCount)
-};
-
-
-/**
- * \brief Node reference
- *
- * Defines the type of a node, as well as the type-specific index
- * of that node which defines where type-specific data for that
- * node is stored, including the original scene node index.
- */
-struct GfxSceneNodeRef {
-  GfxSceneNodeRef() = default;
-
-  GfxSceneNodeRef(
-          GfxSceneNodeType              type_,
-          uint32_t                      index_)
-  : type(type_), index(index_) { }
-
-  GfxSceneNodeRef(
-          GfxSceneNodeType              type_,
-          uint24_t                      index_)
-  : type(type_), index(index_) { }
-
-  /** Node type. */
-  GfxSceneNodeType type;
-  /** Index into the typed node array. Not the scene node index. */
-  uint24_t index;
-};
-
-static_assert(sizeof(GfxSceneNodeRef) == 4);
-
+class GfxScenePassGroupBuffer;
 
 /**
  * \brief Scene node info
@@ -173,6 +118,9 @@ static_assert(sizeof(GfxSceneNodeListEntry) == 12);
  * nodes such as geometry instances or lights.
  */
 struct GfxSceneBvhInfo {
+  /** Maximum number of child nodes per BVH node */
+  constexpr static uint32_t MaxChildCount = 26;
+
   /** Node index of where the transform is stored. */
   int32_t nodeIndex;
   /** Axis-aligned bounding box, relative to the node. If empty,
@@ -187,37 +135,18 @@ struct GfxSceneBvhInfo {
   /** Number of child nodes for this BVH node. Note that this does not
    *  include the number of child nodes in any chained BVH node. */
   uint16_t childCount;
-  /** Chained node. Points to an optional \c GfxSceneBvhChain structure
+  /** Chained node. Points to an optional \c GfxSceneBvhInfo structure
    *  stored within the BVH node array, which only contains a list of
    *  additional child nodes. No node is chained if this is negative. */
-  int32_t chainedNode;
+  GfxSceneNodeRef chainedBvh;
   /** Array of child nodes for this BVH node. This is a fixed-size
    *  array in order to keep the data structure reasonably simple.
    *  If a BVH node has more than the maximum number of children,
    *  chained nodes must be used instead. */
-  std::array<uint32_t, 26> childNodes;
+  std::array<uint32_t, MaxChildCount> childNodes;
 };
 
 static_assert(sizeof(GfxSceneBvhInfo) == 128);
-
-
-/**
- * \brief Bounding volume chain
- *
- * Designed to be the same size as the \c GfxSceneBvhInfo struct
- * so that they can be aliased within the same memory. The number
- * of child nodes is higher here, which can increase parallelism.
- */
-struct GfxSceneBvhChain {
-  /** Number of child nodes in this chain node. */
-  uint32_t childCount;
-  /** Index of next chained node. */
-  int32_t chainedNode;
-  /** Child node index array. */
-  std::array<uint32_t, 30> childNodes;
-};
-
-static_assert(sizeof(GfxSceneBvhChain) == sizeof(GfxSceneBvhInfo));
 
 
 /**
@@ -302,7 +231,7 @@ using GfxSceneNodeResidencyFlags = Flags<GfxSceneNodeResidencyFlag>;
  *
  * Stores the data layout of the scene buffer.
  */
-struct GfxSceneHeader {
+struct GfxSceneNodeHeader {
   /** Offset of node infos in bytes, relative to the start of the buffer.
    *  Points to an array of \c GfxSceneNodeInfo structures. */
   uint32_t nodeParameterOffset;
@@ -317,7 +246,7 @@ struct GfxSceneHeader {
   uint32_t bvhOffset;
 };
 
-static_assert(sizeof(GfxSceneHeader) == 16);
+static_assert(sizeof(GfxSceneNodeHeader) == 16);
 
 
 /**
@@ -326,7 +255,7 @@ static_assert(sizeof(GfxSceneHeader) == 16);
  * Stores capacities for all supported node types, which are
  * used to compute the buffer size and layout.
  */
-struct GfxSceneBufferDesc {
+struct GfxSceneNodeBufferDesc {
   /** Total number of generic nodes */
   uint32_t nodeCount = 0u;
   /** Total number of BVH nodes */
@@ -341,17 +270,17 @@ struct GfxSceneBufferDesc {
  * nodes in the scene. Note that this class does not manage any node
  * data itself, but provides helpers to update and upload nodes.
  */
-class GfxSceneBuffer {
+class GfxSceneNodeBuffer {
 
 public:
 
-  explicit GfxSceneBuffer(
+  explicit GfxSceneNodeBuffer(
           GfxDevice                     device);
 
-  ~GfxSceneBuffer();
+  ~GfxSceneNodeBuffer();
 
-  GfxSceneBuffer             (const GfxSceneBuffer&) = delete;
-  GfxSceneBuffer& operator = (const GfxSceneBuffer&) = delete;
+  GfxSceneNodeBuffer             (const GfxSceneNodeBuffer&) = delete;
+  GfxSceneNodeBuffer& operator = (const GfxSceneNodeBuffer&) = delete;
 
   /**
    * \brief Queries GPU address
@@ -368,7 +297,7 @@ public:
    * various data arrays within the buffer.
    * \returns Scene buffer header
    */
-  GfxSceneHeader getHeader() const {
+  GfxSceneNodeHeader getHeader() const {
     return m_header;
   }
 
@@ -386,15 +315,15 @@ public:
    */
   GfxBuffer resizeBuffer(
     const GfxContext&                   context,
-    const GfxSceneBufferDesc&           desc);
+    const GfxSceneNodeBufferDesc&       desc);
 
 private:
 
   GfxDevice                   m_device;
   GfxBuffer                   m_buffer;
 
-  GfxSceneHeader              m_header = { };
-  GfxSceneBufferDesc          m_desc;
+  GfxSceneNodeHeader          m_header = { };
+  GfxSceneNodeBufferDesc      m_desc;
 
   uint32_t                    m_version = 0u;
 

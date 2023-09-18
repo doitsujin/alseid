@@ -58,10 +58,8 @@ void csTraverseBvh() {
   // BVH node itself if it passes the distance test but is not resident.
   SceneNodeResidencyBuffer nodeResidency = SceneNodeResidencyBuffer(sceneBuffer + scene.nodeResidencyOffset);
 
-  // BVH node and chain infos. Aliasing is intentional here since both structures
-  // are packed into the same array, just with slightly different memory layouts.
+  // BVH node infos, including chained nodes.
   SceneBvhNodeBuffer bvhNodes = SceneBvhNodeBuffer(sceneBuffer + scene.bvhOffset);
-  SceneBvhChainBuffer bvhChains = SceneBvhChainBuffer(sceneBuffer + scene.bvhOffset);
 
   // BVH node list, both for processing the current set of nodes as well as
   // generating a list for the next iteration.
@@ -112,19 +110,15 @@ void csTraverseBvh() {
   // If the BVH is partially visible in any enabled pass, process child nodes,
   // update their absolute transform, and make them resident as necessary.
   if (visibilityMask.x != 0u) {
-    // Read child nodes and the chained node from the base node outside the
-    // loop. This is necessary since chained nodes use a different structure.
-    uint32_t childCount = uint32_t(bvhNodes.nodes[bvhIndex].childCount);
-    uint32_t childNode = 0u;
+    uint32_t nextChain = makeNodeRef(NODE_TYPE_BVH, bvhIndex);
 
-    if (tid < childCount)
-      childNode = uint32_t(bvhNodes.nodes[bvhIndex].childNodes[tid]);
+    while (getNodeTypeFromRef(nextChain) == NODE_TYPE_BVH) {
+      uint32_t nextIndex = getNodeIndexFromRef(nextChain);
+      uint32_t childCount = bvhNodes.nodes[nextIndex].childCount;
 
-    // Find node containing next set of child nodes
-    int32_t nextChain = bvhNodes.nodes[bvhIndex].chainedNode;
-
-    while (true) {
       if (tid < childCount) {
+        uint32_t childNode = uint32_t(bvhNodes.nodes[nextIndex].childNodes[tid]);
+
         // Update node transform. Let subsequent passes deal with residency
         // for each added node as necessary.
         csComputeNodeTransform(nodeInfos, nodeTransforms, childNode, frameId);
@@ -142,18 +136,7 @@ void csTraverseBvh() {
           nodeListAdd(groupBuffer, item, 64u);
       }
 
-      // Exit loop if there are no more chained nodes
-      if (nextChain < 0)
-        break;
-
-      // Read next set of child nodes from the next chained node
-      childCount = bvhChains.nodes[nextChain].childCount;
-      childNode = 0u;
-
-      if (tid < childCount)
-        childNode = bvhChains.nodes[nextChain].childNodes[tid];
-
-      nextChain = bvhChains.nodes[nextChain].chainedNode;
+      nextChain = bvhNodes.nodes[nextIndex].chainedNode;
     }
   }
 
