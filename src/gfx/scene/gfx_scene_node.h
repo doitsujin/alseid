@@ -471,7 +471,7 @@ public:
    */
   void destroyNode(
           uint32_t                      index,
-          uint64_t                      frameId);
+          uint32_t                      frameId);
 
   /**
    * \brief Updates node reference
@@ -532,7 +532,7 @@ public:
    */
   void destroyBvhNode(
           GfxSceneNodeRef               reference,
-          uint64_t                      frameId);
+          uint32_t                      frameId);
 
   /**
    * \brief Updates BVH bounding volume
@@ -585,8 +585,8 @@ public:
   void commitUpdates(
     const GfxContext&                   context,
     const GfxScenePipelines&            pipelines,
-          uint64_t                      currFrameId,
-          uint64_t                      lastFrameId);
+          uint32_t                      currFrameId,
+          uint32_t                      lastFrameId);
 
   /**
    * \brief Traverses BVH for one or more pass groups
@@ -608,14 +608,14 @@ public:
     const GfxScenePipelines&            pipelines,
           uint32_t                      groupCount,
     const GfxScenePassGroupInfo*        groupInfos,
-          uint64_t                      frameId);
+          uint32_t                      frameId);
 
 private:
 
   GfxSceneNodeBuffer                  m_gpuResources;
 
   std::unordered_map<
-    uint64_t, GfxBuffer>              m_gpuBuffers;
+    uint32_t, GfxBuffer>              m_gpuBuffers;
 
   alignas(CacheLineSize)
   std::mutex                          m_nodeMutex;
@@ -637,7 +637,7 @@ private:
   alignas(CacheLineSize)
   std::mutex                          m_freeMutex;
   std::unordered_multimap<
-    uint64_t, GfxSceneNodeRef>        m_freeNodeQueue;
+    uint32_t, GfxSceneNodeRef>        m_freeNodeQueue;
 
   void markDirty(
           uint32_t                      index,
@@ -652,21 +652,21 @@ private:
   void updateBufferData(
     const GfxContext&                   context,
     const GfxScenePipelines&            pipelines,
-          uint64_t                      frameId);
+          uint32_t                      frameId);
 
   void cleanupNodes(
-          uint64_t                      frameId);
+          uint32_t                      frameId);
 
   void cleanupGpuBuffers(
-          uint64_t                      frameId);
+          uint32_t                      frameId);
 
   void compactBvhChain(
           GfxSceneNodeRef               bvh,
-          uint64_t                      frameId);
+          uint32_t                      frameId);
 
   void resizeGpuBuffer(
     const GfxContext&                   context,
-          uint64_t                      frameId);
+          uint32_t                      frameId);
 
   void removeFromNodeMap(
           GfxSceneNodeRef               reference);

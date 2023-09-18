@@ -435,7 +435,7 @@ public:
    */
   void destroyInstance(
           GfxSceneNodeRef               instance,
-          uint64_t                      frameId);
+          uint32_t                      frameId);
 
   /**
    * \brief Updates basic node properties
@@ -551,15 +551,15 @@ public:
   void commitUpdates(
     const GfxContext&                   context,
     const GfxScenePipelines&            pipelines,
-          uint64_t                      currFrameId,
-          uint64_t                      lastFrameId);
+          uint32_t                      currFrameId,
+          uint32_t                      lastFrameId);
 
 private:
 
   GfxSceneInstanceBuffer              m_gpuResources;
 
   std::unordered_map<
-    uint64_t, GfxBuffer>              m_gpuBuffers;
+    uint32_t, GfxBuffer>              m_gpuBuffers;
 
   ObjectMap<GfxSceneInstanceNodeInfo> m_instanceNodeData;
   ObjectMap<GfxSceneInstanceHostInfo> m_instanceHostData;
@@ -573,23 +573,23 @@ private:
   alignas(CacheLineSize)
   std::mutex                          m_freeMutex;
   std::unordered_multimap<
-    uint64_t, uint32_t>               m_freeQueue;
+    uint32_t, uint32_t>               m_freeQueue;
   std::unordered_multimap<
-    uint64_t, GfxBufferSlice>         m_freeSlices;
+    uint32_t, GfxBufferSlice>         m_freeSlices;
 
   void updateBufferData(
     const GfxContext&                   context,
     const GfxScenePipelines&            pipelines,
-          uint64_t                      frameId);
+          uint32_t                      frameId);
 
   void cleanupBufferSlices(
-          uint64_t                      frameId);
+          uint32_t                      frameId);
 
   void cleanupInstanceNodes(
-          uint64_t                      frameId);
+          uint32_t                      frameId);
 
   void cleanupGpuBuffers(
-          uint64_t                      frameId);
+          uint32_t                      frameId);
 
   void markDirty(
           uint32_t                      index,
@@ -600,7 +600,7 @@ private:
 
   void resizeGpuBuffer(
     const GfxContext&                   context,
-          uint64_t                      frameId);
+          uint32_t                      frameId);
 
   static void uploadInstanceData(
     const GfxContext&                   context,

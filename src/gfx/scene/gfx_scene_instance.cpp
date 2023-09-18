@@ -184,7 +184,7 @@ GfxSceneNodeRef GfxSceneInstanceManager::createInstance(
 
 void GfxSceneInstanceManager::destroyInstance(
         GfxSceneNodeRef               instance,
-        uint64_t                      frameId) {
+        uint32_t                      frameId) {
   uint32_t index = uint32_t(instance.index);
 
   GfxBufferSlice slice = std::move(m_instanceHostData[index].dataSlice);
@@ -341,8 +341,8 @@ void GfxSceneInstanceManager::freeGpuBuffer(
 void GfxSceneInstanceManager::commitUpdates(
   const GfxContext&                   context,
   const GfxScenePipelines&            pipelines,
-        uint64_t                      currFrameId,
-        uint64_t                      lastFrameId) {
+        uint32_t                      currFrameId,
+        uint32_t                      lastFrameId) {
   cleanupGpuBuffers(lastFrameId);
 
   updateBufferData(context, pipelines, currFrameId);
@@ -355,7 +355,7 @@ void GfxSceneInstanceManager::commitUpdates(
 void GfxSceneInstanceManager::updateBufferData(
   const GfxContext&                   context,
   const GfxScenePipelines&            pipelines,
-        uint64_t                      frameId) {
+        uint32_t                      frameId) {
   context->beginDebugLabel("Update instances", 0xff96c096u);
 
   for (auto index : m_dirtyIndices) {
@@ -431,7 +431,7 @@ void GfxSceneInstanceManager::updateBufferData(
 
 
 void GfxSceneInstanceManager::cleanupInstanceNodes(
-        uint64_t                      frameId) {
+        uint32_t                      frameId) {
   // Release resources for all nodes freed in the given frame
   auto range = m_freeQueue.equal_range(frameId);
 
@@ -449,7 +449,7 @@ void GfxSceneInstanceManager::cleanupInstanceNodes(
 
 
 void GfxSceneInstanceManager::cleanupBufferSlices(
-        uint64_t                      frameId) {
+        uint32_t                      frameId) {
   auto range = m_freeSlices.equal_range(frameId);
 
   for (auto i = range.first; i != range.second; i++)
@@ -460,7 +460,7 @@ void GfxSceneInstanceManager::cleanupBufferSlices(
 
 
 void GfxSceneInstanceManager::cleanupGpuBuffers(
-        uint64_t                      frameId) {
+        uint32_t                      frameId) {
   m_gpuBuffers.erase(frameId);
 }
 
@@ -482,7 +482,7 @@ void GfxSceneInstanceManager::addToDirtyList(
 
 void GfxSceneInstanceManager::resizeGpuBuffer(
   const GfxContext&                   context,
-        uint64_t                      frameId) {
+        uint32_t                      frameId) {
   uint32_t count = m_instanceAllocator.getCount();
   GfxBuffer oldBuffer = m_gpuResources.resizeBuffer(context, count);
 

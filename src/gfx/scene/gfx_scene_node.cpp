@@ -155,7 +155,7 @@ uint32_t GfxSceneNodeManager::createNode() {
 
 void GfxSceneNodeManager::destroyNode(
         uint32_t                      index,
-        uint64_t                      frameId) {
+        uint32_t                      frameId) {
   std::lock_guard lock(m_freeMutex);
 
   m_freeNodeQueue.insert({ frameId,
@@ -231,7 +231,7 @@ GfxSceneNodeRef GfxSceneNodeManager::createBvhNode(
 
 void GfxSceneNodeManager::destroyBvhNode(
         GfxSceneNodeRef               reference,
-        uint64_t                      frameId) {
+        uint32_t                      frameId) {
   std::lock_guard lock(m_freeMutex);
 
   while (reference.type == GfxSceneNodeType::eBvh) {
@@ -364,8 +364,8 @@ void GfxSceneNodeManager::attachNodesToBvh(
 void GfxSceneNodeManager::commitUpdates(
   const GfxContext&                   context,
   const GfxScenePipelines&            pipelines,
-        uint64_t                      currFrameId,
-        uint64_t                      lastFrameId) {
+        uint32_t                      currFrameId,
+        uint32_t                      lastFrameId) {
   cleanupGpuBuffers(lastFrameId);
 
   updateBufferData(context, pipelines, currFrameId);
@@ -379,7 +379,7 @@ void GfxSceneNodeManager::traverseBvh(
   const GfxScenePipelines&            pipelines,
         uint32_t                      groupCount,
   const GfxScenePassGroupInfo*        groupInfos,
-        uint64_t                      frameId) {
+        uint32_t                      frameId) {
   context->beginDebugLabel("Traverse scene BVH", 0xff64c0ff);
 
   uint64_t sceneBufferVa = m_gpuResources.getGpuAddress();
@@ -475,7 +475,7 @@ void GfxSceneNodeManager::addDirtyBvhLocked(
 void GfxSceneNodeManager::updateBufferData(
   const GfxContext&                   context,
   const GfxScenePipelines&            pipelines,
-        uint64_t                      frameId) {
+        uint32_t                      frameId) {
   context->beginDebugLabel("Update nodes", 0xff96c096u);
 
   for (uint32_t node : m_dirtyNodes) {
@@ -539,7 +539,7 @@ void GfxSceneNodeManager::updateBufferData(
 
 
 void GfxSceneNodeManager::cleanupNodes(
-        uint64_t                      frameId) {
+        uint32_t                      frameId) {
   auto range = m_freeNodeQueue.equal_range(frameId);
 
   for (auto i = range.first; i != range.second; i++) {
@@ -562,14 +562,14 @@ void GfxSceneNodeManager::cleanupNodes(
 
 
 void GfxSceneNodeManager::cleanupGpuBuffers(
-        uint64_t                      frameId) {
+        uint32_t                      frameId) {
   m_gpuBuffers.erase(frameId);
 }
 
 
 void GfxSceneNodeManager::compactBvhChain(
         GfxSceneNodeRef                 bvh,
-        uint64_t                        frameId) {
+        uint32_t                        frameId) {
   // Gather all child nodes into a linear array
   small_vector<uint32_t, 128> childNodes;
 
@@ -629,7 +629,7 @@ void GfxSceneNodeManager::compactBvhChain(
 
 void GfxSceneNodeManager::resizeGpuBuffer(
   const GfxContext&                   context,
-        uint64_t                      frameId) {
+        uint32_t                      frameId) {
   GfxSceneNodeBufferDesc desc;
   desc.nodeCount = m_nodeAllocator.getCount();
   desc.bvhCount = m_bvhAllocator.getCount();
