@@ -136,15 +136,18 @@ static_assert(sizeof(GfxScenePassGroupHeader) == 208);
  * \brief Dispatch arguments for BVH nodes within a pass group
  */
 struct GfxSceneBvhListArgs {
-  /** Indirect dispatch parameters */
-  GfxDispatchArgs dispatch;
+  /** Indirect dispatch parameters for BVH traversal */
+  GfxDispatchArgs dispatchTraverse;
+  /** Indirect dispatch parameters for resetting the
+   *  next set of dispatch arguments to 0 */
+  GfxDispatchArgs dispatchReset;
   /** Number of list entries */
   uint32_t entryCount;
   /** Index of the first entry within the node list */
   uint32_t entryIndex;
 };
 
-static_assert(sizeof(GfxSceneBvhListArgs) == 20);
+static_assert(sizeof(GfxSceneBvhListArgs) == 32);
 
 
 /**
@@ -154,15 +157,13 @@ struct GfxSceneBvhListHeader {
   /** Total number of BVH nodes in the list. Must be initialized to the number
    *  of root BVH nodes when the first set of node parameters is written. */
   uint32_t totalNodeCount;
-  /** Reserved for future use. */
-  uint32_t reserved;
   /** Double-buffered dispatch arguments for BVH traversal. The traversal shader
    *  will consume one list and generate another, as well as increment the total
    *  node count so it can be used to generate occlusion test draws. */
   std::array<GfxSceneBvhListArgs, 2> args;
 };
 
-static_assert(sizeof(GfxSceneBvhListHeader) == 48);
+static_assert(sizeof(GfxSceneBvhListHeader) == 68);
 
 
 /**
@@ -216,10 +217,13 @@ public:
    * \brief Queries indirect dispatch descriptor for BVH traversal
    *
    * \param [in] bvhLayer BVH layer index
+   * \param [in] traverse Whether to return the traversal
+   *    argument descriptor or the reset argument descriptor.
    * \returns BVH traversal dispatch descriptor
    */
   GfxDescriptor getBvhDispatchDescriptor(
-          uint32_t                      bvhLayer) const;
+          uint32_t                      bvhLayer,
+          bool                          traverse) const;
 
   /**
    * \brief Sets passes for the given pass group

@@ -146,7 +146,8 @@ readonly buffer PassGroupNodeListIn {
 // BVH list dispatch arguments. Also stores the index at which the
 // first BVH node for the current dispath is stored within the list.
 struct PassGroupBvhListArgs {
-  u32vec3   dispatch;
+  u32vec3   dispatchTraverse;
+  u32vec3   dispatchReset;
   uint32_t  entryCount;
   uint32_t  entryIndex;
 };
@@ -156,7 +157,6 @@ struct PassGroupBvhListArgs {
 // the traversal shader can consume one while producing the other.
 struct PassGroupBvhListHeader {
   uint32_t  totalNodeCount;
-  uint32_t  reserved;
   PassGroupBvhListArgs args[2];
 };
 
@@ -178,14 +178,15 @@ void bvhListInit(
         uint32_t                        tid) {
   if (tid < 2u) {
     uint32_t entryCount = tid == 0u ? rootCount : 0u;
+
     list.header.args[tid] = PassGroupBvhListArgs(
-      u32vec3(entryCount, 1u, 1u), entryCount, 0u);
+      u32vec3(entryCount, 1u, 1u),
+      u32vec3(0u, 1u, 1u),
+      entryCount, 0u);
   }
 
-  if (tid == 0u) {
+  if (tid == 0u)
     list.header.totalNodeCount = rootCount;
-    list.header.reserved = 0u;
-  }
 }
 
 
@@ -231,11 +232,25 @@ void bvhListCommitArgs(
     uint32_t entryCount = list.header.args[nextIndex].entryCount;
     uint32_t entryIndex = list.header.totalNodeCount;
 
-    list.header.args[nextIndex].dispatch.x = entryCount;
+    list.header.args[nextIndex].dispatchTraverse.x = entryCount;
+    list.header.args[nextIndex].dispatchReset.x = entryCount == 0u ? 1u : 0u;
     list.header.args[nextIndex].entryIndex = entryIndex;
 
     list.header.totalNodeCount = entryIndex + entryCount;
   }
+}
+
+
+// Resets dispatch arguments for the next BVH traversal iteration.
+// Must only be called from one single thread at the end of a shader.
+void bvhListResetArgs(
+        PassGroupBvhList                list,
+        uint32_t                        bvhLayer) {
+  uint32_t currIndex = bvhLayer & 1u;
+  uint32_t nextIndex = currIndex ^ 1u;
+
+  list.header.args[nextIndex].dispatchTraverse.x = 0u;
+  list.header.args[nextIndex].dispatchReset.x = 1u;
 }
 
 

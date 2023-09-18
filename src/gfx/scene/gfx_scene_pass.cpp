@@ -15,7 +15,8 @@ GfxScenePassGroupBuffer::~GfxScenePassGroupBuffer() {
 
 
 GfxDescriptor GfxScenePassGroupBuffer::getBvhDispatchDescriptor(
-        uint32_t                      bvhLayer) const {
+        uint32_t                      bvhLayer,
+        bool                          traverse) const {
   if (!m_buffer)
     return GfxDescriptor();
 
@@ -24,7 +25,9 @@ GfxDescriptor GfxScenePassGroupBuffer::getBvhDispatchDescriptor(
   size_t offset = m_header.bvhListOffset
     + offsetof(GfxSceneBvhListHeader, args)
     + sizeof(GfxSceneBvhListArgs) * listId
-    + offsetof(GfxSceneBvhListArgs, dispatch);
+    + (traverse
+      ? offsetof(GfxSceneBvhListArgs, dispatchTraverse)
+      : offsetof(GfxSceneBvhListArgs, dispatchReset));
 
   size_t size = sizeof(GfxDispatchArgs);
 
@@ -49,7 +52,7 @@ void GfxScenePassGroupBuffer::setPasses(
 
 void GfxScenePassGroupBuffer::updateBuffer(
   const GfxContext&                   context) {
-  context->beginDebugLabel("Update pass buffer", 0xffffb096u);
+  context->beginDebugLabel("Update pass buffer", 0xff96c096u);
 
   auto scratch = context->allocScratch(GfxUsage::eCpuWrite | GfxUsage::eTransferSrc, sizeof(m_header));
   std::memcpy(scratch.map(GfxUsage::eCpuWrite, 0), &m_header, sizeof(m_header));
