@@ -75,11 +75,14 @@ void csTraverseBvh() {
   uint32_t itemIndex = bvhList.header.args[bvhLayer & 1u].entryIndex + uint32_t(gl_WorkGroupID.x);
 
   PassGroupNodeListItem bvhNodeItem = bvhList.items[itemIndex];
+
   uint32_t bvhIndex = getNodeIndexFromRef(bvhNodeItem.nodeRef);
+  uint32_t bvhNode = bvhNodes.nodes[bvhIndex].nodeIndex;
 
   // Load absolute BVH transform. The previous iteration will have updated
   // transforms for all relevant BVH nodes at this point, so this is safe.
-  Transform bvhTransform = nodeTransforms.nodeTransforms[bvhIndex].absoluteTransform;
+  uint32_t transformIndex = bvhNode + (frameId & 1u) * scene.nodeCount;
+  Transform bvhTransform = nodeTransforms.nodeTransforms[transformIndex].absoluteTransform;
 
   // TODO implement culling
   uint32_t passMask = (2u << (group.passCount - 1u)) - 1u;
@@ -119,9 +122,10 @@ void csTraverseBvh() {
       if (tid < childCount) {
         uint32_t childNode = uint32_t(bvhNodes.nodes[nextIndex].childNodes[tid]);
 
-        // Update node transform. Let subsequent passes deal with residency
-        // for each added node as necessary.
-        csComputeNodeTransform(nodeInfos, nodeTransforms, childNode, frameId);
+        // Update node transform. Let subsequent passes deal
+        // with residency for each added node as necessary.
+        csComputeNodeTransform(nodeInfos, nodeTransforms,
+          childNode, scene.nodeCount, frameId);
 
         PassGroupNodeListItem item;
         item.nodeRef = nodeInfos.nodeInfos[childNode].nodeRef;

@@ -44,7 +44,7 @@ uint32_t csPickInvocationForNode(int32_t node) {
 // will be able to observe the updated transform afterwards. 
 Transform csUpdateNodeTransform(SceneNodeInfoBuffer nodes,
     SceneNodeTransformBufferOut transforms, uint32_t node,
-    uint32_t frameId, Transform parentTransform) {
+    uint32_t offset, uint32_t frameId, Transform parentTransform) {
   // Compute the relative node transform, including the sub-transform
   Transform relativeTransform = nodes.nodeInfos[node].transform;
   int32_t subTransformIndex = nodes.nodeInfos[node].parentTransform;
@@ -60,9 +60,9 @@ Transform csUpdateNodeTransform(SceneNodeInfoBuffer nodes,
   // Write back absolute transform to the node array, and update the frame
   // ID to commit the change and make it visible to other workgroups that
   // may access the same set of nodes.
-  transforms.nodeTransforms[node].absoluteTransform = absoluteTransform;
+  transforms.nodeTransforms[offset + node].absoluteTransform = absoluteTransform;
 
-  atomicStore(transforms.nodeTransforms[node].updateFrameId, frameId,
+  atomicStore(transforms.nodeTransforms[offset + node].updateFrameId, frameId,
     gl_ScopeQueueFamily, gl_StorageSemanticsBuffer,
     gl_SemanticsRelease | gl_SemanticsMakeAvailable);
 
@@ -75,7 +75,10 @@ Transform csUpdateNodeTransform(SceneNodeInfoBuffer nodes,
 // each node in order to avoid redundant memory accesses.
 Transform csComputeNodeTransform(SceneNodeInfoBuffer nodes,
     SceneNodeTransformBufferOut transforms, uint32_t nodeIndex,
-    uint32_t frameId) {
+    uint32_t nodeCount, uint32_t frameId) {
+  // Absolute transform index offset for double-buffering purposes
+  uint32_t offset = (frameId & 1u) * nodeCount;
+
   // We want the node index to be signed so that we can easily
   // check for the root node, which is generally encoded as -1.
   int32_t node = int32_t(nodeIndex);
@@ -91,7 +94,7 @@ Transform csComputeNodeTransform(SceneNodeInfoBuffer nodes,
   // appropriate memory semantics to ensure we can correctly read the
   // updated absolute transform if the frame ID is already up to date.
   uint32_t updateFrameId = atomicLoad(
-    transforms.nodeTransforms[node].updateFrameId,
+    transforms.nodeTransforms[offset + node].updateFrameId,
     gl_ScopeQueueFamily, gl_StorageSemanticsBuffer,
     gl_SemanticsAcquire | gl_SemanticsMakeVisible);
 
@@ -111,7 +114,7 @@ Transform csComputeNodeTransform(SceneNodeInfoBuffer nodes,
 
     if (parent >= 0) {
       updateFrameId = atomicLoad(
-        transforms.nodeTransforms[parent].updateFrameId,
+        transforms.nodeTransforms[offset + parent].updateFrameId,
         gl_ScopeQueueFamily, gl_StorageSemanticsBuffer,
         gl_SemanticsAcquire | gl_SemanticsMakeVisible);
     }
@@ -129,7 +132,7 @@ Transform csComputeNodeTransform(SceneNodeInfoBuffer nodes,
   Transform absoluteTransform = transIdentity();
 
   if (node >= 0 && !needsParentTransform)
-    absoluteTransform = transforms.nodeTransforms[node].absoluteTransform;
+    absoluteTransform = transforms.nodeTransforms[offset + node].absoluteTransform;
 
   for (uint32_t i = 1; i <= maxDepth; i++) {
     uint32_t layer = maxDepth - i;
@@ -143,8 +146,8 @@ Transform csComputeNodeTransform(SceneNodeInfoBuffer nodes,
       absoluteTransform.pos = subgroupShuffle(absoluteTransform.pos, next.y);
 
       // Compute and store the absolute transform of the current node
-      absoluteTransform = csUpdateNodeTransform(nodes,
-        transforms, next.x, frameId, absoluteTransform);
+      absoluteTransform = csUpdateNodeTransform(nodes, transforms,
+        next.x, offset, frameId, absoluteTransform);
     }
   }
 

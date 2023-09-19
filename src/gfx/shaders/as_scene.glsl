@@ -137,5 +137,7 @@ readonly buffer SceneHeader {
   uint32_t  nodeParameterOffset;
   uint32_t  nodeTransformOffset;
   uint32_t  nodeResidencyOffset;
+  uint32_t  nodeCount;
   uint32_t  bvhOffset;
+  uint32_t  bvhCount;
 };

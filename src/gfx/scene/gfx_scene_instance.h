@@ -22,9 +22,15 @@ enum class GfxSceneInstanceFlag : uint32_t {
    *  only be used for geometry that has no animations so that it does not
    *  frequently trigger re-rendering of cached shadows. However, shaders
    *  remain responsible to detect changes to the instance regardless. */
-  eStatic         = (1u << 0),
+  eStatic           = (1u << 0),
+  /** Indicates that motion vectors should not be calculated when rendering
+   *  an instance during the next frame. This flag may be set internally if
+   *  the instance has not been visible during the previous frame, which means
+   *  there is no valid data to compute motion vectors with, but may also be
+   *  set externally if instance parameters have changed significantly. */
+  eNoMotionVectors  = (1u << 1),
 
-  eFlagEnum       = 0
+  eFlagEnum         = 0
 };
 
 using GfxSceneInstanceFlags = Flags<GfxSceneInstanceFlag>;

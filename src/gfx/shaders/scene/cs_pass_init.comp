@@ -63,8 +63,10 @@ void csInitPassBuffer() {
     uint32_t nodeRef = nodeRefs[gid];
     int32_t nodeIndex = bvhNodes.nodes[getNodeIndexFromRef(nodeRef)].nodeIndex;
 
-    if (nodeIndex >= 0)
-      csComputeNodeTransform(nodeInfos, nodeTransforms, uint32_t(nodeIndex), frameId);
+    if (nodeIndex >= 0) {
+      csComputeNodeTransform(nodeInfos, nodeTransforms,
+        uint32_t(nodeIndex), scene.nodeCount, frameId);
+    }
 
     PassGroupNodeListItem item;
     item.nodeRef = nodeRef;

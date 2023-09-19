@@ -291,17 +291,24 @@ struct GfxSceneNodeHeader {
    *  Points to an array of \c GfxSceneNodeInfo structures. */
   uint32_t nodeParameterOffset;
   /** Offset of absolute node transforms in bytes, relative to the start
-   *  of the scene buffer. Points to an array of \c GfxSceneNodeTransform. */
+   *  of the scene buffer. Points to an array of \c GfxSceneNodeTransform,
+   *  with two transform entires per node. This is double-buffered in order
+   *  to support motion vectors for dynamic instances. */
   uint32_t nodeTransformOffset;
   /** Offset of the node residency status array. Points to an array of bytes
    *  that store each node's current residency and stream request status. */
   uint32_t nodeResidencyOffset;
+  /** Maximum number of nodes in the buffer. Can be applied as an offset
+   *  when indexing into double-buffered node transform arrays. */
+  uint32_t nodeCount;
   /** Offset of BVH infos in bytes, relative to the start of the buffer.
    *  Points to an array of \c GfxSceneBvhInfo structures. */
   uint32_t bvhOffset;
+  /** Maximum number of BVH nodes in the buffer. */
+  uint32_t bvhCount;
 };
 
-static_assert(sizeof(GfxSceneNodeHeader) == 16);
+static_assert(sizeof(GfxSceneNodeHeader) == 24);
 
 
 /**
