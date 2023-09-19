@@ -52,7 +52,13 @@ void GfxScenePipelines::processBvhLayer(
 
   // No barrier needed since execution of these shaders is mutually
   // exclusive, in that the dispatch args for one will always be 0.
+  GfxSceneTraverseResetArgs resetArgs = { };
+  resetArgs.groupBufferVa = args.groupBufferVa;
+  resetArgs.bvhLayer = args.bvhLayer;
+  resetArgs.frameId = args.frameId;
+
   context->bindPipeline(m_csPassTraverseReset);
+  context->setShaderConstants(0, resetArgs);
   context->dispatchIndirect(dispatchReset);
 }
 

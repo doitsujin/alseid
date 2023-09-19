@@ -49,6 +49,9 @@ struct GfxSceneUpdateArgs {
 static_assert(sizeof(GfxSceneUpdateArgs) == 32);
 
 
+/**
+ * \brief BVH traversal arguments
+ */
 struct GfxSceneTraverseBvhArgs {
   uint64_t passBufferVa;
   uint64_t sceneBufferVa;
@@ -58,6 +61,18 @@ struct GfxSceneTraverseBvhArgs {
 };
 
 static_assert(sizeof(GfxSceneTraverseBvhArgs) == 32);
+
+
+/**
+ * \brief BVH traversal reset arguments
+ */
+struct GfxSceneTraverseResetArgs {
+  uint64_t groupBufferVa;
+  uint32_t bvhLayer;
+  uint32_t frameId;
+};
+
+static_assert(sizeof(GfxSceneTraverseResetArgs) == 16);
 
 
 /**

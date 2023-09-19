@@ -15,13 +15,10 @@ layout(local_size_x = 1) in;
 #include "../as_scene.glsl"
 #include "../as_pass.glsl"
 
-// Buffer pointers and parameters. Must match the structure of
-// the actual traversal shader exactly, even if some of these
-// are unused.
+
+// Buffer pointer and parameters.
 layout(push_constant)
 uniform PushData {
-  uint64_t  passBuffer;
-  uint64_t  sceneBuffer;
   uint64_t  groupBuffer;
   uint32_t  bvhLayer;
   uint32_t  frameId;
