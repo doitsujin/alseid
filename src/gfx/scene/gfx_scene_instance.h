@@ -23,12 +23,16 @@ enum class GfxSceneInstanceFlag : uint32_t {
    *  frequently trigger re-rendering of cached shadows. However, shaders
    *  remain responsible to detect changes to the instance regardless. */
   eStatic           = (1u << 0),
+  /** The instance does not have any joints or morph targets that can deform
+   *  the geometry. Useful to determine whether to update the instance without
+   *  having to access the instance data buffer or geometry buffer. */
+  eNoDeform         = (1u << 1),
   /** Indicates that motion vectors should not be calculated when rendering
    *  an instance during the next frame. This flag may be set internally if
    *  the instance has not been visible during the previous frame, which means
    *  there is no valid data to compute motion vectors with, but may also be
    *  set externally if instance parameters have changed significantly. */
-  eNoMotionVectors  = (1u << 1),
+  eNoMotionVectors  = (1u << 2),
 
   eFlagEnum         = 0
 };
