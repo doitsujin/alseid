@@ -6,8 +6,8 @@
 
 #include "../as_include_head.glsl"
 
-#include "../as_scene.glsl"
-#include "../as_pass.glsl"
+#include "as_scene.glsl"
+#include "as_pass.glsl"
 
 layout(local_size_x = 128) in;
 

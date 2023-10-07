@@ -1,3 +1,6 @@
+#ifndef AS_SCENE_DRAW_H
+#define AS_SCENE_DRAW_H
+
 // Draw list entry. Stores the index of the first draw of this
 // draw group within the draw parameters array, and the number
 // of draws currently within the group.
@@ -57,3 +60,5 @@ void addDraw(
   drawInfos.draws[index] = drawInfo;
   drawArgs.draws[index] = drawArg;
 }
+
+#endif /* AS_SCENE_DRAW_H */

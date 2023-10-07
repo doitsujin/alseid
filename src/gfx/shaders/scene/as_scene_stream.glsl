@@ -1,3 +1,6 @@
+#ifndef AS_SCENE_STREAM_H
+#define AS_SCENE_STREAM_H
+
 // Type identifier for stream requests
 #define STREAM_TYPE_UNDEFINED           (0u)
 #define STREAM_TYPE_ASSET               (1u)
@@ -65,3 +68,5 @@ bool submitStreamRequest(StreamRequestBuffer requestBuffer, uint32_t request) {
   requestBuffer.requests[globalIndex] = request;
   return true;
 }
+
+#endif /* AS_SCENE_STREAM_H */

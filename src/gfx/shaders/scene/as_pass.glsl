@@ -1,3 +1,6 @@
+#ifndef AS_PASS_H
+#define AS_PASS_H
+
 #define PASS_TYPE_FLAT    (0u)
 #define PASS_TYPE_MIRROR  (1u)
 #define PASS_TYPE_CUBE    (2u)
@@ -322,3 +325,5 @@ readonly buffer PassGroupBvhOcclusionTestBufferIn {
   PassGroupNodeListHeader header;
   uint32_t  nodeRefs[];
 };
+
+#endif /* AS_PASS_H */

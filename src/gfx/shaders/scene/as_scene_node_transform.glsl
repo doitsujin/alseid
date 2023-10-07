@@ -1,3 +1,6 @@
+#ifndef AS_SCENE_NODE_TRANSFORM_H
+#define AS_SCENE_NODE_TRANSFORM_H
+
 #define MAX_NODE_DEPTH (16u)
 
 // Helper function to load a sub-transform for a given node.
@@ -153,3 +156,5 @@ Transform csComputeNodeTransform(SceneNodeInfoBuffer nodes,
 
   return absoluteTransform;
 }
+
+#endif /* AS_SCENE_NODE_TRANSFORM_H */

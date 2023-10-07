@@ -1,3 +1,6 @@
+#ifndef AS_SCENE_H
+#define AS_SCENE_H
+
 // Residency status of assets and BVH nodes
 #define RESIDENCY_STATUS_NONE           (0u)
 #define RESIDENCY_STATUS_PARTIAL        (1u)
@@ -13,6 +16,7 @@
 #define NODE_TYPE_ABSTRACT              (0u)
 #define NODE_TYPE_BVH                   (1u)
 
+#define NODE_TYPE_INSTANCE              (2u)
 
 #define NODE_TYPE_BUILTIN_COUNT         (2u)
 #define NODE_TYPE_COUNT                 (32u + NODE_TYPE_BUILTIN_COUNT)
@@ -141,3 +145,5 @@ readonly buffer SceneHeader {
   uint32_t  bvhOffset;
   uint32_t  bvhCount;
 };
+
+#endif /* AS_SCENE_H */

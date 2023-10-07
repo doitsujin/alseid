@@ -1,14 +1,10 @@
 as_shader_includes = files(
   'as_animation.glsl',
   'as_common.glsl',
-  'as_draw.glsl',
   'as_geometry.glsl',
   'as_include_head.glsl',
   'as_include_tail.glsl',
   'as_matrix.glsl',
-  'as_pass.glsl',
-  'as_scene.glsl',
-  'as_stream.glsl',
   'as_quaternion.glsl',
   'cs_joint_animation.glsl',
   'cs_joint_transform.glsl',
@@ -20,7 +16,11 @@ as_shader_includes = files(
   'ts_template.glsl',
   'vs_template.glsl',
 
+  'scene/as_pass.glsl',
+  'scene/as_scene.glsl',
+  'scene/as_scene_draw.glsl',
   'scene/as_scene_node_transform.glsl',
+  'scene/as_scene_stream.glsl',
 )
 
 as_shader_builtins = [
