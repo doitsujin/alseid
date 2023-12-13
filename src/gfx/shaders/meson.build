@@ -19,11 +19,15 @@ as_shader_includes = files(
   'scene/as_pass.glsl',
   'scene/as_scene.glsl',
   'scene/as_scene_draw.glsl',
+  'scene/as_scene_instance.glsl',
   'scene/as_scene_node_transform.glsl',
   'scene/as_scene_stream.glsl',
 )
 
 as_shader_builtins = [
+  'scene/cs_instance_update_execute.comp',
+  'scene/cs_instance_update_prepare.comp',
+
   'scene/cs_pass_init.comp',
   'scene/cs_pass_traverse_bvh.comp',
   'scene/cs_pass_traverse_reset.comp',

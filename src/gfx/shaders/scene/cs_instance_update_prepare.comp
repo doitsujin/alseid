@@ -1,0 +1,95 @@
+// Instance update preparation shader. Used to submit stream requests
+// and instance update requests as necessary, using one thread per
+// visible instance.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csPrepareUpdate
+
+#include "../as_include_head.glsl"
+
+#include "as_scene.glsl"
+#include "as_scene_instance.glsl"
+#include "as_pass.glsl"
+
+layout(local_size_x = 64) in;
+
+layout(push_constant)
+uniform PushData {
+  InstanceNodeBuffer  instanceBuffer;
+  uint64_t            sceneBuffer;
+  uint64_t            groupBuffer;
+  uint32_t            frameId;
+};
+
+void csPrepareUpdate() {
+  uint32_t gid = uint32_t(gl_GlobalInvocationID.x);
+
+  // Exit early if the thread ID is out of bounds
+  PassGroupBuffer group = PassGroupBuffer(groupBuffer);
+
+  PassGroupNodeListIn nodeList = PassGroupNodeListIn(groupBuffer +
+    group.nodeListOffsets[NODE_TYPE_INSTANCE - NODE_TYPE_BUILTIN_COUNT].nodeList);
+
+  if (gid >= nodeList.header.entryCount)
+    return;
+
+  // Load instance properties and check whether we need to update it.
+  uint32_t instanceNodeRef = nodeList.items[gid].nodeRef;
+  uint32_t instanceIndex = getNodeIndexFromRef(instanceNodeRef);
+
+  InstanceNode instance = instanceBuffer.nodes[instanceIndex];
+
+  uint32_t instanceFlags = instance.flags;
+  uint32_t updateFrameId = instance.updateFrameId;
+
+  // Disable motion vectors for the instance if there is no data for the
+  // previous frame. This happens either if the instance was not visible,
+  // or if it has not been updated in the current frame.
+  if (updateFrameId + 1 < frameId)
+    instanceFlags |= INSTANCE_FLAG_NO_MOTION_VECTORS;
+
+  // Dispatch an update for transforms and morph target weights if necessary
+  if ((instance.flags & INSTANCE_FLAG_DEFORM) != 0) {
+    if (updateFrameId < instance.dirtyFrameId) {
+      nodeListAddUpdate(groupBuffer, instanceNodeRef, 1);
+      updateFrameId = frameId;
+    }
+  }
+
+  // Check whether the absolute transform has changed since the last frame,
+  // and update the frame ID if it has. We only do this after dispatching
+  // the node update so that we do not redundantly recompute joint transforms.
+  if (updateFrameId < frameId) {
+    SceneHeader scene = SceneHeader(sceneBuffer);
+    SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(sceneBuffer + scene.nodeTransformOffset);
+
+    uint32_t currFrameOffset = scene.nodeCount * (frameId & 1u);
+    uint32_t prevFrameOffset = scene.nodeCount - currFrameOffset;
+
+    Transform currTransform = nodeTransforms.nodeTransforms[instance.nodeIndex + currFrameOffset].absoluteTransform;
+    Transform prevTransform = nodeTransforms.nodeTransforms[instance.nodeIndex + prevFrameOffset].absoluteTransform;
+
+    if (any(notEqual(currTransform.rot, prevTransform.rot))
+     || any(notEqual(currTransform.pos, prevTransform.pos)))
+      updateFrameId = frameId;
+  }
+
+  // If necessary, update the update frame ID of the instance, and also add
+  // it to the list of updated static instances if the instance is static.
+  if (updateFrameId != instance.updateFrameId) {
+    instanceBuffer.nodes[instanceIndex].updateFrameId = updateFrameId;
+
+    if ((instance.flags & INSTANCE_FLAG_STATIC) != 0) {
+      // TODO add node to list of updated static nodes so that static
+      // shadow maps can decide whether an update is required or not
+    }
+  }
+
+  // Update instance flags as necessary
+  if (instanceFlags != instance.flags)
+    instanceBuffer.nodes[instanceIndex].flags = instanceFlags;
+}
+
+#include "../as_include_tail.glsl"

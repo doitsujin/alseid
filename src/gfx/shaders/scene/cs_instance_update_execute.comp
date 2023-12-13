@@ -1,62 +1,31 @@
-// Joint transform compute shader.
-//
-// Given a set of joint metadata and relative transforms, this computes
-// absolute transforms that can be used directly as input for rendering.
-//
-//
-// The interface is defined as follows:
-//
-// Context object that is passed through to all functions. This should
-// store information required to fetch data from the correct places,
-// e.g. a buffer reference to the geometry's joint metadata.
-//
-//    struct CsContext {
-//      GeometryRef geometry;           /* mandatory */
-//      ...
-//    };
-//
-//
-// Initializes context object.
-//
-//    CsContext csGetContext();
-//
-//
-// Loads the relative transform of the joint with the given index
-// from the input buffer.
-//
-//    Transform csLoadInputJoint(in CsContext context, uint index);
-//
-//
-// Loads the final transform of the joint with the given index from the
-// output buffer. Outputs are cached internally in shared memory, and
-// this will only be called if the given joint is not cached.
-// Note that the output buffer MUST be declared as workgroupcoherent.
-//
-//    Transform csLoadOutputJoint(in CsContext context, uint index);
-//
-//
-// Stores final transform of the joint with the given index. The output
-// buffer may be the same as the input buffer.
-//
-//    void csStoreOutputJoint(in CsContext context, uint index, in Transform transform);
-//
-//
-// Stores axis-aligned bounding box of the instance in model space. This
-// is computed by combining the static bounding box of the geometry with
-// the transformed model space joint bounding volumes. Will only be called
-// by the first thread in the workgroup.
-//
-//    void csStoreBoundingVolume(in CsContext context, in Aabb aabb);
+// Instance update preparation shader. Used to submit stream requests
+// and instance update requests as necessary, using one workgroup per
+// visible instance.
+#version 460
 
+#extension GL_GOOGLE_include_directive : enable
 
-// One workgroup per instance. We generally do not expect a large
-// degree of parallelism here since joints are often deeply nested.
+#define CS_MAIN csExecuteUpdate
+
+#include "../as_include_head.glsl"
+
+#include "as_scene.glsl"
+#include "as_scene_instance.glsl"
+#include "as_pass.glsl"
+
 layout(local_size_x_id = SPEC_CONST_ID_MIN_SUBGROUP_SIZE) in;
 
 layout(constant_id = SPEC_CONST_ID_MIN_SUBGROUP_SIZE) const uint CsJointCacheSize = 128;
 
 // Useful constants for some compile-time subgroup optimizations
 bool IsSingleSubgroup = (gl_NumSubgroups == 1);
+
+layout(push_constant)
+uniform PushData {
+  InstanceNodeBuffer    instanceBuffer;
+  uint64_t              sceneBuffer;
+  uint64_t              groupBuffer;
+};
 
 
 // Helper function to compute the axis-aligned bounding box for
@@ -123,9 +92,9 @@ shared Transform csTransformJointOutputCache[CsJointCacheSize];
 
 shared uint csTransformJointCountShared;
 
-void csTransformJoints(in CsContext context) {
-  Geometry geometry = context.geometry.geometry;
-  JointRef jointBuffer = geometryGetJointData(context.geometry, geometry);
+void csTransformJoints(in GeometryRef geometryBuffer, uint64_t instanceBuffer) {
+  Geometry geometry = geometryBuffer.geometry;
+  JointRef jointBuffer = geometryGetJointData(geometryBuffer, geometry);
 
   Aabb aabb = Aabb(
     vec3(geometry.aabb.lo),
@@ -172,7 +141,7 @@ void csTransformJoints(in CsContext context) {
 
     if (canCompute) {
       // Load relative transform from input buffer.
-      Transform relativeTransform = csLoadInputJoint(context, jointIndex);
+      Transform relativeTransform = instanceLoadRelativeJoint(instanceBuffer, jointIndex);
 
       // Compute transform for the current joint.
       jointTransform = csComputeJointTransform(relativeTransform, joint.position);
@@ -183,7 +152,7 @@ void csTransformJoints(in CsContext context) {
         Transform parentTransform;
 
         if (joint.parent < firstCachedOutput)
-          parentTransform = csLoadOutputJoint(context, joint.parent);
+          parentTransform = instanceLoadJoint(instanceBuffer, 0, joint.parent);
         else
           parentTransform = csTransformJointOutputCache[joint.parent - firstCachedOutput];
 
@@ -216,7 +185,7 @@ void csTransformJoints(in CsContext context) {
 
     // Store final result in output buffer.
     if (canCompute)
-      csStoreOutputJoint(context, jointIndex, jointTransform);
+      instanceStoreJoint(instanceBuffer, 0, jointIndex, jointTransform);
 
     // If there are any joints left to process, make sure writes
     // to the output buffer are visible to the entire workgroup.
@@ -234,13 +203,47 @@ void csTransformJoints(in CsContext context) {
   // Broadcast AABB to whole workgroup
   aabb = csAccumulateAabb(aabb);
 
-  if (gl_LocalInvocationIndex == 0)
-    csStoreBoundingVolume(context, aabb);
+  if (gl_LocalInvocationIndex == 0) {
+    instanceStoreAabb(instanceBuffer,
+      Aabb16(f16vec3(aabb.lo), f16vec3(aabb.hi)));
+  }
 }
 
+void csExecuteUpdate() {
+  PassGroupUpdateListIn instanceList = getNodeTypeUpdateList(groupBuffer, NODE_TYPE_INSTANCE);
 
-// Entry point for this compute shader
-void csTransformJointsMain() {
-  CsContext context = csGetContext();
-  csTransformJoints(context);
+  uint32_t instanceRef = instanceList.nodeRefs[gl_WorkGroupID.x];
+  uint32_t instanceIndex = getNodeIndexFromRef(instanceRef);
+
+  InstanceNode instanceNode = instanceBuffer.nodes[instanceIndex];
+  InstanceDataBuffer instanceInfo = InstanceDataBuffer(instanceNode.propertyBuffer);
+
+  // Copy current absolute joint transforms to previous frame's array
+  for (uint i = 0; i < instanceInfo.header.jointCount; i += gl_WorkGroupSize.x) {
+    uint32_t index = i + gl_LocalInvocationIndex;
+
+    if (index < instanceInfo.header.jointCount) {
+      Transform transform = instanceLoadJoint(instanceNode.propertyBuffer, 0, index);
+      instanceStoreJoint(instanceNode.propertyBuffer, 1, index, transform);
+    }
+  }
+
+  // Compute absolute joint transforms for the current frame
+  if (instanceInfo.header.jointCount > 0)
+    csTransformJoints(GeometryRef(instanceNode.geometryBuffer), instanceNode.propertyBuffer);
+
+  // Copy current absolute joint transforms to previous frame's array
+  for (uint i = 0; i < instanceInfo.header.weightCount; i += gl_WorkGroupSize.x) {
+    uint32_t index = i + gl_LocalInvocationIndex;
+
+    if (index < instanceInfo.header.weightCount) {
+      int16_t curr = instanceLoadMorphTargetWeight(instanceNode.propertyBuffer, 2, index);
+      int16_t prev = instanceLoadMorphTargetWeight(instanceNode.propertyBuffer, 0, index);
+
+      instanceStoreMorphTargetWeight(instanceNode.propertyBuffer, 0, index, curr);
+      instanceStoreMorphTargetWeight(instanceNode.propertyBuffer, 1, index, prev);
+    }
+  }
 }
+
+#include "../as_include_tail.glsl"

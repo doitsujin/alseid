@@ -428,6 +428,16 @@ public:
   ~GfxSceneNodeManager();
 
   /**
+   * \brief Queries scene buffer address
+   *
+   * Needed for various scene processing steps.
+   * \returns Scene buffer address
+   */
+  uint64_t getGpuAddress() const {
+    return m_gpuResources.getGpuAddress();
+  }
+
+  /**
    * \brief Queires node reference for node
    *
    * \param [in] node Node index

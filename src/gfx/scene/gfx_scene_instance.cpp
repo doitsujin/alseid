@@ -1,4 +1,5 @@
 #include "gfx_scene_instance.h"
+#include "gfx_scene_pass.h"
 
 namespace as {
 
@@ -349,6 +350,55 @@ void GfxSceneInstanceManager::commitUpdates(
 
   cleanupInstanceNodes(lastFrameId);
   cleanupBufferSlices(lastFrameId);
+}
+
+
+void GfxSceneInstanceManager::processPassGroupInstances(
+  const GfxContext&                   context,
+  const GfxScenePipelines&            pipelines,
+  const GfxSceneNodeManager&          nodeManager,
+        uint32_t                      groupCount,
+  const GfxScenePassGroupInfo*        groupInfos,
+        uint32_t                      frameId) {
+  context->beginDebugLabel("Process instances", 0xff78f0ff);
+  context->beginDebugLabel("Prepare updates", 0xffb4f6ff);
+
+  for (uint32_t i = 0; i < groupCount; i++) {
+    GfxDescriptor dispatch = groupInfos[i].groupBuffer->getDispatchDescriptors(GfxSceneNodeType::eInstance).first;
+
+    GfxSceneInstanceUpdatePrepareArgs args = { };
+    args.instanceBufferVa = m_gpuResources.getGpuAddress();
+    args.sceneBufferVa = nodeManager.getGpuAddress();
+    args.groupBufferVa = groupInfos[i].groupBuffer->getGpuAddress();
+    args.frameId = frameId;
+
+    pipelines.prepareInstanceUpdates(context, dispatch, args);
+  }
+
+  context->memoryBarrier(
+    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
+    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
+
+  context->endDebugLabel();
+  context->beginDebugLabel("Execute updates", 0xffb4f6ff);
+
+  for (uint32_t i = 0; i < groupCount; i++) {
+    GfxDescriptor dispatch = groupInfos[i].groupBuffer->getDispatchDescriptors(GfxSceneNodeType::eInstance).second;
+
+    GfxSceneInstanceUpdateExecuteArgs args = { };
+    args.instanceBufferVa = m_gpuResources.getGpuAddress();
+    args.sceneBufferVa = nodeManager.getGpuAddress();
+    args.groupBufferVa = groupInfos[i].groupBuffer->getGpuAddress();
+
+    pipelines.executeInstanceUpdates(context, dispatch, args);
+  }
+
+  context->memoryBarrier(
+    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
+    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
+
+  context->endDebugLabel();
+  context->endDebugLabel();
 }
 
 

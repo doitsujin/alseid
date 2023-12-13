@@ -35,6 +35,22 @@ GfxDescriptor GfxScenePassGroupBuffer::getBvhDispatchDescriptor(
 }
 
 
+std::pair<GfxDescriptor, GfxDescriptor> GfxScenePassGroupBuffer::getDispatchDescriptors(
+        GfxSceneNodeType              nodeType) const {
+  if (!m_buffer)
+    return std::make_pair(GfxDescriptor(), GfxDescriptor());
+
+  GfxScenePassTypedNodeListOffsets offsets = m_header.listOffsets.at(
+    size_t(nodeType) - size_t(GfxSceneNodeType::eBuiltInCount));
+
+  size_t size = sizeof(GfxDispatchArgs);
+
+  return std::make_pair(
+    m_buffer->getDescriptor(GfxUsage::eParameterBuffer, offsets.nodeList, size),
+    m_buffer->getDescriptor(GfxUsage::eParameterBuffer, offsets.updateList, size));
+}
+
+
 void GfxScenePassGroupBuffer::setPasses(
         uint32_t                      passCount,
   const uint16_t*                     passIndices) {

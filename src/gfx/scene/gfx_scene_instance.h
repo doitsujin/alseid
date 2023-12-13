@@ -23,10 +23,10 @@ enum class GfxSceneInstanceFlag : uint32_t {
    *  frequently trigger re-rendering of cached shadows. However, shaders
    *  remain responsible to detect changes to the instance regardless. */
   eStatic           = (1u << 0),
-  /** The instance does not have any joints or morph targets that can deform
-   *  the geometry. Useful to determine whether to update the instance without
+  /** The instance does has joints or morph targets that can deform the
+   *  geometry. Useful to determine whether to update the instance without
    *  having to access the instance data buffer or geometry buffer. */
-  eNoDeform         = (1u << 1),
+  eDeform           = (1u << 1),
   /** Indicates that motion vectors should not be calculated when rendering
    *  an instance during the next frame. This flag may be set internally if
    *  the instance has not been visible during the previous frame, which means
@@ -563,6 +563,28 @@ public:
     const GfxScenePipelines&            pipelines,
           uint32_t                      currFrameId,
           uint32_t                      lastFrameId);
+
+  /**
+   * \brief Processes visible instances
+   *
+   * Iterates over potentially visible instances in the given
+   * pass groups and updates absolute joint transforms, morph
+   * target weights, and related properties as necessary.
+   * This should be run immediately after BVH traversal.
+   * \param [in] context Context object
+   * \param [in] pipelines Update pipelines
+   * \param [in] nodeManager Node manager
+   * \param [in] groupCount Pass group count
+   * \param [in] groupInfos Pass group parameters
+   * \param [in] frameId Current frame ID
+   */
+  void processPassGroupInstances(
+    const GfxContext&                   context,
+    const GfxScenePipelines&            pipelines,
+    const GfxSceneNodeManager&          nodeManager,
+          uint32_t                      groupCount,
+    const GfxScenePassGroupInfo*        groupInfos,
+          uint32_t                      frameId);
 
 private:
 

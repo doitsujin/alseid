@@ -239,6 +239,16 @@ public:
           bool                          traverse) const;
 
   /**
+   * \brief Queries indirect dispatch descriptors for list processing
+   *
+   * \param [in] nodeType Node type. Must not be a built-in type.
+   * \returns Pair of dispatch descriptors, the first one for node
+   *    list traversal, the second one for node update list traversal.
+   */
+  std::pair<GfxDescriptor, GfxDescriptor> getDispatchDescriptors(
+          GfxSceneNodeType              nodeType) const;
+
+  /**
    * \brief Sets passes for the given pass group
    *
    * Passes \e must be valid and unique. Invalidates the header,

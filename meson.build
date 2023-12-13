@@ -3,7 +3,7 @@ project('alseid', ['cpp', 'c'], default_options : 'cpp_std=c++20')
 glsl_compiler = find_program('glslangValidator')
 glsl_generator = generator(glsl_compiler,
   output    : [ '@BASENAME@.h' ],
-  arguments : [ '--target-env', 'vulkan1.3', '--vn', '@BASENAME@', '@INPUT@', '-o', '@OUTPUT@' ])
+  arguments : [ '--target-env', 'vulkan1.3', '--vn', '@BASENAME@', '@INPUT@', '@EXTRA_ARGS@', '-o', '@OUTPUT@' ])
 
 spv_opt = find_program('spirv-opt', required : false)
 

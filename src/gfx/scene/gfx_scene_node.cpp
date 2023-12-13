@@ -451,6 +451,10 @@ void GfxSceneNodeManager::traverseBvh(
     context->endDebugLabel();
   }
 
+  context->memoryBarrier(
+    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
+    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
+
   context->endDebugLabel();
 }
 

@@ -76,6 +76,32 @@ static_assert(sizeof(GfxSceneTraverseResetArgs) == 16);
 
 
 /**
+ * \brief Instance update arguments
+ */
+struct GfxSceneInstanceUpdatePrepareArgs {
+  uint64_t instanceBufferVa;
+  uint64_t sceneBufferVa;
+  uint64_t groupBufferVa;
+  uint32_t frameId;
+  uint32_t reserved;
+};
+
+static_assert(sizeof(GfxSceneInstanceUpdatePrepareArgs) == 32);
+
+
+/**
+ * \brief Instance update arguments
+ */
+struct GfxSceneInstanceUpdateExecuteArgs {
+  uint64_t instanceBufferVa;
+  uint64_t sceneBufferVa;
+  uint64_t groupBufferVa;
+};
+
+static_assert(sizeof(GfxSceneInstanceUpdateExecuteArgs) == 24);
+
+
+/**
  * \brief Pipelines for scene rendering
  *
  * Creates compute and graphics pipelines for built-in shaders
@@ -168,7 +194,7 @@ public:
    * both \c GfxUsage::eShaderResource and \c GfxUsage::eShaderStorage.
    * \param [in] context Context object
    * \param [in] dispatchTraverse Indirect dispatch descriptor for traversal
-   * \param [in] dispatchTraverse Indirect dispatch descriptor for reset
+   * \param [in] dispatchReset Indirect dispatch descriptor for reset
    * \param [in] args Push constants, including buffer addresses
    */
   void processBvhLayer(
@@ -177,9 +203,36 @@ public:
     const GfxDescriptor&                dispatchReset,
     const GfxSceneTraverseBvhArgs&      args) const;
 
+  /**
+   * \brief Prepares instance updates
+   *
+   * \param [in] context Context object
+   * \param [in] dispatch Indirect dispatch descriptor for preprocessing
+   * \param [in] args Arguments to pass to the instance processing shader
+   */
+  void prepareInstanceUpdates(
+    const GfxContext&                   context,
+    const GfxDescriptor&                dispatch,
+    const GfxSceneInstanceUpdatePrepareArgs& args) const;
+
+  /**
+   * \brief Executes instance updates
+   *
+   * \param [in] context Context object
+   * \param [in] dispatch Indirect dispatch descriptor for preprocessing
+   * \param [in] args Arguments to pass to the instance processing shader
+   */
+  void executeInstanceUpdates(
+    const GfxContext&                   context,
+    const GfxDescriptor&                dispatch,
+    const GfxSceneInstanceUpdateExecuteArgs& args) const;
+
 private:
 
   GfxDevice           m_device;
+
+  GfxComputePipeline  m_csInstanceUpdateExecute;
+  GfxComputePipeline  m_csInstanceUpdatePrepare;
 
   GfxComputePipeline  m_csPassInit;
   GfxComputePipeline  m_csPassTraverseBvh;

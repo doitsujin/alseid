@@ -2,6 +2,9 @@
 
 #include "../gfx_spirv.h"
 
+#include <cs_instance_update_execute.h>
+#include <cs_instance_update_prepare.h>
+
 #include <cs_pass_init.h>
 #include <cs_pass_traverse_bvh.h>
 #include <cs_pass_traverse_reset.h>
@@ -12,11 +15,13 @@ namespace as {
 
 GfxScenePipelines::GfxScenePipelines(
         GfxDevice                     device)
-: m_device              (std::move(device))
-, m_csPassInit          (createComputePipeline("cs_pass_init", cs_pass_init))
-, m_csPassTraverseBvh   (createComputePipeline("cs_pass_traverse_bvh", cs_pass_traverse_bvh))
-, m_csPassTraverseReset (createComputePipeline("cs_pass_traverse_reset", cs_pass_traverse_reset))
-, m_csSceneUpdate       (createComputePipeline("cs_scene_update", cs_scene_update)) {
+: m_device                  (std::move(device))
+, m_csInstanceUpdateExecute (createComputePipeline("cs_instance_update_execute", cs_instance_update_execute))
+, m_csInstanceUpdatePrepare (createComputePipeline("cs_instance_update_prepare", cs_instance_update_prepare))
+, m_csPassInit              (createComputePipeline("cs_pass_init", cs_pass_init))
+, m_csPassTraverseBvh       (createComputePipeline("cs_pass_traverse_bvh", cs_pass_traverse_bvh))
+, m_csPassTraverseReset     (createComputePipeline("cs_pass_traverse_reset", cs_pass_traverse_reset))
+, m_csSceneUpdate           (createComputePipeline("cs_scene_update", cs_scene_update)) {
 
 }
 
@@ -60,6 +65,26 @@ void GfxScenePipelines::processBvhLayer(
   context->bindPipeline(m_csPassTraverseReset);
   context->setShaderConstants(0, resetArgs);
   context->dispatchIndirect(dispatchReset);
+}
+
+
+void GfxScenePipelines::prepareInstanceUpdates(
+  const GfxContext&                   context,
+  const GfxDescriptor&                dispatch,
+  const GfxSceneInstanceUpdatePrepareArgs& args) const {
+  context->bindPipeline(m_csInstanceUpdatePrepare);
+  context->setShaderConstants(0, args);
+  context->dispatchIndirect(dispatch);
+}
+
+
+void GfxScenePipelines::executeInstanceUpdates(
+  const GfxContext&                   context,
+  const GfxDescriptor&                dispatch,
+  const GfxSceneInstanceUpdateExecuteArgs& args) const {
+  context->bindPipeline(m_csInstanceUpdateExecute);
+  context->setShaderConstants(0, args);
+  context->dispatchIndirect(dispatch);
 }
 
 }
