@@ -137,7 +137,7 @@ void csTraverseBvh() {
         if (nodeType == NODE_TYPE_BVH)
           bvhListAddItem(bvhList, bvhLayer, item);
         else
-          nodeListAdd(groupBuffer, item, 64u);
+          nodeListAddItem(groupBuffer, item, 64u);
       }
 
       nextChain = bvhNodes.nodes[nextIndex].chainedNode;

@@ -29,7 +29,7 @@ enum class GfxSceneNodeType : uint8_t {
 
   /** Maximum number of different node types. Used
    *  to determine the size of some lookup tables. */
-  eCount            = 32 + uint8_t(eBuiltInCount)
+  eCount            = 32
 };
 
 

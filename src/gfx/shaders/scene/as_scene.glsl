@@ -19,7 +19,7 @@
 #define NODE_TYPE_INSTANCE              (2u)
 
 #define NODE_TYPE_BUILTIN_COUNT         (2u)
-#define NODE_TYPE_COUNT                 (32u + NODE_TYPE_BUILTIN_COUNT)
+#define NODE_TYPE_COUNT                 (32u)
 
 // Node info. Stores the relative transform
 // and the node's place within the hierarchy.

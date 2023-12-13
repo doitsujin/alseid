@@ -112,15 +112,18 @@ GfxBuffer GfxScenePassGroupBuffer::resizeBuffer(
   // e.g. light nodes during shadow passes.
   for (uint32_t i = uint32_t(GfxSceneNodeType::eBuiltInCount); i < uint32_t(GfxSceneNodeType::eCount); i++) {
     uint32_t count = m_desc.maxNodeCounts.at(i);
-    uint32_t offset = 0u;
+    GfxScenePassTypedNodeListOffsets offsets = { };
 
     if (count) {
-      offset = allocStorage(allocator,
+      offsets.nodeList = allocStorage(allocator,
         sizeof(GfxSceneNodeListHeader) +
         sizeof(GfxSceneNodeListEntry) * count);
+      offsets.updateList = allocStorage(allocator,
+        sizeof(GfxSceneNodeListHeader) +
+        sizeof(uint32_t) * count);
     }
 
-    m_header.nodeListOffsets.at(i - uint32_t(GfxSceneNodeType::eBuiltInCount)) = offset;
+    m_header.listOffsets.at(i - uint32_t(GfxSceneNodeType::eBuiltInCount)) = offsets;
   }
 
   // If possible, just reuse the existing buffer. We don't need to do

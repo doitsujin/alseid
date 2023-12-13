@@ -103,6 +103,18 @@ static_assert(sizeof(GfxScenePassInfo) == 176);
 
 
 /**
+ * \brief Set of node list offsets
+ */
+struct GfxScenePassTypedNodeListOffsets {
+  /** Offset to typed visible node list. */
+  uint32_t nodeList;
+  /** Offset to typed update node list, in case preprocessing
+   *  is required for the given node type. */
+  uint32_t updateList;
+};
+
+
+/**
  * \brief Render pass group buffer header
  *
  * Stores a set of render passes to process in a pass group,
@@ -125,11 +137,12 @@ struct GfxScenePassGroupHeader {
   uint32_t bvhVisibilityOffset;
   /** Render pass indices. */
   std::array<uint16_t, GfxMaxPassesPerGroup> passes;
-  /** Offset of each typed node list, except for BVHs and abstract nodes. */
-  std::array<uint32_t, size_t(GfxSceneNodeType::eCount) - size_t(GfxSceneNodeType::eBuiltInCount)> nodeListOffsets;
+  /** Offset of each set of typed node lists, except for BVHs and abstract nodes. */
+  std::array<GfxScenePassTypedNodeListOffsets,
+    size_t(GfxSceneNodeType::eCount) - size_t(GfxSceneNodeType::eBuiltInCount)> listOffsets;
 };
 
-static_assert(sizeof(GfxScenePassGroupHeader) == 208);
+static_assert(sizeof(GfxScenePassGroupHeader) == 320);
 
 
 /**
