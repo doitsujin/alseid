@@ -1,6 +1,8 @@
 #ifndef AS_PASS_H
 #define AS_PASS_H
 
+#include "../as_quaternion.glsl"
+
 #define PASS_TYPE_FLAT    (0u)
 #define PASS_TYPE_MIRROR  (1u)
 #define PASS_TYPE_CUBE    (2u)
@@ -19,6 +21,76 @@ struct PassInfo {
   f32vec4     mirrorPlane;
   f32vec4     frustumOrFaceRotations[6];
 };
+
+
+// Mirrors a point through a plane.
+vec3 mirrorVertex(vec4 plane, vec3 point) {
+  float dist = plane.w + dot(plane.xyz, point);
+  return point - 2.0f * dist * plane.xyz;
+}
+
+
+// Transforms a world space coordinate to a view space coordinate for the
+// given pass. Takes the pass info and cube map face index as arguments.
+vec3 passTransformToViewSpace(
+  in    PassInfo                      pass,
+        vec3                          vertex,
+        uint32_t                      face) {
+  vertex = transApply(pass.viewTransform, vertex);
+
+  if (pass.type == PASS_TYPE_MIRROR)
+    vertex = mirrorVertex(pass.mirrorPlane, vertex);
+  else if (pass.type == PASS_TYPE_CUBE && face < 6)
+    vertex = quatApply(pass.frustumOrFaceRotations[face], vertex);
+
+  return vertex;
+}
+
+
+// Tests whether a given sphere passes the distance test of a given pass.
+//
+// Takes the world space coordinates of the center of the bounding box,
+// as well as the distance to the most distant vertex from the center.
+bool passTestViewDistance(
+  in    PassInfo                      pass,
+        vec3                          center,
+        float                         radius) {
+  if (pass.viewDistanceLimit <= 0.0f)
+    return true;
+
+  center = passTransformToViewSpace(pass, center, ~0u);
+  float dist = length(center) * pass.viewDistanceScale - radius;
+  return dist < pass.viewDistanceLimit;
+}
+
+
+// Tests whether a given world space point or sphere is contained within
+// the view frustum of the given pass. Sets the corresponding bit for each
+// frustum plane that the sphere is outside of.
+//
+// This can be used to perform frustum culling on a bounding box by treating
+// each vertex of the box as a point, and ANDing together the resulting bit
+// masks. If the end result is 0, the object is visible.
+uint32_t passTestViewFrustum(
+  in    PassInfo                      pass,
+        vec3                          center,
+        float                         radius) {
+  uint32_t result = 0;
+
+  if (pass.type == PASS_TYPE_CUBE)
+    return result;
+
+  center = passTransformToViewSpace(pass, center, ~0u);
+
+  for (uint32_t i = 0; i < 6; i++) {
+    vec4 plane = pass.frustumOrFaceRotations[i];
+
+    if (plane.w + dot(center, plane.xyz) < -radius)
+      result |= 1u << i;
+  }
+
+  return result;
+}
 
 
 // Render pass info buffer reference. Useful when access to pass
