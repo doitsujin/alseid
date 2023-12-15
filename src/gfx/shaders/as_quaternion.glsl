@@ -1,3 +1,6 @@
+#ifndef AS_QUATERION_H
+#define AS_QUATERION_H
+
 // Computes identity quaternion
 vec4 quatIdentity() {
   return vec4(0.0f, 0.0f, 0.0f, 1.0f);
@@ -168,3 +171,5 @@ DualQuat transToDualQuat(in Transform a) {
 Transform dualQuatToTrans(in DualQuat dq) {
   return Transform(dq.r, 2.0f * (dq.r.w * dq.d.xyz - dq.d.w * dq.r.xyz + cross(dq.r.xyz, dq.d.xyz)));
 }
+
+#endif /* AS_QUATERION_H */
