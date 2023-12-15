@@ -1,0 +1,28 @@
+// Draw list initialization shader. Resets all draw counts
+// to zero without otherwise touching the buffer.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csInitDrawList
+
+#include "../as_include_head.glsl"
+
+#include "as_scene_draw.glsl"
+
+layout(local_size_x = 64) in;
+
+layout(push_constant)
+uniform PushData {
+  DrawListBuffer  drawList;
+  uint32_t        drawGroupCount;
+};
+
+void csInitDrawList() {
+  uint32_t drawGroup = gl_GlobalInvocationID.x;
+
+  if (drawGroup < drawGroupCount)
+    drawListInit(drawList, drawGroup);
+}
+
+#include "../as_include_tail.glsl"

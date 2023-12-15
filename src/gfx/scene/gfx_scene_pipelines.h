@@ -103,6 +103,15 @@ static_assert(sizeof(GfxSceneInstanceUpdateExecuteArgs) == 24);
 
 
 /**
+ * \brief Draw list initialization arguments
+ */
+struct GfxSceneDrawListInitArgs {
+  uint64_t drawListVa;
+  uint32_t drawGroupCount;
+};
+
+
+/**
  * \brief Pipelines for scene rendering
  *
  * Creates compute and graphics pipelines for built-in shaders
@@ -228,9 +237,25 @@ public:
     const GfxDescriptor&                dispatch,
     const GfxSceneInstanceUpdateExecuteArgs& args) const;
 
+  /**
+   * \brief Initializes draw list buffer
+   *
+   * Copies draw group properties from a host buffer to the GPU, but resets
+   * the active draw count to zero so that draws can be added dynamically.
+   * Draw lists consist of a \c GfxDrawListHeader structure, followed by an
+   * array of \c GfxSceneDrawListEntry structures.
+   * \param [in] context Context object
+   * \param [in] args Arguments to pass to the initialization shader
+   */
+  void initDrawList(
+    const GfxContext&                   context,
+    const GfxSceneDrawListInitArgs&     args) const;
+
 private:
 
   GfxDevice           m_device;
+
+  GfxComputePipeline  m_csDrawListInit;
 
   GfxComputePipeline  m_csInstanceUpdateExecute;
   GfxComputePipeline  m_csInstanceUpdatePrepare;
