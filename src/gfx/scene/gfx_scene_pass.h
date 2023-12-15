@@ -15,7 +15,7 @@ constexpr uint32_t GfxMaxPassesPerGroup = 32u;
 /**
  * \brief Render pass type
  */
-enum class GfxScenePassType : uint16_t {
+enum class GfxScenePassType : uint32_t {
   /** Flat render pass, with a defined view frustum. Used for
    *  regular rendering and directional shadows. */
   eFlat   = 0u,
@@ -30,7 +30,7 @@ enum class GfxScenePassType : uint16_t {
 /**
  * \brief Render pass flags
  */
-enum class GfxScenePassFlag : uint16_t {
+enum class GfxScenePassFlag : uint32_t {
   /** Indicates that the pass uses lighting, and that a light list
    *  should be generated for any pass group containing this pass. */
   eEnableLighting       = (1u << 0),
@@ -70,10 +70,6 @@ struct GfxScenePassInfo {
   GfxScenePassType type;
   /** Render pass flags */
   GfxScenePassFlags flags;
-  /** Render pass index used for distance culling and LOD selection.
-   *  This is relevant for shadow mapping, since rendering must be
-   *  consistent between the main pass and shadow passes. */
-  uint32_t distanceCullingPass;
   /** Maximum view distance of this render pass. Useful for shadow
    *  maps of point lights since the number of instances contributing
    *  to visible shadows is limited by the light's maximum range.

@@ -56,8 +56,9 @@ struct GfxSceneTraverseBvhArgs {
   uint64_t passBufferVa;
   uint64_t sceneBufferVa;
   uint64_t groupBufferVa;
-  uint32_t bvhLayer;
   uint32_t frameId;
+  uint16_t bvhLayer;
+  uint16_t distanceCullingPass;
 };
 
 static_assert(sizeof(GfxSceneTraverseBvhArgs) == 32);

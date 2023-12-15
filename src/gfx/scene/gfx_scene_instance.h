@@ -86,7 +86,7 @@ struct GfxSceneInstanceDraw {
   uint16_t meshInstanceCount;
   /** Offset of shading parameter data for this particular draw
    *  within the instance data buffer. Shaders assigned to the
-   *  given material must interpret this data consisftently. */
+   *  given material must interpret this data consistently. */
   uint32_t shadingParameterOffset;
   /** Total shading data size, in bytes. Used during allocation.
    *  The intention is to use the same set of parameters for all
@@ -114,7 +114,7 @@ struct GfxSceneInstanceDataHeader {
    *  this should be one draw per unique mesh and material pair. */
   uint32_t drawCount;
   /** Offset to draw parameters within the buffer. Points to a tightly
-   *  packed array of \c GfcSceneInstanceDraw structrues. */
+   *  packed array of \c GfxSceneInstanceDraw structrues. */
   uint32_t drawOffset;
   /** Number of joint transforms. */
   uint32_t jointCount;

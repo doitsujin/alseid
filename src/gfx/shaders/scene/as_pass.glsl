@@ -11,8 +11,8 @@
 struct PassInfo {
   Projection  projection;
   Transform   viewTransform;
-  uint32_t    passType;
-  uint32_t    distanceCullingPass;
+  uint32_t    type;
+  uint32_t    flags;
   float32_t   viewDistanceLimit;
   float32_t   viewDistanceScale;
   float32_t   lodDistanceScale;

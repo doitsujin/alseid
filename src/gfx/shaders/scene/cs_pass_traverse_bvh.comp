@@ -32,8 +32,9 @@ uniform PushData {
   uint64_t  passBuffer;
   uint64_t  sceneBuffer;
   uint64_t  groupBuffer;
-  uint32_t  bvhLayer;
   uint32_t  frameId;
+  uint16_t  bvhLayer;
+  uint16_t  distanceCullingPass;
 };
 
 

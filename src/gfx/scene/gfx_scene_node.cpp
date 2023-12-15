@@ -383,7 +383,8 @@ void GfxSceneNodeManager::traverseBvh(
   const GfxScenePipelines&            pipelines,
         uint32_t                      groupCount,
   const GfxScenePassGroupInfo*        groupInfos,
-        uint32_t                      frameId) {
+        uint32_t                      frameId,
+        uint32_t                      referencePass) {
   context->beginDebugLabel("Traverse scene BVH", 0xff64c0ff);
 
   uint64_t sceneBufferVa = m_gpuResources.getGpuAddress();
@@ -438,8 +439,9 @@ void GfxSceneNodeManager::traverseBvh(
         traverseArgs.passBufferVa = groupInfo.passBufferVa;
         traverseArgs.sceneBufferVa = sceneBufferVa;
         traverseArgs.groupBufferVa = groupInfo.groupBuffer->getGpuAddress();
-        traverseArgs.bvhLayer = i;
         traverseArgs.frameId = frameId;
+        traverseArgs.bvhLayer = i;
+        traverseArgs.distanceCullingPass = uint16_t(referencePass);
 
         pipelines.processBvhLayer(context,
           groupInfo.groupBuffer->getBvhDispatchDescriptor(i, true),

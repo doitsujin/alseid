@@ -619,13 +619,17 @@ public:
    * \param [in] groupCount Pass group count
    * \param [in] groupInfos Pass group parameters
    * \param [in] frameId Current frame ID
+   * \param [in] referencePass Pass index used for distance culling
+   *    and LOD selection. This should generally refer to the main
+   *    render pass, except when rendering static shadow maps.
    */
   void traverseBvh(
     const GfxContext&                   context,
     const GfxScenePipelines&            pipelines,
           uint32_t                      groupCount,
     const GfxScenePassGroupInfo*        groupInfos,
-          uint32_t                      frameId);
+          uint32_t                      frameId,
+          uint32_t                      referencePass);
 
 private:
 
