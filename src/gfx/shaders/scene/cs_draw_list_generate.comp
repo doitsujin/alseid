@@ -1,0 +1,379 @@
+// Shader that performs culling and generate draw lists for a given set of
+// render passes. Emits task shader workgroup counts as well as additional
+// data read by the task shader during rendering.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csGenerateDraws
+#define CS_WORKGROUP_SIZE 64
+
+#include "../as_include_head.glsl"
+
+#include "as_scene.glsl"
+#include "as_scene_draw.glsl"
+#include "as_scene_instance.glsl"
+#include "as_pass.glsl"
+
+layout(local_size_x = CS_WORKGROUP_SIZE) in;
+
+layout(constant_id = SPEC_CONST_ID_TASK_SHADER_WORKGROUP_SIZE)
+const uint CsTaskShaderWorkgroupSize = 128;
+
+layout(set = 0, binding = 0, scalar)
+uniform PassData {
+  PassInfo            passInfos[64];
+};
+
+
+layout(push_constant)
+uniform PushData {
+  uint64_t            drawListBuffer;
+  uint64_t            instanceBuffer;
+  uint64_t            sceneBuffer;
+  uint64_t            groupBuffer;
+  uint32_t            frameId;
+  uint32_t            passMask;
+  uint32_t            lodSelectionPass;
+};
+
+
+struct InstanceDrawInfo {
+  uint32_t            instanceIndex;
+  uint32_t            drawCount;
+  uint32_t            drawIndex;
+  float               viewDistanceSq;
+  uint32_t            passMask;
+};
+
+
+// Helper function to load an instance node from memory.
+InstanceNode csLoadInstanceNode(uint32_t instanceIndex) {
+  InstanceNodeBuffer instanceNodes = InstanceNodeBuffer(instanceBuffer);
+  return instanceNodes.nodes[instanceIndex];
+}
+
+
+// Helper function to compute the view distance for the purpose of LOD selection.
+// Uses the center of geometry's static AABB rather than the adjusted AABB for
+// consistency regardless of animation.
+float csComputeLodDistance(uint64_t geometryBuffer, in Transform worldTransform) {
+  GeometryRef geometry = GeometryRef(geometryBuffer);
+
+  vec3 staticCenter = (vec3(geometry.geometry.aabb.lo) + vec3(geometry.geometry.aabb.hi)) / 2.0f;
+  staticCenter = transApply(worldTransform, staticCenter);
+  staticCenter = passTransformToViewSpace(passInfos[lodSelectionPass], staticCenter, ~0u);
+
+  float viewDistanceSq = dot(staticCenter, staticCenter);
+
+  return viewDistanceSq *
+    passInfos[lodSelectionPass].lodDistanceScale *
+    passInfos[lodSelectionPass].lodDistanceScale;
+}
+
+
+// Global draw info structure which stores information about the
+// draws to emit for the current instance.
+InstanceDrawInfo instanceDrawInfo;
+
+void csInitDrawInfo() {
+  instanceDrawInfo.instanceIndex = 0u;
+  instanceDrawInfo.drawCount = 0u;
+  instanceDrawInfo.drawIndex = 0u;
+  instanceDrawInfo.viewDistanceSq = 0u;
+  instanceDrawInfo.passMask = 0u;
+}
+
+
+// Helper function to read the global draw info structure from
+// another invocation.
+InstanceDrawInfo csGetDrawInfoForThread(uint32_t invocationIndex) {
+  return InstanceDrawInfo(
+    subgroupShuffle(instanceDrawInfo.instanceIndex, invocationIndex),
+    subgroupShuffle(instanceDrawInfo.drawCount, invocationIndex),
+    subgroupShuffle(instanceDrawInfo.drawIndex, invocationIndex),
+    subgroupShuffle(instanceDrawInfo.viewDistanceSq, invocationIndex),
+    subgroupShuffle(instanceDrawInfo.passMask, invocationIndex));
+}
+
+
+// Helper function to push the current invocation index to another invocation
+// for data exchange purposes. Always needs to go through LDS since we cannot
+// otherwise scan the accumulated draw counts in constant time.
+shared int32_t csThreadIndexForOffsetShared[CS_WORKGROUP_SIZE];
+
+int32_t csGetDataIndexForThread(uint32_t drawCount, uint32_t drawCountAccum) {
+  uint32_t ofs = gl_SubgroupSize * gl_SubgroupID;
+  uint32_t sid = gl_SubgroupInvocationID;
+
+  // Initialize with an invalid index
+  csThreadIndexForOffsetShared[ofs + sid] = -1;
+  barrier();
+
+  // Push source data thread index to the shared array if the draw
+  // count is non-zero, and if its draws can actually be processed
+  // in the current iteration
+  if (drawCount > 0u && drawCountAccum < gl_SubgroupSize)
+    csThreadIndexForOffsetShared[ofs + drawCountAccum] = int32_t(sid);
+  barrier();
+
+  // Fetch the index for the current thread. This will be negative
+  // for most threads, so extra steps are needed to find the actual
+  // thread and draw index.
+  int32_t result = csThreadIndexForOffsetShared[ofs + sid];
+  barrier();
+
+  return result;
+}
+
+
+bool csPrepareNextIteration(out InstanceDrawInfo info) {
+  if (gl_SubgroupSize * gl_NumSubgroups != CS_WORKGROUP_SIZE) {
+    // Fallback path in case the subgroup layout is weird. This will emit one
+    // draw per thread and iteration with no cross-thread communication.
+    InstanceDrawInfo result = instanceDrawInfo;
+    result.drawCount = result.drawIndex < result.drawCount ? 1u : 0u;
+
+    info = result;
+
+    if (result.drawCount == 0u)
+      return false;
+
+    instanceDrawInfo.drawIndex += 1u;
+    return true;
+  } else {
+    // Optimized path. This will spread the workload of emitting draws across
+    // all invocations in a subgroup in order to increase occupancy in case
+    // draw counts are divergent. Don't bother with an LDS path since that
+    // is extremely cursed and likely less efficient in the average case.
+    uint32_t drawCount = instanceDrawInfo.drawCount;
+    uint32_t drawIndex = instanceDrawInfo.drawIndex;
+    uint32_t drawCountAccum = subgroupExclusiveAdd(drawCount - drawIndex);
+
+    // Find index of the last invocation with a valid index, and use
+    // that to find the invocation to read draw infos from.
+    int32_t dataIndex = csGetDataIndexForThread(drawCount - drawIndex, drawCountAccum);
+
+    uint32_t validIndexBit = subgroupBallotFindMSB(
+      subgroupBallot(dataIndex >= 0) & gl_SubgroupLeMask);
+
+    dataIndex = subgroupShuffle(dataIndex, validIndexBit);
+
+    // Adjust current iteration parameters based on invocation IDs
+    InstanceDrawInfo result = csGetDrawInfoForThread(uint32_t(dataIndex));
+    result.drawIndex += gl_SubgroupInvocationID - validIndexBit;
+    result.drawCount = result.drawIndex < result.drawCount ? 1u : 0u;
+
+    info = result;
+
+    // Adjust the current invocation's parameters by the number of
+    // draws that the subgroup processes in the current iteration
+    uint32_t drawsProcessed = uint32_t(clamp(
+      int32_t(gl_SubgroupSize) - int32_t(drawCountAccum),
+      0, int32_t(drawCount - drawIndex)));
+
+    instanceDrawInfo.drawIndex += drawsProcessed;
+    return drawIndex < drawCount;
+  }
+}
+
+
+// Helper function to or a boolean value across the entire workgroup.
+// This is necessary to ensure uniform control flow even if there are
+// multiple subgroups per workgroup.
+shared uint32_t csAtomicBoolShared;
+
+bool csWorkgroupAny(bool value) {
+  bool result = subgroupAny(value);
+
+  if (gl_NumSubgroups > 1u) {
+    if (gl_LocalInvocationIndex == 0u)
+      csAtomicBoolShared = 0u;
+    barrier();
+
+    if (gl_SubgroupInvocationID == 0u && result)
+      atomicOr(csAtomicBoolShared, 1u);
+    barrier();
+
+    result = csAtomicBoolShared != 0u;
+    barrier();
+  }
+
+  return result;
+}
+
+
+uvec2 csSelectLod(uint64_t geometryBuffer, uint32_t meshIndex, float viewDistanceSq) {
+  return uvec2(0u, 1u);
+  GeometryRef geometry = GeometryRef(geometryBuffer);
+  GeometryBufferPointerRef geometryBuffers = geometryGetBuffers(geometry, geometry.geometry);
+
+  Mesh mesh = geometry.meshes[meshIndex];
+  MeshLodRef meshLods = meshGetLodData(geometry, mesh);
+
+  // Perform basic test against the mesh visibility range, passing
+  // this also means that we can at least use LOD 0. 
+  vec2 visibilityRange = vec2(mesh.visibilityRange);
+  vec2 visibilityRangeSq = visibilityRange * visibilityRange;
+
+  if ((viewDistanceSq < visibilityRangeSq.x) ||
+      (viewDistanceSq >= visibilityRangeSq.y && visibilityRangeSq.y != 0.0f))
+    return uvec2(0u, 0u);
+
+  // LODs are ordered by view distance from least to most detailed, just
+  // iterate over the list and pick an LOD for the adjusted view distance.
+  uvec2 result = uvec2(0u, meshLods.lods[0].meshletCount);
+
+  for (uint32_t i = 1; i < uint32_t(mesh.lodCount); i++) {
+    float maxDistance = float(meshLods.lods[i].maxDistance);
+    float maxDistanceSq = maxDistance * maxDistance;
+
+    if (viewDistanceSq >= maxDistanceSq && maxDistance != 0.0f)
+      break;
+
+    // Also make sure that meshlet data is present for the current LOD.
+    uint bufferIndex = meshLods.lods[i].bufferIndex;
+
+    if (bufferIndex > 0u && uint64_t(geometryBuffers.buffers[bufferIndex - 1u]) == uint64_t(0u))
+      break;
+
+    result = uvec2(i, meshLods.lods[i].meshletCount);
+  }
+
+  return result;
+}
+
+
+void csEmitDraw(in InstanceDrawInfo drawInfo) {
+  // Load draw properties from memory
+  InstanceNode instanceNode = csLoadInstanceNode(drawInfo.instanceIndex);
+
+  InstanceDataBufferIn instanceData = InstanceDataBufferIn(instanceNode.propertyBuffer);
+  InstanceDrawBuffer instanceDraws = InstanceDrawBuffer(instanceNode.propertyBuffer + instanceData.header.drawOffset);
+  InstanceDraw draw = instanceDraws.draws[drawInfo.drawIndex];
+
+  // Select mesh LOD based on the precomputed view distance, and skip
+  // the draw if there is no suitable LOD for the current mesh.
+  uvec2 lodInfo = csSelectLod(instanceNode.geometryBuffer,
+    draw.meshIndex, drawInfo.viewDistanceSq);
+
+  uint32_t lodIndex = lodInfo.x;
+  uint32_t lodMeshletCount = lodInfo.y;
+
+  if (lodMeshletCount == 0u)
+    return;
+
+  // Compute addresses of the various output arrays
+  DrawListBuffer drawList = DrawListBuffer(drawListBuffer);
+  DrawInstanceInfoBufferOut drawInfos = DrawInstanceInfoBufferOut(drawListBuffer + drawList.header.drawInfoOffset);
+  DrawParameterBufferOut drawArgs = DrawParameterBufferOut(drawListBuffer + drawList.header.drawParameterOffset);
+
+  // Emit actual draw parameters
+  DrawInstanceInfo drawInstanceInfo;
+  drawInstanceInfo.instanceAndLod = drawPackInstanceAndLod(drawInfo.instanceIndex, lodIndex);
+  drawInstanceInfo.meshIndex = draw.meshIndex;
+  drawInstanceInfo.meshInstance = draw.meshInstanceIndex;
+  drawInstanceInfo.shadingDataOffset = draw.shadingParameterOffset;
+  drawInstanceInfo.passMask = drawInfo.passMask;
+
+  u32vec3 drawParameters = u32vec3(0u);
+  drawParameters.x = asComputeWorkgroupCount1D(lodMeshletCount, CsTaskShaderWorkgroupSize);
+  drawParameters.y = draw.meshInstanceCount;
+  drawParameters.z = bitCount(drawInfo.passMask);
+
+  drawListAdd(drawList, drawInfos, drawArgs,
+    draw.materialIndex, drawInstanceInfo, drawParameters);
+}
+
+
+void csGenerateDraws() {
+  uint32_t gid = gl_GlobalInvocationID.x;
+
+  PassGroupBuffer group = PassGroupBuffer(groupBuffer);
+
+  PassGroupNodeListIn nodeList = PassGroupNodeListIn(groupBuffer +
+    group.nodeListOffsets[NODE_TYPE_INSTANCE - NODE_TYPE_BUILTIN_COUNT].nodeList);
+
+  csInitDrawInfo();
+
+  if (gid < nodeList.header.entryCount) {
+    PassGroupNodeListItem nodeItem = nodeList.items[gid];
+    instanceDrawInfo.instanceIndex = getNodeIndexFromRef(nodeItem.nodeRef);
+
+    InstanceNode instance = csLoadInstanceNode(instanceDrawInfo.instanceIndex);
+
+    SceneHeader scene = SceneHeader(sceneBuffer);
+
+    uint32_t currFrameOffset = scene.nodeCount * (frameId & 1u);
+
+    bool hasInstanceData = instance.propertyBuffer != uint64_t(0u);
+    bool hasGeometryData = instance.geometryBuffer != uint64_t(0u);
+
+    InstanceDataBufferIn instanceData = InstanceDataBufferIn(instance.propertyBuffer);
+
+    if (hasInstanceData && hasGeometryData) {
+      SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(sceneBuffer + scene.nodeTransformOffset);
+      Transform worldTransform = nodeTransforms.nodeTransforms[instance.nodeIndex + currFrameOffset].absoluteTransform;
+
+      instanceDrawInfo.viewDistanceSq = csComputeLodDistance(
+        instance.geometryBuffer, worldTransform);
+
+      // Compute bit mask of passes to test, then scalarize the pass mask
+      // across all invocations. This is generally efficient since the pass
+      // masks are not expected to diverge heavily.
+      instanceDrawInfo.passMask = passMask & nodeItem.partialVisibilityMask;
+      uint32_t passMaskUniform = subgroupOr(instanceDrawInfo.passMask);
+
+      while (passMaskUniform != 0u) {
+        uint32_t passIndex = findLSB(passMaskUniform);
+        uint32_t passBit = 1u << passIndex;
+
+        if ((instanceDrawInfo.passMask & passBit) != 0) {
+          PassInfo passInfo = passInfos[passIndex];
+
+          // Use the adjusted bounding box for actual visibility tests
+          Aabb aabb = Aabb(
+            vec3(instanceData.header.aabb.lo),
+            vec3(instanceData.header.aabb.hi));
+
+          vec3 center = transApply(worldTransform, aabbComputeCenter(aabb));
+          float radius = length(instanceData.header.aabb.hi - instanceData.header.aabb.lo) / 2.0f;
+
+          // Perform distance and frustum culling tests
+          bool isVisible = passTestViewDistance(passInfo, center, radius);
+
+          if (isVisible) {
+            uint32_t planeTestFailMask = 0x3fu;
+
+            for (uint32_t i = 0; i < 8; i++) {
+              vec3 vertex = transApply(worldTransform, aabbComputeVertex(aabb, i));
+              planeTestFailMask &= passTestViewFrustum(passInfo, vertex, 0.0f);
+            }
+
+            isVisible = planeTestFailMask == 0u;
+          }
+
+          if (!isVisible)
+            instanceDrawInfo.passMask -= passBit;
+        }
+
+        passMaskUniform -= passBit;
+      }
+
+      if (instanceDrawInfo.passMask != 0u)
+        instanceDrawInfo.drawCount = instanceData.header.drawCount;
+    }
+  }
+
+  // Process draws for each instance with a non-zero visibility mask.
+  // This may still skip draws in case there is no suitable LOD for
+  // a given mesh within the current pass.
+  InstanceDrawInfo drawInfo;
+
+  while (csWorkgroupAny(csPrepareNextIteration(drawInfo))) {
+    if (drawInfo.drawCount > 0u)
+      csEmitDraw(drawInfo);
+  }
+}
+
+#include "../as_include_tail.glsl"

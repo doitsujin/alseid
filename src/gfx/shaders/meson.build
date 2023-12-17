@@ -26,6 +26,7 @@ as_shader_includes = files(
 
 as_shader_builtins = [
   'scene/cs_draw_list_init.comp',
+  'scene/cs_draw_list_generate.comp',
 
   'scene/cs_instance_update_execute.comp',
   'scene/cs_instance_update_prepare.comp',

@@ -47,13 +47,25 @@ struct DrawInstanceInfo {
 };
 
 
-layout(buffer_reference, buffer_reference_align = 8, scalar)
+uint32_t drawPackInstanceAndLod(uint32_t instanceIndex, uint32_t lod) {
+  return bitfieldInsert(instanceIndex, lod, 24, 8);
+}
+
+
+uvec2 drawUnpackInstanceAndLod(uint32_t instanceAndLod) {
+  return uvec2(
+    bitfieldExtract(instanceAndLod, 0, 24),
+    bitfieldExtract(instanceAndLod, 24, 8));
+}
+
+
+layout(buffer_reference, buffer_reference_align = 16, scalar)
 readonly buffer DrawInstanceInfoBufferIn {
   DrawInstanceInfo  draws[];
 };
 
 
-layout(buffer_reference, buffer_reference_align = 8, scalar)
+layout(buffer_reference, buffer_reference_align = 16, scalar)
 writeonly buffer DrawInstanceInfoBufferOut {
   DrawInstanceInfo  draws[];
 };
@@ -62,7 +74,7 @@ writeonly buffer DrawInstanceInfoBufferOut {
 // Indirect draw parameter buffer. Stores a flat array of task
 // shader workgroup counts.
 layout(buffer_reference, buffer_reference_align = 4, scalar)
-buffer DrawParameterBuffer {
+buffer DrawParameterBufferOut {
   u32vec3   draws[];
 };
 
@@ -82,7 +94,7 @@ void drawListInit(
 void drawListAdd(
         DrawListBuffer                drawList,
         DrawInstanceInfoBufferOut     drawInfos,
-        DrawParameterBuffer           drawArgs,
+        DrawParameterBufferOut        drawArgs,
         uint32_t                      drawGroup,
   in    DrawInstanceInfo              drawInfo,
   in    u32vec3                       drawArg) {

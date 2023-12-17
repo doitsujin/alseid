@@ -112,6 +112,20 @@ struct GfxSceneDrawListInitArgs {
 
 
 /**
+ * \brief Draw list initialization arguments
+ */
+struct GfxSceneDrawListGenerateArgs {
+  uint64_t drawListVa;
+  uint64_t instanceBufferVa;
+  uint64_t sceneBufferVa;
+  uint64_t groupBufferVa;
+  uint32_t frameId;
+  uint32_t passMask;
+  uint32_t lodSelectionPass;
+};
+
+
+/**
  * \brief Pipelines for scene rendering
  *
  * Creates compute and graphics pipelines for built-in shaders
@@ -251,11 +265,26 @@ public:
     const GfxContext&                   context,
     const GfxSceneDrawListInitArgs&     args) const;
 
+  /**
+   * \brief Generates draw list
+   *
+   * \param [in] context Context object
+   * \param [in] dispatch Indirect dispatch descriptor
+   * \param [in] passInfos Pass info uniform buffer descriptor
+   * \param [in] args Arguments to pass to the initialization shader
+   */
+  void generateDrawList(
+    const GfxContext&                   context,
+    const GfxDescriptor&                dispatch,
+    const GfxDescriptor&                passInfos,
+    const GfxSceneDrawListGenerateArgs& args) const;
+
 private:
 
   GfxDevice           m_device;
 
   GfxComputePipeline  m_csDrawListInit;
+  GfxComputePipeline  m_csDrawListGenerate;
 
   GfxComputePipeline  m_csInstanceUpdateExecute;
   GfxComputePipeline  m_csInstanceUpdatePrepare;

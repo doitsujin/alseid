@@ -2,6 +2,7 @@
 
 #include "../gfx_spirv.h"
 
+#include <cs_draw_list_generate.h>
 #include <cs_draw_list_init.h>
 
 #include <cs_instance_update_execute.h>
@@ -19,6 +20,7 @@ GfxScenePipelines::GfxScenePipelines(
         GfxDevice                     device)
 : m_device                  (std::move(device))
 , m_csDrawListInit          (createComputePipeline("cs_draw_list_init", cs_draw_list_init))
+, m_csDrawListGenerate      (createComputePipeline("cs_draw_list_generate", cs_draw_list_generate))
 , m_csInstanceUpdateExecute (createComputePipeline("cs_instance_update_execute", cs_instance_update_execute))
 , m_csInstanceUpdatePrepare (createComputePipeline("cs_instance_update_prepare", cs_instance_update_prepare))
 , m_csPassInit              (createComputePipeline("cs_pass_init", cs_pass_init))
@@ -98,6 +100,18 @@ void GfxScenePipelines::initDrawList(
   context->setShaderConstants(0, args);
   context->dispatch(m_csDrawListInit->computeWorkgroupCount(
     Extent3D(args.drawGroupCount, 1, 1)));
+}
+
+
+void GfxScenePipelines::generateDrawList(
+  const GfxContext&                   context,
+  const GfxDescriptor&                dispatch,
+  const GfxDescriptor&                passInfos,
+  const GfxSceneDrawListGenerateArgs& args) const {
+  context->bindPipeline(m_csDrawListGenerate);
+  context->bindDescriptor(0, 0, passInfos);
+  context->setShaderConstants(0, args);
+  context->dispatchIndirect(dispatch);
 }
 
 }
