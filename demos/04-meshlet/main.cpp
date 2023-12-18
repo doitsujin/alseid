@@ -37,7 +37,7 @@ public:
   : m_io    (IoBackend::eDefault, std::thread::hardware_concurrency())
   , m_wsi   (WsiBackend::eDefault)
   , m_gfx   (GfxBackend::eDefault, m_wsi,
-              // GfxInstanceFlag::eApiValidation |
+              GfxInstanceFlag::eApiValidation |
               GfxInstanceFlag::eDebugValidation |
               GfxInstanceFlag::eDebugMarkers) {
     m_window = createWindow();
@@ -52,8 +52,9 @@ public:
     // Create mesh shader pipeline
     GfxDeviceFeatures features = m_device->getFeatures();
 
-    if (!(features.shaderStages & GfxShaderStage::eMesh))
-      throw Error("Mesh shader support required");
+    if (!(features.shaderStages & GfxShaderStage::eMesh)
+     || !(features.shaderStages & GfxShaderStage::eTask))
+      throw Error("Mesh and task shader support required");
 
     GfxMeshPipelineDesc msPipelineDesc;
     msPipelineDesc.debugName = "MS pipeline";
