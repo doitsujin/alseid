@@ -8,7 +8,6 @@
 #include "../gfx_types.h"
 
 #include "gfx_scene_common.h"
-#include "gfx_scene_draw.h"
 #include "gfx_scene_pipelines.h"
 
 namespace as {

@@ -430,7 +430,7 @@ public:
    * \brief Queries instance buffer GPU address
    * \returns GPU address of instance buffer
    */
-  uint64_t getInstanceBufferGpuAddress() const {
+  uint64_t getGpuAddress() const {
     return m_gpuResources.getGpuAddress();
   }
 

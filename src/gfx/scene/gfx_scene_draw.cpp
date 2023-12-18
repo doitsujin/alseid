@@ -110,23 +110,64 @@ GfxBuffer GfxSceneDrawBuffer::updateLayout(
   // Copy scratch buffer to the draw buffer, and clear the rest to zero
   // if the buffer has been newly allocated. Don't bother otherwise since
   // the layout is expected to be volatile anyway.
+  context->beginDebugLabel("Initialize draw buffer", 0xff96c096u);
   context->copyBuffer(m_buffer, 0, scratch.buffer, scratch.offset, scratch.size);
 
   if (newSize > oldSize)
     context->clearBuffer(m_buffer, drawGroupListSize, newSize - drawGroupListSize);
 
+  context->endDebugLabel();
   return oldBuffer;
 }
 
 
-void GfxSceneDrawBuffer::initDrawGroups(
+void GfxSceneDrawBuffer::generateDraws(
   const GfxContext&                   context,
-  const GfxScenePipelines&            pipelines) {
-  GfxSceneDrawListInitArgs args = { };
-  args.drawListVa = m_buffer->getGpuAddress();
-  args.drawGroupCount = m_header.drawGroupCount;
+  const GfxScenePipelines&            pipelines,
+  const GfxDescriptor&                passInfos,
+  const GfxSceneNodeManager&          nodeManager,
+  const GfxSceneInstanceManager&      instanceManager,
+  const GfxScenePassGroupBuffer&      groupBuffer,
+        uint32_t                      frameId,
+        uint32_t                      passMask,
+        uint32_t                      lodSelectionPass) {
+  context->beginDebugLabel("Generate draws", 0xff7878ff);
+  context->beginDebugLabel("Reset counters", 0xffb4b0ff);
 
-  pipelines.initDrawList(context, args);
+  GfxSceneDrawListInitArgs resetArgs = { };
+  resetArgs.drawListVa = m_buffer->getGpuAddress();
+  resetArgs.drawGroupCount = m_header.drawGroupCount;
+
+  pipelines.initDrawList(context, resetArgs);
+
+  context->memoryBarrier(
+    GfxUsage::eShaderStorage, GfxShaderStage::eCompute,
+    GfxUsage::eShaderStorage, GfxShaderStage::eCompute);
+
+  context->endDebugLabel();
+
+  context->beginDebugLabel("Emit draws", 0xffb4b0ff);
+
+  GfxDescriptor dispatch = groupBuffer.getDispatchDescriptors(GfxSceneNodeType::eInstance).first;
+
+  GfxSceneDrawListGenerateArgs generateArgs = { };
+  generateArgs.drawListVa = m_buffer->getGpuAddress();
+  generateArgs.instanceBufferVa = instanceManager.getGpuAddress();
+  generateArgs.sceneBufferVa = nodeManager.getGpuAddress();
+  generateArgs.groupBufferVa = groupBuffer.getGpuAddress();
+  generateArgs.frameId = frameId;
+  generateArgs.passMask = passMask;
+  generateArgs.lodSelectionPass = lodSelectionPass;
+
+  pipelines.generateDrawList(context, dispatch, passInfos, generateArgs);
+
+  context->memoryBarrier(
+    GfxUsage::eShaderStorage, GfxShaderStage::eCompute,
+    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer,
+    GfxShaderStage::eCompute);
+
+  context->endDebugLabel();
+  context->endDebugLabel();
 }
 
 

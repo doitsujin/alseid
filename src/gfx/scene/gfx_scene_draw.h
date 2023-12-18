@@ -6,6 +6,9 @@
 
 #include "../gfx_device.h"
 
+#include "gfx_scene_instance.h"
+#include "gfx_scene_node.h"
+#include "gfx_scene_pass.h"
 #include "gfx_scene_pipelines.h"
 
 namespace as {
@@ -155,16 +158,18 @@ public:
     const GfxSceneDrawBufferDesc&       desc);
 
   /**
-   * \brief Initializes draw list buffer
-   *
-   * Uses a compute shader to reset all actual draw counts to zero.
-   * Must be called before generating a draw list.
-   * \param [in] context Context object
-   * \param [in] pipelines Update pipelines
+   * \brief Generates draw lists
    */
-  void initDrawGroups(
+  void generateDraws(
     const GfxContext&                   context,
-    const GfxScenePipelines&            pipelines);
+    const GfxScenePipelines&            pipelines,
+    const GfxDescriptor&                passInfos,
+    const GfxSceneNodeManager&          nodeManager,
+    const GfxSceneInstanceManager&      instanceManager,
+    const GfxScenePassGroupBuffer&      groupBuffer,
+          uint32_t                      frameId,
+          uint32_t                      passMask,
+          uint32_t                      lodSelectionPass);
 
 private:
 
