@@ -33,12 +33,16 @@ uniform PushData {
   uint64_t  sceneBuffer;
   uint64_t  groupBuffer;
   uint32_t  frameId;
-  uint16_t  bvhLayer;
-  uint16_t  distanceCullingPass;
+  uint32_t  packedLayerAndDistanceCullingPass;
 };
 
 
 void csTraverseBvh() {
+  // Unpack 16-bit shader arguments here, this is only necessary because
+  // we cannot require support for 16-bit push constant storage.
+  uint32_t bvhLayer = bitfieldExtract(packedLayerAndDistanceCullingPass, 0, 16);
+  uint32_t distanceCullingPass = bitfieldExtract(packedLayerAndDistanceCullingPass, 16, 16);
+
   // On the subgroup-optimized path, we make some assumptions about
   // the layout of invocations, so use the subgroup invocation ID.
   uint32_t tid = IsSingleSubgroup
