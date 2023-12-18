@@ -216,8 +216,13 @@ uint32_t match(uint32_t value) {
   while (subgroupAny(mask == 0)) {
     uint32_t first = subgroupBroadcastFirst(value);
 
+    // This should be equivalent to subgroupBallot(true)
+    // in the following if block, but doing that causes
+    // AMDVLK to miscompile the shader.
+    uint32_t ballot = subgroupBallot(value == first).x;
+
     if (value == first) {
-      mask = subgroupBallot(true).x;
+      mask = ballot;
       break;
     }
   }
