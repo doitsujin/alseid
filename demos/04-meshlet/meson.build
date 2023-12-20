@@ -33,7 +33,7 @@ demo_04_meshlet_glb = files(
 )
 
 demo_04_meshlet_geometry_layout = '{"name":"default","attributes":['
-demo_04_meshlet_geometry_layout+= '{"name":"POSITION","format":"rgb16f","stream":"vertex","morph":true},'
+demo_04_meshlet_geometry_layout+= '{"name":"POSITION","format":"rgba16f","stream":"vertex","morph":true},'
 demo_04_meshlet_geometry_layout+= '{"name":"NORMAL","format":"rgb10a2sn","stream":"shading","morph":true},'
 demo_04_meshlet_geometry_layout+= '{"name":"TEXCOORD_0","format":"rg16un","stream":"shading"}]}'
 

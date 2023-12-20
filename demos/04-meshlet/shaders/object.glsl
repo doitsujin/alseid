@@ -54,7 +54,7 @@ void fsMain(in FsInput fsInput, in FsUniform fsUniform) {
 #else
 
 struct MsVertexIn {
-  f16vec3   position;
+  f16vec4   position;
 };
 
 
@@ -65,8 +65,7 @@ struct MsShadingIn {
 
 
 struct MsMorphIn {
-  f16vec3   position;
-  float16_t pad;
+  f16vec4   position;
   uint32_t  normal;
 };
 
