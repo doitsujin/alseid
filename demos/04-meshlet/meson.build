@@ -1,13 +1,7 @@
 demo_04_shaders = [
-  [ 'shaders/object.glsl',    [ 'ms', 'fs' ] ],
-  [ 'shaders/task.glsl',      [ 'ts' ] ],
-  [ 'shaders/animate.glsl',   [ 'cs' ] ],
-  [ 'shaders/transform.glsl', [ 'cs' ] ],
+  [ 'shaders/material.glsl',  [ 'ms', 'fs' ] ],
+  [ 'shaders/render.task',    [ 'ts' ] ],
 ]
-
-demo_04_meshlet_shader_includes = files(
-  'shaders/pass.glsl'
-)
 
 demo_04_meshlet_spv = []
 
@@ -18,7 +12,7 @@ foreach s : demo_04_shaders
   foreach p : shader_types
     demo_04_meshlet_spv += custom_target('@0@_@1@'.format(p, shader_file.underscorify()),
       command       : [ glsl_compiler, as_shader_type_args[p] ],
-      depend_files  : [ as_shader_includes, demo_04_meshlet_shader_includes ],
+      depend_files  : [ as_shader_includes ],
       input         : files(shader_file),
       output        : '@0@_@BASENAME@.spv'.format(p))
   endforeach

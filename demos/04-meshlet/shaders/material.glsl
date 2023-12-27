@@ -4,11 +4,12 @@
 
 #include "as_include_head.glsl"
 
-#include "pass.glsl"
+#ifdef STAGE_MESH
+#include "render/ms_render_common.glsl"
+#endif
 
 // Use existing template for mesh/vertex shader
 #define MS_MAIN msMain
-#define VS_MAIN vsMain
 
 // We implement the full FS here, but the app
 // could provide its own set of FS templates
@@ -17,6 +18,7 @@
 struct MsUniformOut {
   uint meshlet;
 };
+
 
 // Data structures shared between FS and VS/MS
 #define FS_INPUT                                  \
@@ -29,6 +31,17 @@ FS_DECLARE_INPUT(FS_INPUT);
   FS_INPUT_VAR((location = 2), uint, meshlet)
 
 FS_DECLARE_UNIFORM(FS_UNIFORM);
+
+
+layout(push_constant)
+uniform Globals {
+  uint64_t          drawListVa;
+  uint64_t          instanceVa;
+  uint64_t          sceneVa;
+  uint32_t          drawGroup;
+  uint32_t          frameId;
+} globals;
+
 
 ////////////////////////////
 //    FRAGMENT SHADER     //
@@ -48,10 +61,25 @@ void fsMain(in FsInput fsInput, in FsUniform fsUniform) {
   fsColor = vec4(color * factor, 1.0f);
 }
 
+#endif
+
+
 ////////////////////////////
-//  VERTEX / MESH SHADER  //
+//       MESH SHADER      //
 ////////////////////////////
-#else
+#ifdef STAGE_MESH
+
+layout(set = 0, binding = 0, scalar)
+uniform PassUniforms {
+  PassInfo          passInfos[64];
+} passes;
+
+
+struct MsContext {
+  MsInvocationInfo  invocation;
+  MsRenderState     renderState;
+};
+
 
 struct MsVertexIn {
   f16vec4   position;
@@ -75,6 +103,17 @@ struct MsVertexOut {
 };
 
 
+MsContext msGetInstanceContext() {
+  uvec2 meshlet = msDecodeMeshlet(tsPayload.meshlets[gl_WorkGroupID.x]);
+
+  MsContext context;
+  context.invocation = msGetInvocationInfo(globals.instanceVa, globals.frameId);
+  context.renderState.cullMode = FACE_CULL_MODE_CW;
+  context.renderState.faceFlip = false;
+  return context;
+}
+
+
 void msMorphVertex(inout MsVertexIn vertex, in MsMorphIn morph, float weight) {
   vertex.position += morph.position * float16_t(weight);
 }
@@ -94,14 +133,15 @@ MsVertexOut msComputeVertexPos(in MsContext context, uint vertexIndex, in MsVert
   MsVertexOut result;
 
   Transform finalTransform = Transform(
-    vec4(payload.instance.transform),
-    vec3(payload.instance.translate));
+    vec4(context.invocation.meshInstance.transform),
+    vec3(context.invocation.meshInstance.translate));
 
   finalTransform = transChain(jointTransform, finalTransform);
-  finalTransform = transChain(payload.modelViewTransform, finalTransform);
+  finalTransform = transChain(msLoadNodeTransform(0), finalTransform);
+  finalTransform = transChain(passes.passInfos[context.invocation.passIndex].viewTransform, finalTransform);
   vec3 vertexPos = transApply(finalTransform, vec3(vertex.position.xyz));
 
-  result.position = projApply(scene.projection, vertexPos);
+  result.position = projApply(passes.passInfos[context.invocation.passIndex].projection, vertexPos);
 
   rotations[vertexIndex] = f16vec4(finalTransform.rot);
   return result;
@@ -120,14 +160,11 @@ FsInput msComputeFsInput(in MsContext context, uint vertexIndex, in MsVertexIn v
 
 MsUniformOut msComputeUniformOut(in MsContext context) {
   MsUniformOut result;
-  result.meshlet = payload.meshletIndices[gl_WorkGroupID.x];
+  result.meshlet = tsPayload.meshlets[gl_WorkGroupID.x];
   return result;
 }
 
-
-float msLoadMorphTargetWeight(in MsContext context, uint index) {
-  return weights[index];
-}
+#include "render/ms_render_instance.glsl"
 
 #endif
 

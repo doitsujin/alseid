@@ -29,6 +29,8 @@
 #extension GL_KHR_shader_subgroup_quad : enable
 #endif
 
+#extension GL_EXT_subgroup_uniform_control_flow : enable
+
 // Common includes
 #include "as_common.glsl"
 #include "as_matrix.glsl"

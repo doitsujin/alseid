@@ -4,6 +4,12 @@
 #include "../../src/gfx/gfx_geometry.h"
 #include "../../src/gfx/gfx_transfer.h"
 
+#include "../../src/gfx/scene/gfx_scene_draw.h"
+#include "../../src/gfx/scene/gfx_scene_instance.h"
+#include "../../src/gfx/scene/gfx_scene_node.h"
+#include "../../src/gfx/scene/gfx_scene_pass.h"
+#include "../../src/gfx/scene/gfx_scene_pipelines.h"
+
 #include "../../src/io/io.h"
 #include "../../src/io/io_archive.h"
 
@@ -26,6 +32,15 @@ struct SceneConstants {
 struct InstanceConstants {
   QuatTransform modelTransform;
   float morphWeights[4];
+};
+
+
+struct PushConstants {
+  uint64_t drawListVa;
+  uint64_t instanceVa;
+  uint64_t sceneVa;
+  uint32_t drawGroup;
+  uint32_t frameId;
 };
 
 
@@ -58,21 +73,11 @@ public:
 
     GfxMeshPipelineDesc msPipelineDesc;
     msPipelineDesc.debugName = "MS pipeline";
-    msPipelineDesc.task = findShader("ts_task");
-    msPipelineDesc.mesh = findShader("ms_object");
-    msPipelineDesc.fragment = findShader("fs_object");
+    msPipelineDesc.task = findShader("ts_render");
+    msPipelineDesc.mesh = findShader("ms_material");
+    msPipelineDesc.fragment = findShader("fs_material");
 
     m_msPipeline = m_device->createGraphicsPipeline(msPipelineDesc);
-
-    // Create joint transform pipeline
-    GfxComputePipelineDesc csPipelineDesc;
-    csPipelineDesc.debugName = "Joint transform pipeline";
-    csPipelineDesc.compute = findShader("cs_transform");
-    m_csTransform = m_device->createComputePipeline(csPipelineDesc);
-
-    csPipelineDesc.debugName = "Joint animation pipeline";
-    csPipelineDesc.compute = findShader("cs_animate");
-    m_csAnimate = m_device->createComputePipeline(csPipelineDesc);
 
     // Initialize transfer manager
     m_transfer = GfxTransferManager(m_io, m_device, 16ull << 20);
@@ -84,11 +89,15 @@ public:
     // Create state objects
     m_renderState = createRenderState();
 
-    // Create feedback buffer
-    m_jointTransforms = createTransformBuffer();
-    m_jointRelative = createTransformBuffer();
-    m_morphWeights = createMorphTargetBuffer();
-    m_animation = createAnimationBuffer();
+    // Initialize scene objects
+    m_sceneNodeManager = std::make_unique<GfxSceneNodeManager>(m_device);
+    m_sceneInstanceManager = std::make_unique<GfxSceneInstanceManager>(m_device);
+    m_scenePassGroup = std::make_unique<GfxScenePassGroupBuffer>(m_device);
+    m_scenePipelines = std::make_unique<GfxScenePipelines>(m_device);
+    m_sceneDrawBuffer = std::make_unique<GfxSceneDrawBuffer>(m_device);
+
+    initScene();
+    initContexts();
   }
 
 
@@ -102,6 +111,8 @@ public:
     std::array<float, 2> deltaRot = { };
 
     while (!quit) {
+      GfxContext context = getNextContext();
+
       m_presenter->synchronize(1);
 
       m_wsi->processEvents([&] (const WsiEvent& e) {
@@ -145,12 +156,77 @@ public:
       m_eye += yDir * m_frameDelta * deltaY;
       m_eye += zDir * m_frameDelta * deltaZ;
 
-      m_presenter->present([this] (const GfxPresenterContext& args) {
+      m_sceneNodeManager->updateNodeTransform(m_sceneInstanceNode,
+        QuatTransform(computeRotationQuaternion(Vector4D(0.0f, 1.0f, 0.0f, 0.0f), m_rotation), Vector4D(0.0f)));
+
+      Vector3D up = Vector3D(0.0f, 1.0f, 0.0f);
+
+      QuatTransform camera = computeViewTransform(m_eye, normalize(m_dir), up);
+
+      GfxScenePassInfo passInfo = { };
+      passInfo.projection = computePerspectiveProjection(
+        Vector2D(1280.0f, 720.0f), 2.0f, 0.001f);
+      passInfo.viewSpaceRotation = camera.getRotation().getVector();
+      passInfo.viewSpaceTranslation = Vector3D(camera.getTranslation());
+      passInfo.type = GfxScenePassType::eFlat;
+      passInfo.flags = GfxScenePassFlag::eEnableLighting
+        | GfxScenePassFlag::ePerformFrustumTest
+        | GfxScenePassFlag::ePerformOcclusionTest
+        | GfxScenePassFlag::eIgnoreOcclusionTest;
+      passInfo.viewDistanceLimit = 0.0f;
+      passInfo.viewDistanceScale = 1.0f;
+      passInfo.lodDistanceScale = 1.0f;
+      passInfo.mirrorPlane = Vector4D(0.0f);
+      passInfo.frustum = computeViewFrustum(passInfo.projection);
+
+      GfxScratchBuffer passBuffer = context->writeScratch(GfxUsage::eConstantBuffer, passInfo);
+
+      uint32_t drawCount = 1024;
+
+      GfxSceneDrawBufferDesc drawBufferDesc = { };
+      drawBufferDesc.drawGroupCount = 1;
+      drawBufferDesc.drawCounts = &drawCount;
+
+      m_sceneDrawBuffer->updateLayout(context, drawBufferDesc);
+
+      // Update scene buffers appropriately
+      m_sceneNodeManager->commitUpdates(context,
+        *m_scenePipelines, m_frameId, m_frameId - 1);
+      m_sceneInstanceManager->commitUpdates(context,
+        *m_scenePipelines, m_frameId, m_frameId - 1);
+      m_scenePassGroup->commitUpdates(context,
+        m_frameId, m_frameId - 1);
+
+      context->memoryBarrier(
+        GfxUsage::eShaderStorage | GfxUsage::eTransferDst, GfxShaderStage::eCompute,
+        GfxUsage::eShaderStorage | GfxUsage::eShaderResource, GfxShaderStage::eCompute);
+
+      GfxScenePassGroupInfo passGroup = { };
+      passGroup.groupBuffer = m_scenePassGroup.get();
+      passGroup.passBufferVa = passBuffer.getGpuAddress();
+      passGroup.rootNodeCount = 1;
+      passGroup.rootNodes = &m_sceneRootRef;
+
+      m_sceneNodeManager->traverseBvh(context,
+        *m_scenePipelines, 1, &passGroup, m_frameId, 0);
+
+      m_sceneInstanceManager->processPassGroupInstances(context,
+        *m_scenePipelines, *m_sceneNodeManager, 1, &passGroup, m_frameId);
+
+      m_sceneDrawBuffer->generateDraws(context, *m_scenePipelines,
+        passBuffer.getDescriptor(GfxUsage::eConstantBuffer),
+        *m_sceneNodeManager, *m_sceneInstanceManager, *m_scenePassGroup,
+        m_frameId, 0x1, 0);
+
+      GfxCommandSubmission submission;
+      submission.addSignalSemaphore(m_semaphore, m_frameId);
+      submission.addCommandList(context->endCommandList());
+
+      m_device->submit(GfxQueue::eGraphics, std::move(submission));
+
+      m_presenter->present([this, &passBuffer] (const GfxPresenterContext& args) {
         GfxContext context = args.getContext();
         GfxImage image = args.getImage();
-
-        // Update absolute bone transforms
-        updateTransformBuffer(context);
 
         // Initialize swap chain image and prepare it for rendering
         context->imageBarrier(image, image->getAvailableSubresources(),
@@ -184,21 +260,23 @@ public:
         context->beginRendering(renderInfo, 0);
         context->setViewport(GfxViewport(Offset2D(0, 0), extent));
 
-        bindConstantBuffer(context, extent);
-        bindGeometryBuffer(context);
-        bindPipeline(context);
+        context->bindPipeline(m_msPipeline);
+        context->setRenderState(m_renderState);
 
-        // Set mesh index
-        for (uint32_t i = 0; i < m_geometry->meshes.size(); i++) {
-          context->setShaderConstants(8, uint32_t(i));
+        PushConstants pushConstants = { };
+        pushConstants.drawListVa = m_sceneDrawBuffer->getGpuAddress();
+        pushConstants.instanceVa = m_sceneInstanceManager->getGpuAddress();
+        pushConstants.sceneVa = m_sceneNodeManager->getGpuAddress();
+        pushConstants.drawGroup = 0;
+        pushConstants.frameId = m_frameId;
 
-          Extent3D workgroupCount = gfxComputeWorkgroupCount(Extent3D(
-              m_geometry->meshes[i].info.maxMeshletCount,
-              m_geometry->meshes[i].info.instanceCount, 1),
-            m_msPipeline->getWorkgroupSize());
+        context->bindDescriptor(0, 0, passBuffer.getDescriptor(GfxUsage::eConstantBuffer));
+        context->setShaderConstants(0, pushConstants);
 
-          context->drawMesh(workgroupCount);
-        }
+        context->drawMeshIndirect(
+          m_sceneDrawBuffer->getDrawParameterDescriptor(0),
+          m_sceneDrawBuffer->getDrawCountDescriptor(0),
+          1024u);
 
         context->endRendering();
 
@@ -225,17 +303,9 @@ private:
   GfxTransferManager    m_transfer;
 
   GfxGraphicsPipeline   m_msPipeline;
-  GfxComputePipeline    m_csTransform;
-  GfxComputePipeline    m_csAnimate;
-
   GfxRenderState        m_renderState;
 
   GfxBuffer             m_geometryBuffer;
-  GfxBuffer             m_jointTransforms;
-  GfxBuffer             m_jointRelative;
-  GfxBuffer             m_morphWeights;
-  GfxBuffer             m_animation;
-
   GfxImage              m_depthImage;
 
   float                 m_x = 0.0f;
@@ -259,6 +329,9 @@ private:
 
   float                 m_rotation = 0.0f;
 
+  std::vector<GfxContext>                     m_contexts;
+  GfxSemaphore                                m_semaphore;
+
   std::unique_ptr<IoArchive>                  m_archive;
 
   std::mutex                                  m_shaderMutex;
@@ -266,61 +339,91 @@ private:
 
   std::shared_ptr<GfxGeometry>                m_geometry;
 
+  std::unique_ptr<GfxSceneNodeManager>        m_nodeManager;
+  std::unique_ptr<GfxSceneInstanceManager>    m_instanceManager;
 
-  void bindPipeline(const GfxContext& context) {
-    context->bindPipeline(m_msPipeline);
+  std::unique_ptr<GfxSceneNodeManager>        m_sceneNodeManager;
+  std::unique_ptr<GfxSceneInstanceManager>    m_sceneInstanceManager;
+  std::unique_ptr<GfxScenePassGroupBuffer>    m_scenePassGroup;
+  std::unique_ptr<GfxScenePipelines>          m_scenePipelines;
+  std::unique_ptr<GfxSceneDrawBuffer>         m_sceneDrawBuffer;
 
-    context->setRenderState(m_renderState);
+  uint32_t              m_sceneInstanceNode   = 0u;
+  GfxSceneNodeRef       m_sceneInstanceRef    = { };
+  GfxSceneNodeRef       m_sceneRootRef        = { };
+
+  GfxContext getNextContext() {
+    m_frameId += 1;
+
+    if (m_frameId >= m_contexts.size())
+      m_semaphore->wait(m_frameId - m_contexts.size());
+
+    GfxContext context = m_contexts[m_frameId % m_contexts.size()];
+    context->reset();
+    return context;
   }
 
+  void initContexts() {
+    m_contexts.resize(3);
 
-  void bindConstantBuffer(const GfxContext& context, Extent2D imageExtent) {
-    float f = 5.0f / 3.141592654f;
-    float zNear = 0.001f;
+    for (size_t i = 0; i < m_contexts.size(); i++)
+      m_contexts[i] = m_device->createContext(GfxQueue::eGraphics);
 
-    Vector3D up = Vector3D(0.0f, 1.0f, 0.0f);
+    GfxSemaphoreDesc semaphoreDesc = { };
+    semaphoreDesc.debugName = "Semaphore";
+    semaphoreDesc.initialValue = 0;
 
-    SceneConstants sceneInfo = { };
-    sceneInfo.projection = computePerspectiveProjection(
-      Vector2D(imageExtent), f, zNear);
-    sceneInfo.viewTransform = computeViewTransform(m_eye, normalize(m_dir), up);
-    sceneInfo.viewFrustum = computeViewFrustum(sceneInfo.projection);
-
-    InstanceConstants instanceInfo;
-    instanceInfo.modelTransform = QuatTransform(
-      computeRotationQuaternion(Vector4D(0.0f, 1.0f, 0.0f, 0.0f), m_rotation),
-      Vector4D(0.0f));
-    instanceInfo.morphWeights[0] = 0.0f;
-    instanceInfo.morphWeights[1] = 0.0f;
-
-    auto cbScene = context->writeScratch(GfxUsage::eConstantBuffer, sceneInfo);
-    auto cbInstance = context->writeScratch(GfxUsage::eConstantBuffer, instanceInfo);
-
-    context->bindDescriptor(0, 0, cbScene.getDescriptor(GfxUsage::eConstantBuffer));
-
-    std::array<GfxDescriptor, 3> descriptors = { };
-    descriptors[0] = cbInstance.getDescriptor(GfxUsage::eConstantBuffer);
-
-    if (m_jointTransforms) {
-      descriptors[1] = m_jointTransforms->getDescriptor(
-        GfxUsage::eShaderResource, 0, m_jointTransforms->getDesc().size);
-    }
-    
-    if (m_morphWeights) {
-      descriptors[2] = m_morphWeights->getDescriptor(
-        GfxUsage::eShaderResource, 0, m_morphWeights->getDesc().size);
-    }
-
-    context->bindDescriptors(2, 0,
-      descriptors.size(),
-      descriptors.data());
+    m_semaphore = m_device->createSemaphore(semaphoreDesc);
   }
 
+  void initScene() {
+    uint32_t rootNode = m_sceneNodeManager->createNode();
 
-  void bindGeometryBuffer(const GfxContext& context) {
-    context->bindDescriptor(1, 0, m_geometryBuffer->getDescriptor(
-      GfxUsage::eConstantBuffer, 0, m_geometry->getConstantDataSize()));
-    context->setShaderConstants(0, m_geometryBuffer->getGpuAddress());
+    GfxSceneBvhDesc bvhDesc = { };
+    bvhDesc.nodeIndex = rootNode;
+
+    GfxSceneNodeRef rootRef = m_sceneNodeManager->createBvhNode(bvhDesc);
+    m_sceneNodeManager->updateNodeReference(rootNode, rootRef);
+
+    std::vector<GfxSceneInstanceDraw> draws;
+
+    for (uint32_t i = 0; i < m_geometry->meshes.size(); i++) {
+      auto& draw = draws.emplace_back();
+      draw.materialIndex = 0;
+      draw.meshIndex = i;
+      draw.meshInstanceCount = std::max(1u,
+        uint32_t(m_geometry->meshes[i].info.instanceCount));
+      draw.meshInstanceIndex = 0u;
+      draw.shadingParameterSize = 0u;
+    }
+
+    uint32_t instanceNode = m_sceneNodeManager->createNode();
+
+    GfxSceneInstanceDesc instanceDesc = { };
+    instanceDesc.flags = GfxSceneInstanceFlag::eDeform;
+    instanceDesc.drawCount = draws.size();
+    instanceDesc.draws = draws.data();
+    instanceDesc.jointCount = m_geometry->info.jointCount;
+    instanceDesc.weightCount = m_geometry->info.morphTargetCount;
+    instanceDesc.nodeIndex = instanceNode;
+
+    GfxSceneNodeRef instanceRef = m_sceneInstanceManager->createInstance(instanceDesc);
+    m_sceneNodeManager->updateNodeReference(instanceNode, instanceRef);
+    m_sceneNodeManager->updateNodeTransform(instanceNode, QuatTransform::identity());
+    m_sceneNodeManager->attachNodesToBvh(rootRef, 1, &instanceRef);
+
+    m_sceneInstanceManager->allocateGpuBuffer(instanceRef);
+    m_sceneInstanceManager->updateGeometryBuffer(instanceRef, m_geometryBuffer->getGpuAddress());
+
+    GfxScenePassGroupBufferDesc groupDesc = { };
+    groupDesc.setNodeCount(GfxSceneNodeType::eBvh, 1u);
+    groupDesc.setNodeCount(GfxSceneNodeType::eInstance, 1u);
+
+    m_scenePassGroup->resizeBuffer(groupDesc, 0u);
+
+    m_sceneInstanceNode = instanceNode;
+    m_sceneInstanceRef = instanceRef;
+    m_sceneRootRef = rootRef;
   }
 
 
@@ -482,134 +585,6 @@ private:
     m_transfer->uploadBuffer(subFile, buffer, 0);
     m_transfer->waitForCompletion(m_transfer->flush());
     return buffer;
-  }
-
-
-  GfxBuffer createAnimationBuffer() {
-    auto file = m_archive->findFile("CesiumMan");
-    auto subFile = file->findSubFile(FourCC('A', 'N', 'I', 'M'));
-
-    if (!subFile)
-      return GfxBuffer();
-
-    GfxBufferDesc bufferDesc;
-    bufferDesc.debugName = "Animation buffer";
-    bufferDesc.size = subFile->getSize();
-    bufferDesc.usage = GfxUsage::eShaderResource |
-      GfxUsage::eDecompressionDst |
-      GfxUsage::eTransferDst;
-
-    GfxBuffer buffer = m_device->createBuffer(bufferDesc, GfxMemoryType::eAny);
-
-    m_transfer->uploadBuffer(subFile, buffer, 0);
-    m_transfer->waitForCompletion(m_transfer->flush());
-    return buffer;
-  }
-
-
-  GfxBuffer createTransformBuffer() {
-    if (!m_geometry->info.jointCount)
-      return GfxBuffer();
-
-    GfxBufferDesc bufferDesc;
-    bufferDesc.debugName = "Transforms";
-    bufferDesc.usage =
-      GfxUsage::eShaderStorage |
-      GfxUsage::eShaderResource;
-    bufferDesc.size = sizeof(QuatTransform) * m_geometry->info.jointCount;
-
-    return m_device->createBuffer(bufferDesc, GfxMemoryType::eAny);
-  }
-
-
-  GfxBuffer createMorphTargetBuffer() {
-    if (!m_geometry->info.morphTargetCount)
-      return GfxBuffer();
-
-    GfxBufferDesc bufferDesc;
-    bufferDesc.debugName = "Morph targets";
-    bufferDesc.usage =
-      GfxUsage::eShaderStorage |
-      GfxUsage::eShaderResource;
-    bufferDesc.size = sizeof(float) * m_geometry->info.morphTargetCount;
-
-    return m_device->createBuffer(bufferDesc, GfxMemoryType::eAny);
-  }
-
-
-  void updateTransformBuffer(const GfxContext& context) {
-    size_t jointDataSize = sizeof(QuatTransform) * m_geometry->info.jointCount;
-    size_t morphDataSize = sizeof(float) * m_geometry->info.morphTargetCount;
-
-    if (m_animation) {
-      context->bindPipeline(m_csAnimate);
-
-      m_step += m_frameDelta;
-
-      if (m_step > m_geometry->animations.at(m_animationIndex).duration) {
-        m_animationIndex = (m_animationIndex + 1) % m_geometry->animations.size();
-        m_step = 0.0f;
-      }
-
-      const auto& animation = m_geometry->animations.at(m_animationIndex);
-
-      std::array<GfxDescriptor, 2> descriptors = { };
-
-      if (jointDataSize)
-        descriptors[0] = m_jointRelative->getDescriptor(GfxUsage::eShaderStorage, 0, jointDataSize);
-
-      if (morphDataSize)
-        descriptors[1] = m_morphWeights->getDescriptor(GfxUsage::eShaderStorage, 0, morphDataSize);
-
-      context->bindDescriptors(0, 0,
-        descriptors.size(),
-        descriptors.data());
-
-      context->setShaderConstants(0, m_animation->getGpuAddress());
-      context->setShaderConstants(8, animation.groupIndex);
-      context->setShaderConstants(12, m_step);
-
-      context->dispatch(Extent3D(1, animation.groupCount, 1));
-
-      context->memoryBarrier(
-        GfxUsage::eShaderStorage, GfxShaderStage::eCompute,
-        GfxUsage::eShaderResource, GfxShaderStage::eCompute);
-    } else {
-      if (jointDataSize) {
-        std::vector<QuatTransform> transforms(m_geometry->info.jointCount);
-
-        for (auto& transform : transforms)
-          transform = QuatTransform::identity();
-
-        auto scratch = context->writeScratch(GfxUsage::eTransferSrc,
-          jointDataSize, transforms.data());
-
-        context->copyBuffer(m_jointRelative, 0,
-          scratch.buffer, scratch.offset, scratch.size);
-
-        context->memoryBarrier(GfxUsage::eTransferDst, 0,
-          GfxUsage::eShaderResource, GfxShaderStage::eCompute);
-      }
-    }
-
-    if (jointDataSize) {
-      context->bindPipeline(m_csTransform);
-      context->setShaderConstants(0, m_geometryBuffer->getGpuAddress());
-
-      std::array<GfxDescriptor, 2> descriptors = { };
-      descriptors[0] = m_jointRelative->getDescriptor(GfxUsage::eShaderResource, 0, jointDataSize);
-      descriptors[1] = m_jointTransforms->getDescriptor(GfxUsage::eShaderStorage, 0, jointDataSize);
-
-      context->bindDescriptors(0, 0,
-        descriptors.size(),
-        descriptors.data());
-
-      context->dispatch(Extent3D(1, 1, 1));
-    }
-
-    context->memoryBarrier(
-      GfxUsage::eShaderStorage | GfxUsage::eTransferDst, GfxShaderStage::eCompute,
-      GfxUsage::eShaderResource, GfxShaderStage::eTask | GfxShaderStage::eMesh);
   }
 
 };

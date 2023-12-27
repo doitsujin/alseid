@@ -1,0 +1,53 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#include "as_include_head.glsl"
+
+#include "render/ts_render_common.glsl"
+
+struct TsContext {
+  TsInvocationInfo  invocation;
+  uint64_t          drawListVa;
+  uint64_t          instanceVa;
+  uint64_t          sceneVa;
+  uint32_t          frameId;
+};
+
+
+layout(set = 0, binding = 0, scalar)
+uniform PassData {
+  PassInfo          passInfos[64];
+} passes;
+
+
+layout(push_constant)
+uniform Globals {
+  uint64_t          drawListVa;
+  uint64_t          instanceVa;
+  uint64_t          sceneVa;
+  uint32_t          drawGroup;
+  uint32_t          frameId;
+} globals;
+
+
+TsContext tsGetInstanceContext() {
+  TsContext result;
+  result.invocation = tsGetInvocationInfo(globals.drawListVa, globals.drawGroup);
+  result.drawListVa = globals.drawListVa;
+  result.instanceVa = globals.instanceVa;
+  result.sceneVa = globals.sceneVa;
+  result.frameId = globals.frameId;
+  return result;
+}
+
+
+uint32_t tsTestMeshletVisibility(
+  in      TsContext                   context,
+  in      TsMeshletCullingInfo        meshlet) {
+  return 1u;
+}
+
+#include "render/ts_render_instance.glsl"
+
+#include "as_include_tail.glsl"

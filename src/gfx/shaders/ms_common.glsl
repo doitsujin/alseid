@@ -1,3 +1,6 @@
+#ifndef MS_COMMON_H
+#define MS_COMMON_H 1
+
 // Let the backend decide the optimal workgroup
 // size for us, depending on driver preferences.
 layout(local_size_x_id = SPEC_CONST_ID_MESH_SHADER_WORKGROUP_SIZE) in;
@@ -29,3 +32,5 @@ bool msSetMeshOutputs(uint verts, uint prims) {
   SetMeshOutputsEXT(prims != 0u ? verts : 0u, prims);
   return prims != 0u;
 }
+
+#endif // MS_COMMON_H

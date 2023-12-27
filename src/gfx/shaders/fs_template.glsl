@@ -36,7 +36,7 @@ FS_UNIFORM
 
 
 // Fragment shader entry point
-void main() {
+void main() [[subgroup_uniform_control_flow]] {
 #ifdef FS_INPUT
 #undef FS_INPUT_VAR
 #define FS_INPUT_VAR(l, t, n) fsInput.n = fs_##n;

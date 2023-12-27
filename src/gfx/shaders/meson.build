@@ -16,6 +16,12 @@ as_shader_includes = files(
   'ts_template.glsl',
   'vs_template.glsl',
 
+  'render/ms_render_common.glsl',
+  'render/ms_render_instance.glsl',
+  'render/ts_render_common.glsl',
+  'render/ts_render_instance.glsl',
+  'render/ts_render_payload.glsl',
+
   'scene/as_pass.glsl',
   'scene/as_scene.glsl',
   'scene/as_scene_draw.glsl',
@@ -25,17 +31,17 @@ as_shader_includes = files(
 )
 
 as_shader_builtins = [
-  'scene/cs_draw_list_init.comp',
-  'scene/cs_draw_list_generate.comp',
+  [ 'scene/cs_draw_list_init.comp', 'cs' ],
+  [ 'scene/cs_draw_list_generate.comp', 'cs' ],
 
-  'scene/cs_instance_update_execute.comp',
-  'scene/cs_instance_update_prepare.comp',
+  [ 'scene/cs_instance_update_execute.comp', 'cs' ],
+  [ 'scene/cs_instance_update_prepare.comp', 'cs' ],
 
-  'scene/cs_pass_init.comp',
-  'scene/cs_pass_traverse_bvh.comp',
-  'scene/cs_pass_traverse_reset.comp',
+  [ 'scene/cs_pass_init.comp', 'cs' ],
+  [ 'scene/cs_pass_traverse_bvh.comp', 'cs' ],
+  [ 'scene/cs_pass_traverse_reset.comp', 'cs' ],
 
-  'scene/cs_scene_update.comp',
+  [ 'scene/cs_scene_update.comp', 'cs' ],
 ]
 
 as_shader_glslang_args = [
@@ -54,9 +60,9 @@ as_shader_type_args = {
 }
 
 foreach s : as_shader_builtins
-  as_files += custom_target('@0@.h'.format(s.underscorify()),
-    command       : [ glsl_compiler, as_shader_type_args['cs'], as_shader_builtin_args ],
+  as_files += custom_target('@0@.h'.format(s[0].underscorify()),
+    command       : [ glsl_compiler, as_shader_type_args[s[1]], as_shader_builtin_args ],
     depend_files  : [ as_shader_includes ],
-    input         : files(s),
+    input         : files(s[0]),
     output        : '@BASENAME@.h')
 endforeach

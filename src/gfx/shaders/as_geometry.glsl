@@ -115,7 +115,7 @@ MeshInstanceRef meshGetInstanceData(in GeometryRef geometry, in Mesh mesh) {
 
 // Extracts mirroring info from mesh
 // instance extra data field
-uint getMirrorMode(uint extra) {
+uint asGetMirrorMode(uint extra) {
   return extra & 0x3;
 }
 

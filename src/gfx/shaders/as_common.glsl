@@ -12,14 +12,6 @@
 #define MAX_TASK_SHADER_WORKGROUP_SIZE                (64)
 
 
-// Cull mode and front face state. Used to perform primitive culling
-// within the mesh shader. Note that this does not define a front
-// face, instead the winding order is used directly.
-#define FACE_CULL_MODE_NONE                           (0)
-#define FACE_CULL_MODE_CW                             (1)
-#define FACE_CULL_MODE_CCW                            (2)
-
-
 // Convenience macro to generate a scalarization loop for a potentially
 // non-uniform value. Will execute one iteration per unique value. Note
 // that for floats, you may need to use floatBitsToUint, or otherwise

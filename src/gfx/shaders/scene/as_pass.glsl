@@ -1,6 +1,8 @@
 #ifndef AS_PASS_H
 #define AS_PASS_H
 
+#include "as_scene.glsl"
+
 #include "../as_quaternion.glsl"
 
 #define PASS_TYPE_FLAT    (0u)
