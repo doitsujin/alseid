@@ -1882,6 +1882,8 @@ void GltfMeshConverter::applySkins(
 
 Job GltfMeshConverter::dispatchConvert(
   const Jobs&                         jobs) {
+  processInstances();
+
   std::vector<Job> lodJobs;
   lodJobs.reserve(m_lods.size());
 
@@ -1891,7 +1893,6 @@ Job GltfMeshConverter::dispatchConvert(
   Job instanceJob = jobs->create<SimpleJob>(
     [cThis = shared_from_this()] {
       cThis->accumulateLods();
-      cThis->processInstances();
     });
 
   return jobs->dispatch(instanceJob,
