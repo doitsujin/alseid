@@ -26,12 +26,10 @@ buffer DrawListBuffer {
   DrawListEntry   drawGroups[];
 };
 
-
-// Buffer used for initializing the GPU draw buffer
-layout(buffer_reference, buffer_reference_align = 4, scalar)
+layout(buffer_reference, buffer_reference_align = 16, scalar)
 readonly buffer DrawListBufferIn {
   DrawListHeader  header;
-  uint32_t        drawIndices[];
+  DrawListEntry   drawGroups[];
 };
 
 

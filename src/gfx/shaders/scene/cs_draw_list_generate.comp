@@ -204,7 +204,6 @@ bool csWorkgroupAny(bool value) {
 
 
 uvec2 csSelectLod(uint64_t geometryBuffer, uint32_t meshIndex, float viewDistanceSq) {
-  return uvec2(0u, 1u);
   GeometryRef geometry = GeometryRef(geometryBuffer);
   GeometryBufferPointerRef geometryBuffers = geometryGetBuffers(geometry, geometry.geometry);
 
@@ -304,16 +303,15 @@ void csGenerateDraws() {
 
     SceneHeader scene = SceneHeader(sceneBuffer);
 
-    uint32_t currFrameOffset = scene.nodeCount * (frameId & 1u);
-
     bool hasInstanceData = instance.propertyBuffer != uint64_t(0u);
     bool hasGeometryData = instance.geometryBuffer != uint64_t(0u);
 
-    InstanceDataBufferIn instanceData = InstanceDataBufferIn(instance.propertyBuffer);
-
     if (hasInstanceData && hasGeometryData) {
+      InstanceDataBufferIn instanceData = InstanceDataBufferIn(instance.propertyBuffer);
+      uint32_t transformIndex = nodeComputeTransformIndices(instance.nodeIndex, scene.nodeCount, frameId).x;
+
       SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(sceneBuffer + scene.nodeTransformOffset);
-      Transform worldTransform = nodeTransforms.nodeTransforms[instance.nodeIndex + currFrameOffset].absoluteTransform;
+      Transform worldTransform = nodeTransforms.nodeTransforms[transformIndex].absoluteTransform;
 
       instanceDrawInfo.viewDistanceSq = csComputeLodDistance(
         instance.geometryBuffer, worldTransform);
@@ -339,18 +337,23 @@ void csGenerateDraws() {
           vec3 center = transApply(worldTransform, aabbComputeCenter(aabb));
           float radius = length(instanceData.header.aabb.hi - instanceData.header.aabb.lo) / 2.0f;
 
-          // Perform distance and frustum culling tests
-          bool isVisible = passTestViewDistance(passInfo, center, radius);
+          // Perform distance and frustum culling tests, or always
+          // render the instance if the bounding box is empty.
+          bool isVisible = true;
 
-          if (isVisible) {
-            uint32_t planeTestFailMask = 0x3fu;
+          if (radius > 0.0f) {
+            isVisible = passTestViewDistance(passInfo, center, radius);
 
-            for (uint32_t i = 0; i < 8; i++) {
-              vec3 vertex = transApply(worldTransform, aabbComputeVertex(aabb, i));
-              planeTestFailMask &= passTestViewFrustum(passInfo, vertex, 0.0f);
+            if (isVisible) {
+              uint32_t planeTestFailMask = 0x3fu;
+
+              for (uint32_t i = 0; i < 8; i++) {
+                vec3 vertex = transApply(worldTransform, aabbComputeVertex(aabb, i));
+                planeTestFailMask &= passTestViewFrustum(passInfo, vertex, 0.0f);
+              }
+
+              isVisible = planeTestFailMask == 0u;
             }
-
-            isVisible = planeTestFailMask == 0u;
           }
 
           if (!isVisible)
