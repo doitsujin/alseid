@@ -269,7 +269,7 @@ enum class GfxSceneInstanceDirtyFlag : uint32_t {
    *  the given data buffer portion must be manually updated. */
   eDirtyRelativeTransforms  = (1u << 2),
   /** Morph target weights were updated on the CPU. */
-  eDirtyMorphTagretWeights  = (1u << 3),
+  eDirtyMorphTargetWeights  = (1u << 3),
   /** Global shading parameters were updated on the CPU and need
    *  to be uploaded to the GPU. */
   eDirtyShadingParameters   = (1u << 4),

@@ -250,7 +250,7 @@ void GfxSceneInstanceManager::updateWeights(
   for (uint32_t i = 0; i < count; i++)
     dstWeights[first + i] = weights[i];
 
-  markDirty(index, GfxSceneInstanceDirtyFlag::eDirtyMorphTagretWeights);
+  markDirty(index, GfxSceneInstanceDirtyFlag::eDirtyMorphTargetWeights);
 }
 
 
@@ -418,6 +418,14 @@ void GfxSceneInstanceManager::updateBufferData(
     if (hostData.dataSlice.buffer) {
       GfxSceneInstanceDirtyFlags dirtyFlags = hostData.dirtyFlags.exchange(0);
 
+      if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyHeader) {
+        dirtyFlags |=
+          GfxSceneInstanceDirtyFlag::eDirtyRelativeTransforms |
+          GfxSceneInstanceDirtyFlag::eDirtyMorphTargetWeights |
+          GfxSceneInstanceDirtyFlag::eDirtyShadingParameters |
+          GfxSceneInstanceDirtyFlag::eDirtyMaterialParameters;
+      }
+
       auto header = hostData.dataBuffer.getHeader();
       auto draws = hostData.dataBuffer.getDraws();
 
@@ -429,7 +437,7 @@ void GfxSceneInstanceManager::updateBufferData(
       if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyRelativeTransforms)
         uploadInstanceData(context, hostData, header->jointRelativeOffset, header->jointCount * sizeof(QuatTransform));
 
-      if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyMorphTagretWeights) {
+      if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyMorphTargetWeights) {
         uint32_t weightSize = header->weightCount * sizeof(int16_t);
         uploadInstanceData(context, hostData, header->weightOffset + 2u * weightSize, weightSize);
       }
