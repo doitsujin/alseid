@@ -32,6 +32,7 @@
 #extension GL_EXT_buffer_reference2 : require
 #extension GL_EXT_shader_8bit_storage : require
 #extension GL_EXT_shader_explicit_arithmetic_types : require
+#extension GL_EXT_subgroup_uniform_control_flow : require
 
 #define NUM_BITSTREAMS 32
 #define NUM_THREADS NUM_BITSTREAMS
@@ -694,7 +695,7 @@ uint32_t init_fixed_code_lengths() {
 }
 
 
-void main() {
+void main() [[subgroup_uniform_control_flow]] {
   uint32_t tile_idx = gl_WorkGroupID.x;
   tile_t tile_params = tile_list.tiles[tile_idx];
 
