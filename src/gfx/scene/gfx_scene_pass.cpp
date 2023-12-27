@@ -66,28 +66,19 @@ void GfxScenePassGroupBuffer::setPasses(
 }
 
 
-void GfxScenePassGroupBuffer::updateBuffer(
-  const GfxContext&                   context) {
-  context->beginDebugLabel("Update pass buffer", 0xff96c096u);
+void GfxScenePassGroupBuffer::commitUpdates(
+  const GfxContext&                   context,
+        uint32_t                      currFrameId,
+        uint32_t                      lastFrameId) {
+  cleanupGpuBuffers(lastFrameId);
 
-  auto scratch = context->allocScratch(GfxUsage::eCpuWrite | GfxUsage::eTransferSrc, sizeof(m_header));
-  std::memcpy(scratch.map(GfxUsage::eCpuWrite, 0), &m_header, sizeof(m_header));
-
-  context->copyBuffer(m_buffer, 0,
-    scratch.buffer, scratch.offset,
-    scratch.size);
-
-  if (std::exchange(m_doClear, false)) {
-    context->clearBuffer(m_buffer, scratch.size,
-      m_buffer->getDesc().size - scratch.size);
-  }
-
-  context->endDebugLabel();
+  updateGpuBuffer(context);
 }
 
 
-GfxBuffer GfxScenePassGroupBuffer::resizeBuffer(
-  const GfxScenePassGroupBufferDesc&  desc) {
+void GfxScenePassGroupBuffer::resizeBuffer(
+  const GfxScenePassGroupBufferDesc&  desc,
+        uint32_t                      currFrameId) {
   // Do nothing if the none of the capacities grow
   bool hasGrownCapacity = false;
 
@@ -95,7 +86,7 @@ GfxBuffer GfxScenePassGroupBuffer::resizeBuffer(
     hasGrownCapacity = desc.maxNodeCounts.at(i) > m_desc.maxNodeCounts.at(i);
 
   if (!hasGrownCapacity)
-    return GfxBuffer();
+    return;
 
   // Clear buffer on next update. While technically unnecessary since
   // shaders will initialize all the list headers etc. anyway, clearing
@@ -146,7 +137,7 @@ GfxBuffer GfxScenePassGroupBuffer::resizeBuffer(
   // anything, the header update and the required initialization pass
   // will set everything up.
   if (m_buffer && m_buffer->getDesc().size >= allocator)
-    return GfxBuffer();
+    return;
 
   // Otherwise, we actually need to create a new buffer
   std::string name = strcat("Pass group v", ++m_version);
@@ -160,7 +151,36 @@ GfxBuffer GfxScenePassGroupBuffer::resizeBuffer(
   bufferDesc.size = align<uint64_t>(allocator, 1u << 20);
   bufferDesc.flags = GfxBufferFlag::eDedicatedAllocation;
 
-  return std::exchange(m_buffer, m_device->createBuffer(bufferDesc, GfxMemoryType::eAny));
+  if (m_buffer)
+    m_gpuBuffers.insert({ currFrameId, std::move(m_buffer) });
+
+  m_buffer = m_device->createBuffer(bufferDesc, GfxMemoryType::eAny);
+}
+
+
+void GfxScenePassGroupBuffer::cleanupGpuBuffers(
+        uint32_t                      lastFrameId) {
+  m_gpuBuffers.erase(lastFrameId);
+}
+
+
+void GfxScenePassGroupBuffer::updateGpuBuffer(
+  const GfxContext&                   context) {
+  context->beginDebugLabel("Update pass buffer", 0xff96c096u);
+
+  auto scratch = context->allocScratch(GfxUsage::eCpuWrite | GfxUsage::eTransferSrc, sizeof(m_header));
+  std::memcpy(scratch.map(GfxUsage::eCpuWrite, 0), &m_header, sizeof(m_header));
+
+  context->copyBuffer(m_buffer, 0,
+    scratch.buffer, scratch.offset,
+    scratch.size);
+
+  if (std::exchange(m_doClear, false)) {
+    context->clearBuffer(m_buffer, scratch.size,
+      m_buffer->getDesc().size - scratch.size);
+  }
+
+  context->endDebugLabel();
 }
 
 

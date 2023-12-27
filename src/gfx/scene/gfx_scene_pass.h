@@ -185,6 +185,19 @@ struct GfxScenePassGroupBufferDesc {
   /** Maximum number of nodes for each type. Nodes used in rendering
    *  will be distributed to one list per node type. */
   std::array<uint32_t, size_t(GfxSceneNodeType::eCount)> maxNodeCounts = { };
+
+  /**
+   * \brief Sets a node count for a given type
+   *
+   * Convenience method to avoid havinbg to ocast node types.
+   * \param [in] type Node type
+   * \param [in] count Maximum node count
+   */
+  void setNodeCount(
+          GfxSceneNodeType              type,
+          uint32_t                      count) {
+    maxNodeCounts.at(uint32_t(type)) = count;
+  }
 };
 
 
@@ -263,9 +276,13 @@ public:
    * is a relatively cheap operation, and should be called once per frame.
    * \param [in] context Context object to record the copy operation on.
    *    Expects the buffer to be ready for \c GfxUsage::eTransferDst usage.
+   * \param [in] currFrameId Current frame ID
+   * \param [in] lastFrameId Last completed frame ID
    */
-  void updateBuffer(
-    const GfxContext&                   context);
+  void commitUpdates(
+    const GfxContext&                   context,
+          uint32_t                      currFrameId,
+          uint32_t                      lastFrameId);
 
   /**
    * \brief Resizes and replaces buffer
@@ -283,21 +300,31 @@ public:
    * If the internal buffer layout changes, occlusion test results from
    * previous frames will be discarded to avoid rendering glitches.
    * \param [in] desc Description with the maximum node count
-   * \returns The old buffer if the buffer has been replaced, or \c nullptr.
+   * \param [in] currFrameId Current frame ID
    */
-  GfxBuffer resizeBuffer(
-    const GfxScenePassGroupBufferDesc&  desc);
+  void resizeBuffer(
+    const GfxScenePassGroupBufferDesc&  desc,
+          uint32_t                      currFrameId);
 
 private:
 
   GfxDevice                   m_device;
   GfxBuffer                   m_buffer;
 
+  std::unordered_map<
+  uint32_t, GfxBuffer>        m_gpuBuffers;
+
   GfxScenePassGroupBufferDesc m_desc = { };
   GfxScenePassGroupHeader     m_header = { };
 
   uint32_t                    m_version = 0u;
   bool                        m_doClear = false;
+
+  void cleanupGpuBuffers(
+          uint32_t                      lastFrameId);
+
+  void updateGpuBuffer(
+    const GfxContext&                   context);
 
   static uint32_t allocStorage(
           uint32_t&                     allocator,
