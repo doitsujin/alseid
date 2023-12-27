@@ -32,22 +32,23 @@ public:
   GfxVulkanDeviceExtensions             (const GfxVulkanDeviceExtensions&) = delete;
   GfxVulkanDeviceExtensions& operator = (const GfxVulkanDeviceExtensions&) = delete;
 
-  uint32_t khrAccelerationStructure       = 0;
-  uint32_t khrDeferredHostOperations      = 0;
-  uint32_t khrFragmentShadingRate         = 0;
-  uint32_t khrPipelineLibrary             = 0;
-  uint32_t khrPresentId                   = 0;
-  uint32_t khrPresentWait                 = 0;
-  uint32_t khrRayQuery                    = 0;
-  uint32_t khrRayTracingMaintenance1      = 0;
-  uint32_t khrSwapchain                   = 0;
-  uint32_t extConservativeRasterization   = 0;
-  uint32_t extExtendedDynamicState2       = 0;
-  uint32_t extExtendedDynamicState3       = 0;
-  uint32_t extGraphicsPipelineLibrary     = 0;
-  uint32_t extMeshShader                  = 0;
-  uint32_t extRobustness2                 = 0;
-  uint32_t extShaderStencilExport         = 0;
+  uint32_t khrAccelerationStructure             = 0;
+  uint32_t khrDeferredHostOperations            = 0;
+  uint32_t khrFragmentShadingRate               = 0;
+  uint32_t khrPipelineLibrary                   = 0;
+  uint32_t khrPresentId                         = 0;
+  uint32_t khrPresentWait                       = 0;
+  uint32_t khrRayQuery                          = 0;
+  uint32_t khrRayTracingMaintenance1            = 0;
+  uint32_t khrShaderSubgroupUniformControlFlow  = 0;
+  uint32_t khrSwapchain                         = 0;
+  uint32_t extConservativeRasterization         = 0;
+  uint32_t extExtendedDynamicState2             = 0;
+  uint32_t extExtendedDynamicState3             = 0;
+  uint32_t extGraphicsPipelineLibrary           = 0;
+  uint32_t extMeshShader                        = 0;
+  uint32_t extRobustness2                       = 0;
+  uint32_t extShaderStencilExport               = 0;
 
   /**
    * \brief Checks whether required extensions are supported
@@ -76,23 +77,24 @@ private:
 
   std::vector<const char*> m_extensionList;
 
-  const std::array<Extension, 16> s_extensions = {{
-    { &khrAccelerationStructure,        VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,     1, false },
-    { &khrDeferredHostOperations,       VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,   1, false },
-    { &khrFragmentShadingRate,          VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME,      1, false },
-    { &khrPipelineLibrary,              VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,           1, false },
-    { &khrPresentId,                    VK_KHR_PRESENT_ID_EXTENSION_NAME,                 1, false },
-    { &khrPresentWait,                  VK_KHR_PRESENT_WAIT_EXTENSION_NAME,               1, false },
-    { &khrRayQuery,                     VK_KHR_RAY_QUERY_EXTENSION_NAME,                  1, false },
-    { &khrRayTracingMaintenance1,       VK_KHR_RAY_TRACING_MAINTENANCE_1_EXTENSION_NAME,  1, false },
-    { &khrSwapchain,                    VK_KHR_SWAPCHAIN_EXTENSION_NAME,                  1, true  },
-    { &extConservativeRasterization,    VK_EXT_CONSERVATIVE_RASTERIZATION_EXTENSION_NAME, 1, false },
-    { &extExtendedDynamicState2,        VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME,   1, false },
-    { &extExtendedDynamicState3,        VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME,   1, false },
-    { &extGraphicsPipelineLibrary,      VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME,  1, false },
-    { &extMeshShader,                   VK_EXT_MESH_SHADER_EXTENSION_NAME,                1, false },
-    { &extRobustness2,                  VK_EXT_ROBUSTNESS_2_EXTENSION_NAME,               1, true  },
-    { &extShaderStencilExport,          VK_EXT_SHADER_STENCIL_EXPORT_EXTENSION_NAME,      1, false },
+  const std::array<Extension, 17> s_extensions = {{
+    { &khrAccelerationStructure,            VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,     1, false },
+    { &khrDeferredHostOperations,           VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,   1, false },
+    { &khrFragmentShadingRate,              VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME,      1, false },
+    { &khrPipelineLibrary,                  VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,           1, false },
+    { &khrPresentId,                        VK_KHR_PRESENT_ID_EXTENSION_NAME,                 1, false },
+    { &khrPresentWait,                      VK_KHR_PRESENT_WAIT_EXTENSION_NAME,               1, false },
+    { &khrRayQuery,                         VK_KHR_RAY_QUERY_EXTENSION_NAME,                  1, false },
+    { &khrRayTracingMaintenance1,           VK_KHR_RAY_TRACING_MAINTENANCE_1_EXTENSION_NAME,  1, false },
+    { &khrShaderSubgroupUniformControlFlow, VK_KHR_SHADER_SUBGROUP_UNIFORM_CONTROL_FLOW_EXTENSION_NAME, 1, true  },
+    { &khrSwapchain,                        VK_KHR_SWAPCHAIN_EXTENSION_NAME,                  1, true  },
+    { &extConservativeRasterization,        VK_EXT_CONSERVATIVE_RASTERIZATION_EXTENSION_NAME, 1, false },
+    { &extExtendedDynamicState2,            VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME,   1, false },
+    { &extExtendedDynamicState3,            VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME,   1, false },
+    { &extGraphicsPipelineLibrary,          VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME,  1, false },
+    { &extMeshShader,                       VK_EXT_MESH_SHADER_EXTENSION_NAME,                1, false },
+    { &extRobustness2,                      VK_EXT_ROBUSTNESS_2_EXTENSION_NAME,               1, true  },
+    { &extShaderStencilExport,              VK_EXT_SHADER_STENCIL_EXPORT_EXTENSION_NAME,      1, false },
   }};
 
 };
@@ -168,21 +170,22 @@ public:
   GfxVulkanDeviceFeatures             (const GfxVulkanDeviceFeatures&) = delete;
   GfxVulkanDeviceFeatures& operator = (const GfxVulkanDeviceFeatures&) = delete;
 
-  VkPhysicalDeviceFeatures2                               core                            = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
-  VkPhysicalDeviceVulkan11Features                        vk11                            = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
-  VkPhysicalDeviceVulkan12Features                        vk12                            = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
-  VkPhysicalDeviceVulkan13Features                        vk13                            = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
-  VkPhysicalDeviceAccelerationStructureFeaturesKHR        khrAccelerationStructure        = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR };
-  VkPhysicalDeviceFragmentShadingRateFeaturesKHR          khrFragmentShadingRate          = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR };
-  VkPhysicalDevicePresentIdFeaturesKHR                    khrPresentId                    = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR };
-  VkPhysicalDevicePresentWaitFeaturesKHR                  khrPresentWait                  = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR };
-  VkPhysicalDeviceRayQueryFeaturesKHR                     khrRayQuery                     = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR };
-  VkPhysicalDeviceRayTracingMaintenance1FeaturesKHR       khrRayTracingMaintenance1       = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MAINTENANCE_1_FEATURES_KHR };
-  VkPhysicalDeviceExtendedDynamicState2FeaturesEXT        extExtendedDynamicState2        = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT };
-  VkPhysicalDeviceExtendedDynamicState3FeaturesEXT        extExtendedDynamicState3        = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
-  VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT      extGraphicsPipelineLibrary      = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT };
-  VkPhysicalDeviceMeshShaderFeaturesEXT                   extMeshShader                   = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT };
-  VkPhysicalDeviceRobustness2FeaturesEXT                  extRobustness2                  = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT };
+  VkPhysicalDeviceFeatures2                                   core                                = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+  VkPhysicalDeviceVulkan11Features                            vk11                                = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
+  VkPhysicalDeviceVulkan12Features                            vk12                                = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+  VkPhysicalDeviceVulkan13Features                            vk13                                = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+  VkPhysicalDeviceAccelerationStructureFeaturesKHR            khrAccelerationStructure            = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR };
+  VkPhysicalDeviceFragmentShadingRateFeaturesKHR              khrFragmentShadingRate              = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR };
+  VkPhysicalDevicePresentIdFeaturesKHR                        khrPresentId                        = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR };
+  VkPhysicalDevicePresentWaitFeaturesKHR                      khrPresentWait                      = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR };
+  VkPhysicalDeviceRayQueryFeaturesKHR                         khrRayQuery                         = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR };
+  VkPhysicalDeviceRayTracingMaintenance1FeaturesKHR           khrRayTracingMaintenance1           = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MAINTENANCE_1_FEATURES_KHR };
+  VkPhysicalDeviceShaderSubgroupUniformControlFlowFeaturesKHR khrShaderSubgroupUniformControlFlow = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_UNIFORM_CONTROL_FLOW_FEATURES_KHR };
+  VkPhysicalDeviceExtendedDynamicState2FeaturesEXT            extExtendedDynamicState2            = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT };
+  VkPhysicalDeviceExtendedDynamicState3FeaturesEXT            extExtendedDynamicState3            = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT };
+  VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT          extGraphicsPipelineLibrary          = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT };
+  VkPhysicalDeviceMeshShaderFeaturesEXT                       extMeshShader                       = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT };
+  VkPhysicalDeviceRobustness2FeaturesEXT                      extRobustness2                      = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT };
 
   /**
    * \brief Checks whether all required features are supported
@@ -200,7 +203,7 @@ private:
     bool required;
   };
 
-  std::array<Feature, 79> m_features = {{
+  std::array<Feature, 80> m_features = {{
     { &core.features.depthBiasClamp,                                        true  },
     { &core.features.depthBounds,                                           false },
     { &core.features.drawIndirectFirstInstance,                             true  },
@@ -281,6 +284,8 @@ private:
     { &khrRayQuery.rayQuery,                                                false },
 
     { &khrRayTracingMaintenance1.rayTracingMaintenance1,                    false },
+
+    { &khrShaderSubgroupUniformControlFlow.shaderSubgroupUniformControlFlow,true  },
 
     { &extExtendedDynamicState3.extendedDynamicState3AlphaToCoverageEnable, false },
     { &extExtendedDynamicState2.extendedDynamicState2PatchControlPoints,    false },

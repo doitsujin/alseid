@@ -81,13 +81,13 @@ GfxVulkanDeviceProperties::GfxVulkanDeviceProperties(
     { &vk11 },
     { &vk12 },
     { &vk13 },
-    { &khrAccelerationStructure,        &ext.khrAccelerationStructure },
-    { &khrFragmentShadingRate,          &ext.khrFragmentShadingRate },
-    { &extConservativeRasterization,    &ext.extConservativeRasterization },
-    { &extExtendedDynamicState3,        &ext.extExtendedDynamicState3 },
-    { &extGraphicsPipelineLibrary,      &ext.extGraphicsPipelineLibrary },
-    { &extMeshShader,                   &ext.extMeshShader },
-    { &extRobustness2,                  &ext.extRobustness2 },
+    { &khrAccelerationStructure,            &ext.khrAccelerationStructure },
+    { &khrFragmentShadingRate,              &ext.khrFragmentShadingRate },
+    { &extConservativeRasterization,        &ext.extConservativeRasterization },
+    { &extExtendedDynamicState3,            &ext.extExtendedDynamicState3 },
+    { &extGraphicsPipelineLibrary,          &ext.extGraphicsPipelineLibrary },
+    { &extMeshShader,                       &ext.extMeshShader },
+    { &extRobustness2,                      &ext.extRobustness2 },
   }};
 
   for (const auto& f : fields) {
@@ -107,21 +107,22 @@ GfxVulkanDeviceProperties::GfxVulkanDeviceProperties(
 
 GfxVulkanDeviceFeatures::GfxVulkanDeviceFeatures(
   const GfxVulkanDeviceExtensions&    ext) {
-  const std::array<GfxVulkanPropertyChain, 14> fields = {{
+  const std::array<GfxVulkanPropertyChain, 15> fields = {{
     { &vk11 },
     { &vk12 },
     { &vk13 },
-    { &khrAccelerationStructure,        &ext.khrAccelerationStructure },
-    { &khrFragmentShadingRate,          &ext.khrFragmentShadingRate },
-    { &khrPresentId,                    &ext.khrPresentId },
-    { &khrPresentWait,                  &ext.khrPresentWait },
-    { &khrRayQuery,                     &ext.khrRayQuery },
-    { &khrRayTracingMaintenance1,       &ext.khrRayTracingMaintenance1 },
-    { &extExtendedDynamicState2,        &ext.extExtendedDynamicState2 },
-    { &extExtendedDynamicState3,        &ext.extExtendedDynamicState3 },
-    { &extGraphicsPipelineLibrary,      &ext.extGraphicsPipelineLibrary },
-    { &extMeshShader,                   &ext.extMeshShader },
-    { &extRobustness2,                  &ext.extRobustness2 },
+    { &khrAccelerationStructure,            &ext.khrAccelerationStructure },
+    { &khrFragmentShadingRate,              &ext.khrFragmentShadingRate },
+    { &khrPresentId,                        &ext.khrPresentId },
+    { &khrPresentWait,                      &ext.khrPresentWait },
+    { &khrRayQuery,                         &ext.khrRayQuery },
+    { &khrRayTracingMaintenance1,           &ext.khrRayTracingMaintenance1 },
+    { &khrShaderSubgroupUniformControlFlow, &ext.khrShaderSubgroupUniformControlFlow },
+    { &extExtendedDynamicState2,            &ext.extExtendedDynamicState2 },
+    { &extExtendedDynamicState3,            &ext.extExtendedDynamicState3 },
+    { &extGraphicsPipelineLibrary,          &ext.extGraphicsPipelineLibrary },
+    { &extMeshShader,                       &ext.extMeshShader },
+    { &extRobustness2,                      &ext.extRobustness2 },
   }};
 
   for (const auto& f : fields) {
