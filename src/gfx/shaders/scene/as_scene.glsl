@@ -55,6 +55,14 @@ readonly buffer SceneNodeTransformBufferIn {
   SceneNodeTransform nodeTransforms[];
 };
 
+uvec2 nodeComputeTransformIndices(
+        uint32_t                      nodeIndex,
+        uint32_t                      nodeCount,
+        uint32_t                      frameId) {
+  uint32_t curr = nodeCount * (frameId & 1u);
+  uint32_t prev = nodeCount - curr;
+  return uvec2(curr, prev) + nodeIndex;
+}
 
 // Node residency buffer. Stores one byte for each node. The frame
 // ID of when the node was last used should be taken from the node

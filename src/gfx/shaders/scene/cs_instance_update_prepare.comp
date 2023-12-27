@@ -65,11 +65,9 @@ void csPrepareUpdate() {
     SceneHeader scene = SceneHeader(sceneBuffer);
     SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(sceneBuffer + scene.nodeTransformOffset);
 
-    uint32_t currFrameOffset = scene.nodeCount * (frameId & 1u);
-    uint32_t prevFrameOffset = scene.nodeCount - currFrameOffset;
-
-    Transform currTransform = nodeTransforms.nodeTransforms[instance.nodeIndex + currFrameOffset].absoluteTransform;
-    Transform prevTransform = nodeTransforms.nodeTransforms[instance.nodeIndex + prevFrameOffset].absoluteTransform;
+    uvec2 nodeIndices = nodeComputeTransformIndices(instance.nodeIndex, scene.nodeCount, frameId);
+    Transform currTransform = nodeTransforms.nodeTransforms[nodeIndices.x].absoluteTransform;
+    Transform prevTransform = nodeTransforms.nodeTransforms[nodeIndices.y].absoluteTransform;
 
     if (any(notEqual(currTransform.rot, prevTransform.rot))
      || any(notEqual(currTransform.pos, prevTransform.pos)))
