@@ -67,17 +67,18 @@ public:
     // Create mesh shader pipeline
     GfxDeviceFeatures features = m_device->getFeatures();
 
-    if (!(features.shaderStages & GfxShaderStage::eMesh)
-     || !(features.shaderStages & GfxShaderStage::eTask))
-      throw Error("Mesh and task shader support required");
-
     GfxMeshPipelineDesc msPipelineDesc;
     msPipelineDesc.debugName = "MS pipeline";
     msPipelineDesc.task = findShader("ts_render");
     msPipelineDesc.mesh = findShader("ms_material");
     msPipelineDesc.fragment = findShader("fs_material");
 
-    m_msPipeline = m_device->createGraphicsPipeline(msPipelineDesc);
+    if ((features.shaderStages & GfxShaderStage::eMesh)
+     && (features.shaderStages & GfxShaderStage::eTask)) {
+      m_msPipeline = m_device->createGraphicsPipeline(msPipelineDesc);
+    } else {
+      Log::err("Mesh and task shaders not supported, skipping rendering.");
+    }
 
     // Initialize transfer manager
     m_transfer = GfxTransferManager(m_io, m_device, 16ull << 20);
@@ -264,23 +265,25 @@ public:
         context->beginRendering(renderInfo, 0);
         context->setViewport(GfxViewport(Offset2D(0, 0), extent));
 
-        context->bindPipeline(m_msPipeline);
-        context->setRenderState(m_renderState);
+        if (m_msPipeline) {
+          context->bindPipeline(m_msPipeline);
+          context->setRenderState(m_renderState);
 
-        PushConstants pushConstants = { };
-        pushConstants.drawListVa = m_sceneDrawBuffer->getGpuAddress();
-        pushConstants.instanceVa = m_sceneInstanceManager->getGpuAddress();
-        pushConstants.sceneVa = m_sceneNodeManager->getGpuAddress();
-        pushConstants.drawGroup = 0;
-        pushConstants.frameId = m_frameId;
+          PushConstants pushConstants = { };
+          pushConstants.drawListVa = m_sceneDrawBuffer->getGpuAddress();
+          pushConstants.instanceVa = m_sceneInstanceManager->getGpuAddress();
+          pushConstants.sceneVa = m_sceneNodeManager->getGpuAddress();
+          pushConstants.drawGroup = 0;
+          pushConstants.frameId = m_frameId;
 
-        context->bindDescriptor(0, 0, passBuffer.getDescriptor(GfxUsage::eConstantBuffer));
-        context->setShaderConstants(0, pushConstants);
+          context->bindDescriptor(0, 0, passBuffer.getDescriptor(GfxUsage::eConstantBuffer));
+          context->setShaderConstants(0, pushConstants);
 
-        context->drawMeshIndirect(
-          m_sceneDrawBuffer->getDrawParameterDescriptor(0),
-          m_sceneDrawBuffer->getDrawCountDescriptor(0),
-          1024u);
+          context->drawMeshIndirect(
+            m_sceneDrawBuffer->getDrawParameterDescriptor(0),
+            m_sceneDrawBuffer->getDrawCountDescriptor(0),
+            1024u);
+        }
 
         context->endRendering();
 
