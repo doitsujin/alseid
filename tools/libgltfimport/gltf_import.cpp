@@ -835,6 +835,7 @@ void GltfMeshletBuilder::buildMeshlet(
   // Initialize joint index to be invalid so that task shaders
   // don't apply an incorrect transform for culling by accident.
   m_metadata.info.jointIndex = 0xffffu;
+  m_metadata.header.jointIndex = 0xffffu;
 
   // Load input vertex data for further processing
   std::vector<GltfVertex> inputVertices = loadVertices(vertexIndices, vertexData);
