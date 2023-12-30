@@ -350,6 +350,26 @@ public:
       Vector<T, 4>(T(0.0), T(0.0), T(0.0), T(0.0)));
   }
 
+  /**
+   * \brief Creates translation transform
+   *
+   * \param [in] vector Translation vector
+   * \returns Resulting transform
+   */
+  static QuaternionTransform translate(const VectorType& vector) {
+    return QuaternionTransform(Quaternion<T>::identity(), vector);
+  }
+
+  /**
+   * \brief Creates translation transform
+   *
+   * \param [in] vector Three-dimensional translation vector
+   * \returns Resulting transform
+   */
+  static QuaternionTransform translate(const Vector<T, 3>& vector) {
+    return translate(Vector4D(vector, T(0)));
+  }
+
 private:
 
   Quaternion<T> m_quat;
