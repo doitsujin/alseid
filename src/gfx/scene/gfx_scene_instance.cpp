@@ -134,7 +134,7 @@ GfxBuffer GfxSceneInstanceBuffer::resizeBuffer(
 
 GfxBufferSlice GfxSceneInstanceBuffer::allocData(
         uint64_t                      dataSize) {
-  return m_dataBuffer->alloc(dataSize, 64ull);
+  return m_dataBuffer->alloc(align<uint64_t>(dataSize, 64u), 64u);
 }
 
 
