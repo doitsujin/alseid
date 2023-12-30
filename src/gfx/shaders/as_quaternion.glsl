@@ -172,4 +172,16 @@ Transform dualQuatToTrans(in DualQuat dq) {
   return Transform(dq.r, 2.0f * (dq.r.w * dq.d.xyz - dq.d.w * dq.r.xyz + cross(dq.r.xyz, dq.d.xyz)));
 }
 
+
+// Interpolates two transforms linearly.
+Transform transNlerp(in Transform a, in Transform b, float w) {
+  return Transform(quatNlerp(a.rot, b.rot, w), mix(a.pos, b.pos, w));
+}
+
+
+// Interpolates two transforms with slerp.
+Transform transSlerp(in Transform a, in Transform b, float w) {
+  return Transform(quatSlerp(a.rot, b.rot, w), mix(a.pos, b.pos, w));
+}
+
 #endif /* AS_QUATERION_H */
