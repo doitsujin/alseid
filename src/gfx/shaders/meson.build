@@ -6,8 +6,6 @@ as_shader_includes = files(
   'as_include_tail.glsl',
   'as_matrix.glsl',
   'as_quaternion.glsl',
-  'cs_joint_animation.glsl',
-  'cs_joint_transform.glsl',
   'cs_template.glsl',
   'fs_template.glsl',
   'ms_common.glsl',
