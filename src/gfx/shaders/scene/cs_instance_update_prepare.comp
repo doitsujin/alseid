@@ -53,7 +53,7 @@ void csPrepareUpdate() {
   // Dispatch an update for transforms and morph target weights if necessary
   if ((instance.flags & INSTANCE_FLAG_DEFORM) != 0) {
     if (updateFrameId < instance.dirtyFrameId) {
-      nodeListAddUpdate(groupBuffer, instanceNodeRef, 1);
+      nodeListAddUpdate(groupBuffer, instanceNodeRef, 0, 1);
       updateFrameId = frameId;
     }
   }

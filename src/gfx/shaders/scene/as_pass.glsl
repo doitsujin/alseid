@@ -238,6 +238,7 @@ void nodeListAddItem(
 void nodeListAddUpdate(
         uint64_t                        groupBuffer,
         uint32_t                        nodeRef,
+        uint32_t                        payload,
         uint32_t                        workgroupSize) {
   // Exit early if the node type is not valid
   uint32_t nodeType = getNodeTypeFromRef(subgroupBroadcastFirst(nodeRef));
@@ -258,17 +259,21 @@ void nodeListAddUpdate(
   uint32_t localCount = subgroupBallotBitCount(ballot);
   uint32_t localIndex = subgroupBallotExclusiveBitCount(ballot);
 
-  uint32_t entry;
+  uint32_t first;
 
   if (subgroupElect())
-    entry = atomicAdd(list.header.entryCount, localCount);
+    first = atomicAdd(list.header.entryCount, localCount);
 
-  entry = subgroupBroadcastFirst(entry) + localIndex;
-  list.nodeRefs[entry] = nodeRef;
+  first = subgroupBroadcastFirst(first);
+
+  uint32_t entry = first + localIndex;
+  list.nodeRefs[entry] = bitfieldInsert(nodeRef, payload, 0, 8);
 
   // Update the dispatch workgroup count as necessary
-  if ((entry % workgroupSize) == 0u)
-    atomicMax(list.header.dispatch.x, (entry / workgroupSize) + 1u);
+  if (subgroupAny((entry % workgroupSize) == 0u)) {
+    if (subgroupElect())
+      atomicMax(list.header.dispatch.x, asComputeWorkgroupCount1D(first + localCount, workgroupSize));
+  }
 }
 
 
