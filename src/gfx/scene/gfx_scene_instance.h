@@ -576,22 +576,20 @@ public:
    * \brief Processes visible instances
    *
    * Iterates over potentially visible instances in the given
-   * pass groups and updates absolute joint transforms, morph
+   * pass group and updates absolute joint transforms, morph
    * target weights, and related properties as necessary.
    * This should be run immediately after BVH traversal.
    * \param [in] context Context object
    * \param [in] pipelines Update pipelines
    * \param [in] nodeManager Node manager
-   * \param [in] groupCount Pass group count
-   * \param [in] groupInfos Pass group parameters
+   * \param [in] groupBuffer Pass group buffer
    * \param [in] frameId Current frame ID
    */
   void processPassGroupInstances(
     const GfxContext&                   context,
     const GfxScenePipelines&            pipelines,
     const GfxSceneNodeManager&          nodeManager,
-          uint32_t                      groupCount,
-    const GfxScenePassGroupInfo*        groupInfos,
+    const GfxScenePassGroupBuffer&      groupBuffer,
           uint32_t                      frameId);
 
 private:

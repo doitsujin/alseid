@@ -357,23 +357,20 @@ void GfxSceneInstanceManager::processPassGroupInstances(
   const GfxContext&                   context,
   const GfxScenePipelines&            pipelines,
   const GfxSceneNodeManager&          nodeManager,
-        uint32_t                      groupCount,
-  const GfxScenePassGroupInfo*        groupInfos,
+  const GfxScenePassGroupBuffer&      groupBuffer,
         uint32_t                      frameId) {
   context->beginDebugLabel("Process instances", 0xff78f0ff);
   context->beginDebugLabel("Prepare updates", 0xffb4f6ff);
 
-  for (uint32_t i = 0; i < groupCount; i++) {
-    GfxDescriptor dispatch = groupInfos[i].groupBuffer->getDispatchDescriptors(GfxSceneNodeType::eInstance).first;
+  auto dispatches = groupBuffer.getDispatchDescriptors(GfxSceneNodeType::eInstance);
 
-    GfxSceneInstanceUpdatePrepareArgs args = { };
-    args.instanceBufferVa = m_gpuResources.getGpuAddress();
-    args.sceneBufferVa = nodeManager.getGpuAddress();
-    args.groupBufferVa = groupInfos[i].groupBuffer->getGpuAddress();
-    args.frameId = frameId;
+  GfxSceneInstanceUpdatePrepareArgs prepArgs = { };
+  prepArgs.instanceBufferVa = m_gpuResources.getGpuAddress();
+  prepArgs.sceneBufferVa = nodeManager.getGpuAddress();
+  prepArgs.groupBufferVa = groupBuffer.getGpuAddress();
+  prepArgs.frameId = frameId;
 
-    pipelines.prepareInstanceUpdates(context, dispatch, args);
-  }
+  pipelines.prepareInstanceUpdates(context, dispatches.first, prepArgs);
 
   context->memoryBarrier(
     GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
@@ -382,16 +379,12 @@ void GfxSceneInstanceManager::processPassGroupInstances(
   context->endDebugLabel();
   context->beginDebugLabel("Execute updates", 0xffb4f6ff);
 
-  for (uint32_t i = 0; i < groupCount; i++) {
-    GfxDescriptor dispatch = groupInfos[i].groupBuffer->getDispatchDescriptors(GfxSceneNodeType::eInstance).second;
+  GfxSceneInstanceUpdateExecuteArgs execArgs = { };
+  execArgs.instanceBufferVa = m_gpuResources.getGpuAddress();
+  execArgs.sceneBufferVa = nodeManager.getGpuAddress();
+  execArgs.groupBufferVa = groupBuffer.getGpuAddress();
 
-    GfxSceneInstanceUpdateExecuteArgs args = { };
-    args.instanceBufferVa = m_gpuResources.getGpuAddress();
-    args.sceneBufferVa = nodeManager.getGpuAddress();
-    args.groupBufferVa = groupInfos[i].groupBuffer->getGpuAddress();
-
-    pipelines.executeInstanceUpdates(context, dispatch, args);
-  }
+  pipelines.executeInstanceUpdates(context, dispatches.second, execArgs);
 
   context->memoryBarrier(
     GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,

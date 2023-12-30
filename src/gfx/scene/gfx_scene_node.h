@@ -399,8 +399,6 @@ private:
  * \brief Pass group parameters for BVH traversal
  */
 struct GfxScenePassGroupInfo {
-  /** Pointer to pass group buffer. */
-  const GfxScenePassGroupBuffer* groupBuffer = nullptr;
   /** Virtual address of where render pass
    *  parameters are stored. */
   uint64_t passBufferVa = 0ull;
@@ -615,8 +613,8 @@ public:
    * with no data dependency to avoid unnecessary memory barriers.
    * \param [in] context Context object
    * \param [in] pipelines Update pipelines
-   * \param [in] groupCount Pass group count
-   * \param [in] groupInfos Pass group parameters
+   * \param [in] groupBuffer Pass group buffer
+   * \param [in] groupInfo Pass group parameters
    * \param [in] frameId Current frame ID
    * \param [in] referencePass Pass index used for distance culling
    *    and LOD selection. This should generally refer to the main
@@ -625,8 +623,8 @@ public:
   void traverseBvh(
     const GfxContext&                   context,
     const GfxScenePipelines&            pipelines,
-          uint32_t                      groupCount,
-    const GfxScenePassGroupInfo*        groupInfos,
+    const GfxScenePassGroupBuffer&      groupBuffer,
+    const GfxScenePassGroupInfo&        groupInfo,
           uint32_t                      frameId,
           uint32_t                      referencePass);
 

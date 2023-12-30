@@ -381,8 +381,8 @@ void GfxSceneNodeManager::commitUpdates(
 void GfxSceneNodeManager::traverseBvh(
   const GfxContext&                   context,
   const GfxScenePipelines&            pipelines,
-        uint32_t                      groupCount,
-  const GfxScenePassGroupInfo*        groupInfos,
+  const GfxScenePassGroupBuffer&      groupBuffer,
+  const GfxScenePassGroupInfo&        groupInfo,
         uint32_t                      frameId,
         uint32_t                      referencePass) {
   context->beginDebugLabel("Traverse scene BVH", 0xff64c0ff);
@@ -391,64 +391,44 @@ void GfxSceneNodeManager::traverseBvh(
 
   // Find upper bound for BVH depth for each individual
   // group, and then the maximum value across all groups.
-  small_vector<uint32_t, 8> bvhDepth(groupCount);
-  uint32_t maxDepth = 0u;
+  uint32_t bvhDepth = 0u;
 
-  for (uint32_t i = 0; i < groupCount; i++) {
-    const auto& groupInfo = groupInfos[i];
-
-    uint32_t groupDepth = 0u;
-
-    for (uint32_t j = 0; j < groupInfo.rootNodeCount; j++)
-      groupDepth = std::max(groupDepth, m_hostData[getNodeIndex(groupInfo.rootNodes[j])].childDepth);
-
-    bvhDepth[i] = groupDepth;
-    maxDepth = std::max(maxDepth, groupDepth);
-  }
+  for (uint32_t j = 0; j < groupInfo.rootNodeCount; j++)
+    bvhDepth = std::max(bvhDepth, m_hostData[getNodeIndex(groupInfo.rootNodes[j])].childDepth);
 
   // Prepare the pass buffers for the first traversal iteration
   context->beginDebugLabel("Initialization", 0xffa0e0ff);
 
-  for (uint32_t i = 0; i < groupCount; i++) {
-    const auto& groupInfo = groupInfos[i];
+  GfxScenePassInitArgs initArgs = { };
+  initArgs.sceneBufferVa = sceneBufferVa;
+  initArgs.groupBufferVa = groupBuffer.getGpuAddress();
+  initArgs.nodeCount = groupInfo.rootNodeCount;
+  initArgs.frameId = frameId;
 
-    GfxScenePassInitArgs initArgs = { };
-    initArgs.sceneBufferVa = sceneBufferVa;
-    initArgs.groupBufferVa = groupInfo.groupBuffer->getGpuAddress();
-    initArgs.nodeCount = groupInfo.rootNodeCount;
-    initArgs.frameId = frameId;
-
-    pipelines.initPassGroupBuffer(context, initArgs, groupInfo.rootNodes);
-  }
+  pipelines.initPassGroupBuffer(context, initArgs, groupInfo.rootNodes);
 
   context->endDebugLabel();
 
   // Process nodes of each BVH layer
-  for (uint32_t i = 0; i <= maxDepth; i++) {
+  for (uint32_t i = 0; i <= bvhDepth; i++) {
     context->beginDebugLabel(strcat("Layer ", i).c_str(), 0xffa0e0ff);
 
     context->memoryBarrier(
       GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
       GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
 
-    for (uint32_t j = 0; j < groupCount; j++) {
-      if (i <= bvhDepth[j]) {
-        const auto& groupInfo = groupInfos[j];
+    GfxSceneTraverseBvhArgs traverseArgs = { };
+    traverseArgs.passBufferVa = groupInfo.passBufferVa;
+    traverseArgs.sceneBufferVa = sceneBufferVa;
+    traverseArgs.groupBufferVa = groupBuffer.getGpuAddress();
+    traverseArgs.frameId = frameId;
+    traverseArgs.bvhLayer = i;
+    traverseArgs.distanceCullingPass = uint16_t(referencePass);
 
-        GfxSceneTraverseBvhArgs traverseArgs = { };
-        traverseArgs.passBufferVa = groupInfo.passBufferVa;
-        traverseArgs.sceneBufferVa = sceneBufferVa;
-        traverseArgs.groupBufferVa = groupInfo.groupBuffer->getGpuAddress();
-        traverseArgs.frameId = frameId;
-        traverseArgs.bvhLayer = i;
-        traverseArgs.distanceCullingPass = uint16_t(referencePass);
-
-        pipelines.processBvhLayer(context,
-          groupInfo.groupBuffer->getBvhDispatchDescriptor(i, true),
-          groupInfo.groupBuffer->getBvhDispatchDescriptor(i, false),
-          traverseArgs);
-      }
-    }
+    pipelines.processBvhLayer(context,
+      groupBuffer.getBvhDispatchDescriptor(i, true),
+      groupBuffer.getBvhDispatchDescriptor(i, false),
+      traverseArgs);
 
     context->endDebugLabel();
   }
