@@ -212,8 +212,12 @@ void csTransformJoints(in GeometryRef geometryBuffer, uint64_t instanceBuffer) {
 void csExecuteUpdate() {
   PassGroupUpdateListIn instanceList = getNodeTypeUpdateList(groupBuffer, NODE_TYPE_INSTANCE);
 
-  uint32_t instanceRef = instanceList.nodeRefs[gl_WorkGroupID.x];
-  uint32_t instanceIndex = getNodeIndexFromRef(instanceRef);
+  uint32_t workgroupId = asFlattenWorkgroupIndex();
+
+  if (workgroupId >= instanceList.header.entryCount)
+    return;
+
+  uint32_t instanceIndex = getNodeIndexFromRef(instanceList.nodeRefs[workgroupId]);
 
   InstanceNode instanceNode = instanceBuffer.nodes[instanceIndex];
   InstanceDataBuffer instanceInfo = InstanceDataBuffer(instanceNode.propertyBuffer);

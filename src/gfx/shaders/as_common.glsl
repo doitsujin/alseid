@@ -131,3 +131,34 @@ bool testConeSphere(vec3 sphereCenter, float sphereRadius, vec3 coneOrigin, vec3
 uint32_t asComputeWorkgroupCount1D(uint32_t count, uint32_t workgroupSize) {
   return (count + workgroupSize - 1u) / workgroupSize;
 }
+
+
+#if defined(STAGE_COMP) || defined(STAGE_TASK) || defined(STAGE_MESH)
+// Flattens two-dimensional workgroup index. When used with a node
+// list, this must be checked against the entry count manually.
+uint32_t asFlattenWorkgroupIndex() {
+  return gl_NumWorkGroups.x * gl_WorkGroupID.y + gl_WorkGroupID.x;
+}
+
+// Flattens global invocation index, assuming a one-dimensional
+// workgroup size.
+uint32_t asFlattenGlobalInvocationIndex() {
+  return asFlattenWorkgroupIndex() * gl_WorkGroupSize.x + gl_LocalInvocationIndex;
+}
+#endif
+
+
+// Computes two-dimensional workgroup count for a one-dimensional count.
+// This is necessary in situations where workgroup counts are expected
+// to exceed device limits, which can be as low as 65565 per dimension.
+//
+// The resulting workgroup counts will monotonically increase in each
+// dimension, which may simplifiy updating dispatch lists on the fly.
+uvec2 asGetWorkgroupCount2D(uint32_t workgroupCount) {
+  uint32_t sqr = uint32_t(ceil(sqrt(float(workgroupCount))));
+  uint32_t tot = sqr * sqr;
+
+  return uvec2(
+    sqr + uint32_t(tot <  workgroupCount),
+    sqr - uint32_t(tot >= workgroupCount + sqr));
+}

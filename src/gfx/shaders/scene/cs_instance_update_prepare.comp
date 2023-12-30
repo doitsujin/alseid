@@ -24,7 +24,7 @@ uniform PushData {
 };
 
 void csPrepareUpdate() {
-  uint32_t gid = uint32_t(gl_GlobalInvocationID.x);
+  uint32_t gid = asFlattenGlobalInvocationIndex();
 
   // Exit early if the thread ID is out of bounds
   PassGroupBuffer group = PassGroupBuffer(groupBuffer);
