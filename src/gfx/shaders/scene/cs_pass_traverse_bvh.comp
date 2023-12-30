@@ -124,6 +124,11 @@ void csTraverseBvh() {
       uint32_t nextIndex = getNodeIndexFromRef(nextChain);
       uint32_t childCount = bvhNodes.nodes[nextIndex].childCount;
 
+      PassGroupNodeListItem item;
+      item.nodeRef = 0u;
+      item.partialVisibilityMask = visibilityMask.x;
+      item.fullVisibilityMask = visibilityMask.y;
+
       if (tid < childCount) {
         uint32_t childNode = uint32_t(bvhNodes.nodes[nextIndex].childNodes[tid]);
 
@@ -132,18 +137,13 @@ void csTraverseBvh() {
         csComputeNodeTransform(nodeInfos, nodeTransforms,
           childNode, scene.nodeCount, frameId);
 
-        PassGroupNodeListItem item;
         item.nodeRef = nodeInfos.nodeInfos[childNode].nodeRef;
-        item.partialVisibilityMask = visibilityMask.x;
-        item.fullVisibilityMask = visibilityMask.y;
-
-        uint32_t nodeType = getNodeTypeFromRef(item.nodeRef);
-
-        if (nodeType == NODE_TYPE_BVH)
-          bvhListAddItem(bvhList, bvhLayer, item);
-        else
-          nodeListAddItem(groupBuffer, item, 64u);
       }
+
+      // These functions will filter out any unwanted nodes on their own,
+      // but they have to run within subgroup-uniform control flow.
+      bvhListAddItem(bvhList, bvhLayer, item);
+      nodeListAddItem(groupBuffer, item, 64u);
 
       nextChain = bvhNodes.nodes[nextIndex].chainedNode;
     }

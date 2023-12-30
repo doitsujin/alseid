@@ -203,22 +203,24 @@ void nodeListResetUpdate(
 // Adds node entry to the list. Requries the header to be zero-initialized
 // before adding the first item, and initializes the dispatch argument with
 // the required workgroup count as the entrycount increases. The workgroup
-// count must be a power of two.
+// size must be a power of two.
+//
+// Must be executed within subgroup-uniform control flow.
 void nodeListAddItem(
         uint64_t                        groupBuffer,
   in    PassGroupNodeListItem           item,
         uint32_t                        workgroupSize) {
-  // Exit early if the node type is not valid
   uint32_t nodeType = getNodeTypeFromRef(item.nodeRef);
 
-  if (nodeType < NODE_TYPE_BUILTIN_COUNT)
-    return;
-
-  // Exit early if there is no list for the given node type
+  // Exit early if either all node types are invalid, or if
+  // there is no node list for the given node types.
   PassGroupBuffer group = PassGroupBuffer(groupBuffer);
-  uint32_t offset = group.nodeListOffsets[nodeType - NODE_TYPE_BUILTIN_COUNT].nodeList;
+  uint32_t offset = 0u;
 
-  if (offset == 0u)
+  if (nodeType >= NODE_TYPE_BUILTIN_COUNT)
+    offset = group.nodeListOffsets[nodeType - NODE_TYPE_BUILTIN_COUNT].nodeList;
+
+  if (subgroupAll(offset == 0u))
     return;
 
   // For each unique node type within a subgroup, compute the
@@ -234,31 +236,40 @@ void nodeListAddItem(
     localFirst = subgroupBallotFindLSB(ballot);
   }
 
-  // Add the node item to the given list
+  // Add the node item to the given list. The atomic increment
+  // will only be performed once per unique valid node type.
   PassGroupNodeList list = PassGroupNodeList(groupBuffer + offset);
 
-  uint32_t entry;
+  uint32_t entry = 0u;
 
-  if (localIndex == 0u)
+  if (offset != 0u && localIndex == 0u)
     entry = atomicAdd(list.header.entryCount, localCount);
 
   entry = subgroupShuffle(entry, localFirst) + localIndex;
-  list.items[entry] = item;
 
-  // Update the dispatch workgroup count as necessary
-  if ((entry % workgroupSize) == 0u)
-    atomicMax(list.header.dispatch.x, (entry / workgroupSize) + 1u);
+  if (offset != 0u) {
+    list.items[entry] = item;
+
+    if ((entry % workgroupSize) == 0u) {
+      // This generally only happens once per unique node type per
+      // subgroup since the workgroup size is expected to be large,
+      // so do not try to scalarize this any further.
+      atomicMax(list.header.dispatch.x, (entry / workgroupSize) + 1u);
+    }
+  }
 }
 
 
 // Enqueues a node for an update. This assumes that the node type
 // and workgroup size are uniform within the workgroup.
+//
+// May be executed from non-uniform control flow.
 void nodeListAddUpdate(
         uint64_t                        groupBuffer,
         uint32_t                        nodeRef,
         uint32_t                        payload,
         uint32_t                        workgroupSize) {
-  // Exit early if the node type is not valid
+  // Exit early if the node type is not valid or does not have a list
   uint32_t nodeType = getNodeTypeFromRef(subgroupBroadcastFirst(nodeRef));
 
   if (nodeType < NODE_TYPE_BUILTIN_COUNT)
@@ -270,27 +281,22 @@ void nodeListAddUpdate(
   if (offset == 0u)
     return;
 
-  // Add node reference to the given update list
+  // Add node reference to the given update list. Let the driver deal
+  // with optimizing this atomic, the address is known to be uniform
+  // but control flow may not be, so manual subgroup optimizations are
+  // invalid and may result in undefined behaviour.
   PassGroupUpdateList list = PassGroupUpdateList(groupBuffer + offset);
 
-  u32vec4 ballot = subgroupBallot(true);
-  uint32_t localCount = subgroupBallotBitCount(ballot);
-  uint32_t localIndex = subgroupBallotExclusiveBitCount(ballot);
-
-  uint32_t first;
-
-  if (subgroupElect())
-    first = atomicAdd(list.header.entryCount, localCount);
-
-  first = subgroupBroadcastFirst(first);
-
-  uint32_t entry = first + localIndex;
+  uint32_t entry = atomicAdd(list.header.entryCount, 1u);
   list.nodeRefs[entry] = bitfieldInsert(nodeRef, payload, 0, 8);
 
-  // Update the dispatch workgroup count as necessary
-  if (subgroupAny((entry % workgroupSize) == 0u)) {
+  // Update the dispatch workgroup count as necessary. The workgroup
+  // size is expected to be small, so only do this from one thread.
+  if ((entry % workgroupSize) == 0u) {
+    uint32_t maxEntry = subgroupMax(entry);
+
     if (subgroupElect())
-      atomicMax(list.header.dispatch.x, asComputeWorkgroupCount1D(first + localCount, workgroupSize));
+      atomicMax(list.header.dispatch.x, (maxEntry / workgroupSize) + 1u);
   }
 }
 
@@ -366,20 +372,27 @@ void bvhListInit(
 }
 
 
-// Adds an item to the BVH node list. This allocates a node for every active
-// invocation and offsets the write index by the node index for the current
-// BVH layer, so that a flattened array is generated. Does not affect the
-// dispatch arguments in any way since those are written later.
+// Adds an item to the BVH node list. This allocates a node for every BVH
+// node passed to the function, and offsets the write index by the node
+// index for the current BVH layer, so that a flattened array is generated.
+// Does not affect the dispatch arguments in any way since those are written
+// later by the traversal shader.
+//
+// Must be executed within subgroup-uniform control flow.
 void bvhListAddItem(
         PassGroupBvhList                list,
         uint32_t                        bvhLayer,
   in    PassGroupNodeListItem           item) {
-  uint32_t nextIndex = (bvhLayer & 1u) ^ 1u;
+  uint32_t nodeType = getNodeTypeFromRef(item.nodeRef);
 
-  u32vec4 ballot = subgroupBallot(true);
+  u32vec4 ballot = subgroupBallot(nodeType == NODE_TYPE_BVH);
   uint32_t localCount = subgroupBallotBitCount(ballot);
   uint32_t localIndex = subgroupBallotExclusiveBitCount(ballot);
 
+  if (localCount == 0u)
+    return;
+
+  uint32_t nextIndex = (bvhLayer & 1u) ^ 1u;
   uint32_t entry;
 
   if (subgroupElect())
@@ -388,7 +401,8 @@ void bvhListAddItem(
   entry  = subgroupBroadcastFirst(entry) + localIndex;
   entry += list.header.totalNodeCount;
 
-  list.items[entry] = item;
+  if (nodeType == NODE_TYPE_BVH)
+    list.items[entry] = item;
 }
 
 
