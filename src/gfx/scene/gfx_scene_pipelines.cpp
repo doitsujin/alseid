@@ -5,10 +5,13 @@
 #include <cs_draw_list_generate.h>
 #include <cs_draw_list_init.h>
 
+#include <cs_instance_animate.h>
+#include <cs_instance_animate_prepare.h>
 #include <cs_instance_update_execute.h>
 #include <cs_instance_update_prepare.h>
 
 #include <cs_pass_init.h>
+#include <cs_pass_reset_update.h>
 #include <cs_pass_traverse_bvh.h>
 #include <cs_pass_traverse_reset.h>
 
@@ -21,9 +24,12 @@ GfxScenePipelines::GfxScenePipelines(
 : m_device                  (std::move(device))
 , m_csDrawListInit          (createComputePipeline("cs_draw_list_init", cs_draw_list_init))
 , m_csDrawListGenerate      (createComputePipeline("cs_draw_list_generate", cs_draw_list_generate))
+, m_csInstanceAnimate       (createComputePipeline("cs_instance_animate", cs_instance_animate))
+, m_csInstanceAnimatePrepare(createComputePipeline("cs_instance_animate_prepare", cs_instance_animate_prepare))
 , m_csInstanceUpdateExecute (createComputePipeline("cs_instance_update_execute", cs_instance_update_execute))
 , m_csInstanceUpdatePrepare (createComputePipeline("cs_instance_update_prepare", cs_instance_update_prepare))
 , m_csPassInit              (createComputePipeline("cs_pass_init", cs_pass_init))
+, m_csPassResetUpdate       (createComputePipeline("cs_pass_reset_update", cs_pass_reset_update))
 , m_csPassTraverseBvh       (createComputePipeline("cs_pass_traverse_bvh", cs_pass_traverse_bvh))
 , m_csPassTraverseReset     (createComputePipeline("cs_pass_traverse_reset", cs_pass_traverse_reset))
 , m_csSceneUpdate           (createComputePipeline("cs_scene_update", cs_scene_update)) {
@@ -73,6 +79,26 @@ void GfxScenePipelines::processBvhLayer(
 }
 
 
+void GfxScenePipelines::prepareInstanceAnimations(
+  const GfxContext&                   context,
+  const GfxDescriptor&                dispatch,
+  const GfxSceneInstanceAnimateArgs&  args) const {
+  context->bindPipeline(m_csInstanceAnimatePrepare);
+  context->setShaderConstants(0, args);
+  context->dispatchIndirect(dispatch);
+}
+
+
+void GfxScenePipelines::processInstanceAnimations(
+  const GfxContext&                   context,
+  const GfxDescriptor&                dispatch,
+  const GfxSceneInstanceAnimateArgs&  args) const {
+  context->bindPipeline(m_csInstanceAnimate);
+  context->setShaderConstants(0, args);
+  context->dispatchIndirect(dispatch);
+}
+
+
 void GfxScenePipelines::prepareInstanceUpdates(
   const GfxContext&                   context,
   const GfxDescriptor&                dispatch,
@@ -112,6 +138,17 @@ void GfxScenePipelines::generateDrawList(
   context->bindDescriptor(0, 0, passInfos);
   context->setShaderConstants(0, args);
   context->dispatchIndirect(dispatch);
+}
+
+
+void GfxScenePipelines::resetUpdateLists(
+  const GfxContext&                   context,
+        uint64_t                      groupBufferVa) const {
+  context->bindPipeline(m_csPassResetUpdate);
+  context->setShaderConstants(0, groupBufferVa);
+  context->dispatch(gfxComputeWorkgroupCount(
+    Extent3D(uint32_t(GfxSceneNodeType::eCount) - uint32_t(GfxSceneNodeType::eBuiltInCount), 1u, 1u),
+    m_csPassResetUpdate->getWorkgroupSize()));
 }
 
 }

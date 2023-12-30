@@ -182,6 +182,24 @@ void nodeListInit(
 }
 
 
+// Resets only the update list portion of the node list header
+// so that subsequent passes can reuse it as necessary.
+void nodeListResetUpdate(
+        uint64_t                        groupBuffer,
+        uint32_t                        tid) {
+  PassGroupBuffer group = PassGroupBuffer(groupBuffer);
+
+  if (tid < (NODE_TYPE_COUNT - NODE_TYPE_BUILTIN_COUNT)) {
+    PassTypedNodeListOffsets offsets = group.nodeListOffsets[tid];
+
+    if (offsets.updateList != 0u) {
+      PassGroupUpdateList list = PassGroupUpdateList(groupBuffer + offsets.updateList);
+      list.header = PassGroupNodeListHeader(u32vec3(0u, 1u, 1u), 0u);
+    }
+  }
+}
+
+
 // Adds node entry to the list. Requries the header to be zero-initialized
 // before adding the first item, and initializes the dispatch argument with
 // the required workgroup count as the entrycount increases. The workgroup

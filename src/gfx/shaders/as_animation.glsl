@@ -105,19 +105,22 @@ readonly buffer AnimationBufferRef {
 };
 
 
-KeyframeRef animationGetKeyframeBuffer(AnimationBufferRef animationBuffer, in AnimationBuffer info) {
-  uint64_t address = uint64_t(animationBuffer) + info.keyframeDataOffset;
-  return KeyframeRef(address);
+KeyframeRef animationGetKeyframeBuffer(
+        uint64_t                      animationVa,
+  in    AnimationBuffer               info) {
+  return KeyframeRef(animationVa + info.keyframeDataOffset);
 }
 
 
-AnimationJointRef animationGetJointBuffer(AnimationBufferRef animationBuffer, in AnimationBuffer info) {
-  uint64_t address = uint64_t(animationBuffer) + info.jointDataOffset;
-  return AnimationJointRef(address);
+AnimationJointRef animationGetJointBuffer(
+        uint64_t                      animationVa,
+  in    AnimationBuffer               info) {
+  return AnimationJointRef(animationVa + info.jointDataOffset);
 }
 
 
-AnimationMorphTargetRef animationGetMorphTargetBuffer(AnimationBufferRef animationBuffer, in AnimationBuffer info) {
-  uint64_t address = uint64_t(animationBuffer) + info.weightDataOffset;
-  return AnimationMorphTargetRef(address);
+AnimationMorphTargetRef animationGetMorphTargetBuffer(
+        uint64_t                      animationVa,
+  in    AnimationBuffer               info) {
+  return AnimationMorphTargetRef(animationVa + info.weightDataOffset);
 }

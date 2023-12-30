@@ -27,12 +27,16 @@ enum class GfxSceneInstanceFlag : uint32_t {
    *  geometry. Useful to determine whether to update the instance without
    *  having to access the instance data buffer or geometry buffer. */
   eDeform           = (1u << 1),
+  /** The instance has animations. This implies that whenever a geometry
+   *  buffer is specified, an animation buffer must also be present, and
+   *  the animation count for this instance must not be zero. */
+  eAnimation        = (1u << 2),
   /** Indicates that motion vectors should not be calculated when rendering
    *  an instance during the next frame. This flag may be set internally if
    *  the instance has not been visible during the previous frame, which means
    *  there is no valid data to compute motion vectors with, but may also be
    *  set externally if instance parameters have changed significantly. */
-  eNoMotionVectors  = (1u << 2),
+  eNoMotionVectors  = (1u << 3),
 
   eFlagEnum         = 0
 };
@@ -61,12 +65,17 @@ struct GfxSceneInstanceNodeInfo {
   /** GPU address of the geometry buffer. May be 0 if the asset is not
    *  resident. This buffer stores the actual geometry to render. */
   uint64_t geometryBuffer;
+  /** GPU address of the animation buffer. May be 0 if the asset is not
+   *  resident. This buffer stores animation keyframes and metadata. */
+  uint64_t animationBuffer;
   /** GPU address of the instance property buffer. This stores all sorts
    *  of per-instance data, including joint transforms. */
   uint64_t propertyBuffer;
+  /** Reserved for future use */
+  uint64_t reserved;
 };
 
-static_assert(sizeof(GfxSceneInstanceNodeInfo) == 32);
+static_assert(sizeof(GfxSceneInstanceNodeInfo) == 48);
 
 
 /**
@@ -98,11 +107,74 @@ static_assert(sizeof(GfxSceneInstanceDraw) == 16);
 
 
 /**
+ * \brief Instance animation property header
+ *
+ * The header is immediately followed by a list of animation
+ * parameters, with no special padding or alignment.
+ */
+struct GfxSceneAnimationHeader {
+  /** Number of active animations for this instance */
+  uint32_t activeAnimationCount;
+};
+
+static_assert(sizeof(GfxSceneAnimationHeader) == 4);
+
+
+/**
+ * \brief Animation blend operation
+ *
+ * Defines how multiple animations are composited. 
+ */
+enum class GfxSceneAnimationBlendOp : uint8_t {
+  /** Blending is disabled, and animated joints and morph target weights
+   *  are written back to the instance properties directly. This mode
+   *  \e must be used for the first animation in each channel. */
+  eNone           = 0,
+  /** Chains transforms and adds morph target weights together. Useful
+   *  when active animations affect different parts of the geometry. */
+  eChain          = 1,
+  /** Interpolates between animations. Useful when transitioning between
+   *  two animations that affect the same parts of the geometry. */
+  eSlerp          = 2,
+};
+
+
+/**
+ * \brief Animation parameters
+ */
+struct GfxSceneAnimationParameters {
+  static constexpr uint16_t GroupIndexUseAppDefined = 0xffffu;
+  static constexpr uint16_t GroupCountUseBlendChannel = 0x0u;
+
+  /** Blend operation for this animation. */
+  GfxSceneAnimationBlendOp blendOp;
+  /** Destination blend channel. Different channels can be used to
+   *  interpolate between composite animations. */
+  uint8_t blendChannel;
+  /** Blend weight, as a normalized unsigned 16-bit integer. Only used
+   *  if the blend op is an interpolation mode. */
+  uint16_t blendWeight;
+  /** Index of the animation group to process. A value of -1 indicates
+   *  that the instance's relative joint transforms should be used. */
+  uint16_t groupIndex;
+  /** Number of animation groups to process. If 0, this will blend two
+   *  animation channels together, and \c animationGroupIndex stores
+   *  the source blend channel index. */
+  uint16_t groupCount;
+  /** Animation timestamp for keyframe lookup. */
+  float timestamp;
+};
+
+static_assert(sizeof(GfxSceneAnimationParameters) == 12);
+
+
+/**
  * \brief Instance data buffer header
  *
  * Stores offsets to various categories of per-instance data. This
- * data is not stored alongside since the required amount of storage
- * is highly dependent on 
+ * data is not stored together with the instance nodes since the
+ * amount of storage required heavily depends on the geometry and
+ * the instance itself.
  */
 struct GfxSceneInstanceDataHeader {
   /** Offset to global shading parameter data. All materials that use
@@ -119,7 +191,8 @@ struct GfxSceneInstanceDataHeader {
   /** Number of joint transforms. */
   uint32_t jointCount;
   /** Offset to relative joint transforms for this instance. This is
-   *  not double-buffered, and stores exactly \c jointCount entries. */
+   *  double-buffered only if the instance has animations, where the
+   *  second set of joints would store the host-defined values. */
   uint32_t jointRelativeOffset;
   /** Offset to absoltue joint transforms for this instance. This is
    *  double-buffered in order to support motion vectors, with the
@@ -128,16 +201,27 @@ struct GfxSceneInstanceDataHeader {
   uint32_t jointAbsoluteOffset;
   /** Number of morph target weights. */
   uint32_t weightCount;
-  /** Offset to morph target weights. This is triple-buffered, the first
-   *  two set once again stores the current and previous frame's weights,
-   *  and the last set contains new weights updated by the host. */
+  /** Offset to morph target weights. This is triple- or quad-buffered
+   *  depending on whether the instance has animations, the first two
+   *  set store the current and previous frame's weights, and the last
+   *  set contains new weights updated by the host. */
   uint32_t weightOffset;
+  /** Maximum number of concurrently active animations. Note that the
+   *  number of currently active animations is stored in the animation
+   *  property buffer itself. */
+  uint32_t animationCount;
+  /** Animation info offset. Stores parameters of active animations, as
+   *  well as information on how to blend animations together. */
+  uint32_t animationOffset;
+  /** Reserved for future use */
+  uint32_t reserved0;
+  uint32_t reserved1;
   /** Axis-aligned bounding box, in model space. Empty if the number of
    *  joints is zero, otherwise this will contain the adjusted AABB. */
   GfxAabb<float16_t> aabb;
 };
 
-static_assert(sizeof(GfxSceneInstanceDataHeader) == 48);
+static_assert(sizeof(GfxSceneInstanceDataHeader) == 64);
 
 
 /**
@@ -201,20 +285,24 @@ public:
   QuatTransform* getJoints() const {
     auto header = getHeader();
 
+    uint32_t jointOffset = header->animationCount ? header->jointCount : 0u;
+
     return header->jointCount
-      ? m_buffer.template getAs<QuatTransform>(header->jointRelativeOffset)
+      ? m_buffer.template getAs<QuatTransform>(header->jointRelativeOffset) + jointOffset
       : nullptr;
   }
 
   /**
    * \brief Retrieves pointer to morph target weights
-   * \returns Pointer to joint transforms
+   * \returns Pointer to morph target weights
    */
   int16_t* getWeights() const {
     auto header = getHeader();
 
+    uint32_t weightOffset = (header->animationCount ? 3u : 2u) * header->weightCount;
+
     return header->weightCount
-      ? m_buffer.template getAs<int16_t>(header->weightOffset) + 2u * header->weightCount
+      ? m_buffer.template getAs<int16_t>(header->weightOffset) + weightOffset
       : nullptr;
   }
 
@@ -241,6 +329,34 @@ public:
 
     return draws[draw].shadingParameterSize
       ? m_buffer.getAt(draws[draw].shadingParameterOffset)
+      : nullptr;
+  }
+
+  /**
+   * \brief Retrieves pointer to animation metadata
+   * \returns Pointer to animation metadata
+   */
+  GfxSceneAnimationHeader* getAnimationMetadata() const {
+    auto header = getHeader();
+
+    return header->animationCount
+      ? m_buffer.getAs<GfxSceneAnimationHeader>(header->animationOffset)
+      : nullptr;
+  }
+
+  /**
+   * \brief Retrieves pointer to animation parameters
+   *
+   * The returned pointer points to an array of
+   * \c animationCount entries.
+   * \returns Pointer to animation parameters
+   */
+  GfxSceneAnimationParameters* getAnimationParameters() const {
+    auto header = getHeader();
+
+    return header->animationCount
+      ? m_buffer.getAs<GfxSceneAnimationParameters>(
+          header->animationOffset + sizeof(GfxSceneAnimationHeader))
       : nullptr;
   }
 
@@ -276,6 +392,9 @@ enum class GfxSceneInstanceDirtyFlag : uint32_t {
   /** Per-draw material data was updated on the CPU and needs to be
    *  uploaded to the GPU. Dirty states are not tracked per draw. */
   eDirtyMaterialParameters  = (1u << 5),
+  /** Animation parameters were updated on the CPU and need to be
+   *  uploaded to the GPU. GPU-side updates happen automatically. */
+  eDirtyAnimations          = (1u << 6),
 
   eFlagEnum                 = 0
 };
@@ -321,12 +440,25 @@ struct GfxSceneInstanceDesc {
   /** Number of morph target weights. Should match the number of
    *  morph targets of the geometry to render. */
   uint32_t weightCount = 0;
+  /** Maximum number of concurrently active animations. */
+  uint32_t animationCount = 0;
   /** Number of draws. Must be greater than 0 for any renderable
    *  instance, and cannot be changed after the fact. */
   uint32_t drawCount = 0;
   /** Pointer to draw parameters, including the size of per-draw
    *  material parameters. */
   const GfxSceneInstanceDraw* draws = nullptr;
+};
+
+
+/**
+ * \brief Instance data buffer description
+ *
+ * Used to compute the data layout of the data buffer.
+ */
+struct GfxSceneInstanceBufferDesc {
+  /** Number of instances */
+  uint32_t instanceCount = 0u;
 };
 
 
@@ -353,7 +485,7 @@ public:
    *
    * Needed when accessing instance node data. The entire buffer
    * is just a flat array of \c GfxSceneInstanceNodeInfo structs.
-   * \returns Buffer handle
+   * \returns Buffer address
    */
   uint64_t getGpuAddress() const {
     return m_nodeBuffer ? m_nodeBuffer->getGpuAddress() : 0ull;
@@ -366,14 +498,14 @@ public:
    * The buffer must be ready to be used for transfers.
    * \param [in] context Context object. Will be used to copy
    *    old buffer contents as necessary.
-   * \param [in] instanceCount Number of instance nodes
+   * \param [in] desc Instance buffer description
    * \returns Old buffer, or \c nullptr if no the buffer was
    *    not actually replaced. This must be kept alive until
    *    the current frame finishes processing on the GPU.
    */
   GfxBuffer resizeBuffer(
     const GfxContext&                   context,
-          uint32_t                      instanceCount);
+    const GfxSceneInstanceBufferDesc&   desc);
 
   /**
    * \brief Allocates data buffer slice for an instance
@@ -523,6 +655,28 @@ public:
     const void*                         data);
 
   /**
+   * \brief Updates animation metadata
+   *
+   * \param [in] instance Instance node reference
+   * \param [in] metadata Animation metadata
+   */
+  void updateAnimationMetadata(
+          GfxSceneNodeRef               instance,
+    const GfxSceneAnimationHeader&      metadata);
+
+  /**
+   * \brief Updates animation properties
+   *
+   * \param [in] instance Instance node reference
+   * \param [in] animation Active animation index
+   * \param [in] parameters Animation parameters
+   */
+  void updateAnimationParameters(
+          GfxSceneNodeRef               instance,
+          uint32_t                      animation,
+    const GfxSceneAnimationParameters&  parameters);
+
+  /**
    * \brief Updates pointer to geometry buffer
    *
    * When setting the buffer address to 0, the node must
@@ -533,6 +687,18 @@ public:
   void updateGeometryBuffer(
           GfxSceneNodeRef               instance,
           uint64_t                      geometryBuffer);
+
+  /**
+   * \brief Updates pointer to animation buffer
+   *
+   * If the instance is animated, the node must be marked
+   * as non-resident when setting the buffer address to 0.
+   * \param [in] instance Instance node reference
+   * \param [in] animationBuffer Animation buffer address
+   */
+  void updateAnimationBuffer(
+          GfxSceneNodeRef               instance,
+          uint64_t                      animationBuffer);
 
   /**
    * \brief Allocates GPU memory for instance data
@@ -571,6 +737,23 @@ public:
     const GfxScenePipelines&            pipelines,
           uint32_t                      currFrameId,
           uint32_t                      lastFrameId);
+
+  /**
+   * \brief Processes animations for visible instances
+   *
+   * Iterates over potentially visible instances in the given pass
+   * group and processes active animations for the current frame,
+   * recomputing relative joint transforms and morph target weights.
+   * \param [in] context Context object
+   * \param [in] pipelines Update pipelines
+   * \param [in] groupBuffer Pass group buffer
+   * \param [in] frameId Current frame ID
+   */
+  void processPassGroupAnimations(
+    const GfxContext&                   context,
+    const GfxScenePipelines&            pipelines,
+    const GfxScenePassGroupBuffer&      groupBuffer,
+          uint32_t                      frameId);
 
   /**
    * \brief Processes visible instances

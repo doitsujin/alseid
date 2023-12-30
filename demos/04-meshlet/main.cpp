@@ -85,6 +85,7 @@ public:
     // Create geometry object and buffer
     m_geometry = createGeometry();
     m_geometryBuffer = createGeometryBuffer();
+    m_animationBuffer = createAnimationBuffer();
 
     // Create state objects
     m_renderState = createRenderState();
@@ -159,6 +160,8 @@ public:
       m_sceneNodeManager->updateNodeTransform(m_sceneInstanceNode,
         QuatTransform(computeRotationQuaternion(Vector4D(0.0f, 1.0f, 0.0f, 0.0f), m_rotation), Vector4D(0.0f)));
 
+      updateAnimation();
+
       Vector3D up = Vector3D(0.0f, 1.0f, 0.0f);
 
       QuatTransform camera = computeViewTransform(m_eye, normalize(m_dir), up);
@@ -202,16 +205,17 @@ public:
         GfxUsage::eShaderStorage | GfxUsage::eShaderResource, GfxShaderStage::eCompute);
 
       GfxScenePassGroupInfo passGroup = { };
-      passGroup.groupBuffer = m_scenePassGroup.get();
       passGroup.passBufferVa = passBuffer.getGpuAddress();
       passGroup.rootNodeCount = 1;
       passGroup.rootNodes = &m_sceneRootRef;
 
       m_sceneNodeManager->traverseBvh(context,
-        *m_scenePipelines, 1, &passGroup, m_frameId, 0);
+        *m_scenePipelines, *m_scenePassGroup, passGroup, m_frameId, 0);
 
+      m_sceneInstanceManager->processPassGroupAnimations(context,
+        *m_scenePipelines, *m_scenePassGroup, m_frameId);
       m_sceneInstanceManager->processPassGroupInstances(context,
-        *m_scenePipelines, *m_sceneNodeManager, 1, &passGroup, m_frameId);
+        *m_scenePipelines, *m_sceneNodeManager, *m_scenePassGroup, m_frameId);
 
       m_sceneDrawBuffer->generateDraws(context, *m_scenePipelines,
         passBuffer.getDescriptor(GfxUsage::eConstantBuffer),
@@ -306,6 +310,7 @@ private:
   GfxRenderState        m_renderState;
 
   GfxBuffer             m_geometryBuffer;
+  GfxBuffer             m_animationBuffer;
   GfxImage              m_depthImage;
 
   float                 m_x = 0.0f;
@@ -322,6 +327,9 @@ private:
   uint32_t              m_frameId = 0;
 
   std::chrono::high_resolution_clock::time_point m_frameTime =
+    std::chrono::high_resolution_clock::now();
+
+  std::chrono::high_resolution_clock::time_point m_animationStart =
     std::chrono::high_resolution_clock::now();
 
   Vector3D              m_eye = Vector3D(0.0f, 2.0f, 3.0f);
@@ -351,6 +359,34 @@ private:
   uint32_t              m_sceneInstanceNode   = 0u;
   GfxSceneNodeRef       m_sceneInstanceRef    = { };
   GfxSceneNodeRef       m_sceneRootRef        = { };
+
+  void updateAnimation() {
+    if (m_geometry->animations.empty())
+      return;
+
+    auto& animation = m_geometry->animations.at(m_animationIndex);
+
+    auto t = std::chrono::high_resolution_clock::now();
+    auto d = std::chrono::duration_cast<std::chrono::duration<float, std::ratio<1, 1>>>(t - m_animationStart);
+
+    GfxSceneAnimationHeader animationMetadata = { };
+    animationMetadata.activeAnimationCount = 1;
+
+    GfxSceneAnimationParameters animationParameters = { };
+    animationParameters.blendOp = GfxSceneAnimationBlendOp::eNone;
+    animationParameters.blendChannel = 0;
+    animationParameters.groupIndex = animation.groupIndex;
+    animationParameters.groupCount = animation.groupCount;
+    animationParameters.timestamp = d.count();
+
+    m_sceneInstanceManager->updateAnimationMetadata(m_sceneInstanceRef, animationMetadata);
+    m_sceneInstanceManager->updateAnimationParameters(m_sceneInstanceRef, 0, animationParameters);
+
+    if (d.count() >= animation.duration) {
+      m_animationIndex = (m_animationIndex + 1) % m_geometry->animations.size();
+      m_animationStart = t;
+    }
+  }
 
   GfxContext getNextContext() {
     m_frameId += 1;
@@ -407,6 +443,11 @@ private:
     instanceDesc.weightCount = m_geometry->info.morphTargetCount;
     instanceDesc.nodeIndex = instanceNode;
 
+    if (m_animationBuffer) {
+      instanceDesc.flags |= GfxSceneInstanceFlag::eAnimation;
+      instanceDesc.animationCount = 1u;
+    }
+
     GfxSceneNodeRef instanceRef = m_sceneInstanceManager->createInstance(instanceDesc);
     m_sceneNodeManager->updateNodeReference(instanceNode, instanceRef);
     m_sceneNodeManager->updateNodeTransform(instanceNode, QuatTransform::identity());
@@ -414,6 +455,9 @@ private:
 
     m_sceneInstanceManager->allocateGpuBuffer(instanceRef);
     m_sceneInstanceManager->updateGeometryBuffer(instanceRef, m_geometryBuffer->getGpuAddress());
+
+    if (m_animationBuffer)
+      m_sceneInstanceManager->updateAnimationBuffer(instanceRef, m_animationBuffer->getGpuAddress());
 
     GfxScenePassGroupBufferDesc groupDesc = { };
     groupDesc.setNodeCount(GfxSceneNodeType::eBvh, 1u);
@@ -576,7 +620,28 @@ private:
     bufferDesc.debugName = "Geometry buffer";
     bufferDesc.size = subFile->getSize();
     bufferDesc.usage = GfxUsage::eShaderResource |
-      GfxUsage::eConstantBuffer |
+      GfxUsage::eDecompressionDst |
+      GfxUsage::eTransferDst;
+
+    GfxBuffer buffer = m_device->createBuffer(bufferDesc, GfxMemoryType::eAny);
+
+    m_transfer->uploadBuffer(subFile, buffer, 0);
+    m_transfer->waitForCompletion(m_transfer->flush());
+    return buffer;
+  }
+
+
+  GfxBuffer createAnimationBuffer() {
+    auto file = m_archive->findFile("CesiumMan");
+    auto subFile = file->findSubFile(FourCC('A', 'N', 'I', 'M'));
+
+    if (!subFile)
+      return GfxBuffer();
+
+    GfxBufferDesc bufferDesc;
+    bufferDesc.debugName = "Animation buffer";
+    bufferDesc.size = subFile->getSize();
+    bufferDesc.usage = GfxUsage::eShaderResource |
       GfxUsage::eDecompressionDst |
       GfxUsage::eTransferDst;
 

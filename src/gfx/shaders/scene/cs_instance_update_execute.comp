@@ -92,7 +92,7 @@ shared Transform csTransformJointOutputCache[CsJointCacheSize];
 
 shared uint csTransformJointCountShared;
 
-void csTransformJoints(in GeometryRef geometryBuffer, uint64_t instanceBuffer) {
+void csTransformJoints(in GeometryRef geometryBuffer, uint64_t instanceBuffer, uint32_t hostSetOffset) {
   Geometry geometry = geometryBuffer.geometry;
   JointRef jointBuffer = geometryGetJointData(geometryBuffer, geometry);
 
@@ -141,7 +141,7 @@ void csTransformJoints(in GeometryRef geometryBuffer, uint64_t instanceBuffer) {
 
     if (canCompute) {
       // Load relative transform from input buffer.
-      Transform relativeTransform = instanceLoadRelativeJoint(instanceBuffer, jointIndex);
+      Transform relativeTransform = instanceLoadRelativeJoint(instanceBuffer, hostSetOffset, jointIndex);
 
       // Compute transform for the current joint.
       jointTransform = csComputeJointTransform(relativeTransform, joint.position);
@@ -222,6 +222,15 @@ void csExecuteUpdate() {
   InstanceNode instanceNode = instanceBuffer.nodes[instanceIndex];
   InstanceDataBuffer instanceInfo = InstanceDataBuffer(instanceNode.propertyBuffer);
 
+  // If animations are enabled for the instance but none are currently
+  // defined as active, read the app-defined data directly.
+  uint32_t hostSetOffset = 0u;
+
+  if (instanceInfo.header.animationCount != 0u) {
+    InstanceAnimationBufferIn animationParameters = instanceGetAnimationProperties(instanceNode.propertyBuffer);
+    hostSetOffset = animationParameters.header.animationCount == 0u ? 1u : 0u;
+  }
+
   // Copy current absolute joint transforms to previous frame's array
   for (uint i = 0; i < instanceInfo.header.jointCount; i += gl_WorkGroupSize.x) {
     uint32_t index = i + gl_LocalInvocationIndex;
@@ -234,15 +243,15 @@ void csExecuteUpdate() {
 
   // Compute absolute joint transforms for the current frame
   if (instanceInfo.header.jointCount > 0)
-    csTransformJoints(GeometryRef(instanceNode.geometryBuffer), instanceNode.propertyBuffer);
+    csTransformJoints(GeometryRef(instanceNode.geometryBuffer), instanceNode.propertyBuffer, hostSetOffset);
 
   // Copy current absolute joint transforms to previous frame's array
   for (uint i = 0; i < instanceInfo.header.weightCount; i += gl_WorkGroupSize.x) {
     uint32_t index = i + gl_LocalInvocationIndex;
 
     if (index < instanceInfo.header.weightCount) {
-      int16_t curr = instanceLoadMorphTargetWeight(instanceNode.propertyBuffer, 2, index);
-      int16_t prev = instanceLoadMorphTargetWeight(instanceNode.propertyBuffer, 0, index);
+      int16_t curr = instanceLoadMorphTargetWeight(instanceNode.propertyBuffer, 2u + hostSetOffset, index);
+      int16_t prev = instanceLoadMorphTargetWeight(instanceNode.propertyBuffer, 0u, index);
 
       instanceStoreMorphTargetWeight(instanceNode.propertyBuffer, 0, index, curr);
       instanceStoreMorphTargetWeight(instanceNode.propertyBuffer, 1, index, prev);

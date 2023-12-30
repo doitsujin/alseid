@@ -1,0 +1,466 @@
+// Joint animation compute shader.
+//
+// Given a set of animation groups, this will process and compose animations
+// for an instance and store the resulting relative joint transforms in the
+// instance property buffer.
+//
+// This shader operates on one thread per joint and morph target, which may
+// require multiple workgroups to be dispatched per instance.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csAnimateInstanceMain
+
+#include "../as_include_head.glsl"
+
+#include "as_pass.glsl"
+#include "as_scene.glsl"
+#include "as_scene_instance.glsl"
+
+
+// Use a fixed workgroup size of 32 threads since the animation
+// group data structures are built around that.
+#define CS_WORKGROUP_SIZE (32)
+
+layout(local_size_x = CS_WORKGROUP_SIZE) in;
+
+
+// Shader arguments. Stores buffer pointers to read data from.
+layout(push_constant)
+uniform CsPushData {
+  InstanceNodeBuffer    instanceNodeBuffer;
+  uint64_t              groupBufferVa;
+  uint32_t              frameId;
+} globals;
+
+
+// For the optimal subgroup path, we need not only to run with just
+// a single subgroup but we also require that the subgroup is full,
+// so that lane indices meaningfully map to a specific invocation.
+bool IsSingleSubgroup = (gl_NumSubgroups == 1);
+bool IsPackedSubgroup = (gl_NumSubgroups == 1 && gl_SubgroupSize == gl_WorkGroupSize.x);
+
+
+// Keyframe pair. Stores the data indices of two keyframes to
+// interpolate between, as well as the interpolation coefficient.
+struct CsKeyframePair {
+  uint  loIndex;
+  uint  hiIndex;
+  float t;
+};
+
+
+// Loads joint transform for a given keyframe.
+Transform csLoadKeyframeJoint(
+  in    AnimationJointRef             jointBuffer,
+  in    AnimationGroup                group,
+        uint                          keyframeIndex,
+        uint                          localIndex) {
+  uint absoluteIndex = group.jointTransformIndex + group.jointCount * keyframeIndex + localIndex;
+  return jointBuffer.joints[absoluteIndex].transform;
+}
+
+
+// Interpolates joint transform between two keyframes.
+Transform csInterpolateJoint(
+  in    AnimationJointRef             jointBuffer,
+  in    AnimationGroup                group,
+  in    CsKeyframePair                keyframePair,
+        uint                          localIndex) {
+  Transform loTransform = csLoadKeyframeJoint(jointBuffer, group, keyframePair.loIndex, localIndex);
+  Transform hiTransform = csLoadKeyframeJoint(jointBuffer, group, keyframePair.hiIndex, localIndex);
+
+  // Interpolate rotation quaterion. Depending on animation
+  // group parameters, we may have to use the expensive slerp.
+  vec4 rotation;
+
+  if ((group.flags & ANIMATION_GROUP_SLERP_BIT) != 0u)
+    rotation = quatSlerp(loTransform.rot, hiTransform.rot, keyframePair.t);
+  else
+    rotation = quatNlerp(loTransform.rot, hiTransform.rot, keyframePair.t);
+
+  return Transform(rotation, mix(loTransform.pos, hiTransform.pos, keyframePair.t));
+}
+
+
+// Loads morph target weight for a given keyframe.
+float csLoadKeyframeMorphTargetWeight(
+  in    AnimationMorphTargetRef       weightBuffer,
+  in    AnimationGroup                group,
+        uint                          keyframeIndex,
+        uint                          localIndex) {
+  uint absoluteIndex = group.morphTargetWeightIndex + group.morphTargetCount * keyframeIndex + localIndex;
+  return weightBuffer.weights[absoluteIndex];
+}
+
+
+// Interpolates morph target weight between two keyframes.
+float csInterpolateMorphTargetWeight(
+  in    AnimationMorphTargetRef       weightBuffer,
+  in    AnimationGroup                group,
+  in    CsKeyframePair                keyframePair,
+        uint                          localIndex) {
+  return mix(
+    csLoadKeyframeMorphTargetWeight(weightBuffer, group, keyframePair.loIndex, localIndex),
+    csLoadKeyframeMorphTargetWeight(weightBuffer, group, keyframePair.hiIndex, localIndex),
+    keyframePair.t);
+}
+
+
+// Helper function to read keyframe data from another thread.
+// This is useful because subgroupShuffle for some reason only
+// supports basic types, unlike subgroupBroadcast* functions.
+KeyframePacked csShuffleKeyframe(
+        KeyframePacked                keyframe,
+        uint                          wantedIndex) {
+  return KeyframePacked(
+    subgroupShuffle(keyframe.timestamp,         wantedIndex),
+    subgroupShuffle(keyframe.nextIndexAndCount, wantedIndex));
+}
+
+
+// Function to cooperatively find the correct pair of keyframes
+// for the given timestamp. This works by cooperatively traversing
+// a search tree, and therefore this function must be called from
+// within uniform control flow and uniform arguments.
+shared KeyframePacked csKeyframesShared[2];
+
+shared uint csPickIndexShared;
+
+CsKeyframePair csFindKeyframe(
+        uint32_t                      tid,
+  in    KeyframeRef                   keyframeBuffer,
+  in    AnimationGroup                group,
+        float                         timestamp) {
+  // The group keyframe data essentially serves as a root node
+  // for the keyframe search tree.
+  uint nextIndex = 0;
+  uint nextCount = group.keyframeCount;
+
+  Keyframe loFrame;
+  Keyframe hiFrame;
+
+  do {
+    // Check whether the current 
+    KeyframePacked keyframe;
+    bool pick = false;
+
+    if (tid < nextCount) {
+      keyframe = keyframeBuffer.keyframes[group.keyframeIndex + nextIndex + tid];
+      pick = timestamp >= keyframe.timestamp;
+    }
+
+    // Since keyframes are ordered, the number of threads passing
+    // the test is equivalent to the second keyframe we need to
+    // interpolate with. This is true for both code paths.
+    uint pickIndex = subgroupBallotBitCount(subgroupBallot(pick));
+
+    if (!IsSingleSubgroup) {
+      if (gl_LocalInvocationIndex == 0)
+        csPickIndexShared = 0u;
+
+      barrier();
+
+      if (subgroupElect() && pickIndex != 0)
+        atomicAdd(csPickIndexShared, pickIndex);
+
+      barrier();
+
+      // We don't need a barrier after this read since the
+      // keyframe broadcast code below will emit one anyway.
+      pickIndex = csPickIndexShared;
+    }
+
+    // Ensure that we do not access invalid keyframes, and also avoid
+    // loading the same keyframe twice in order to simplify some math.
+    uint hiIndex = clamp(pickIndex, 1u, nextCount - 1u);
+    uint loIndex = hiIndex - 1u;
+
+    // Broadcast selected keyframes to the entire workgroup. On the
+    // optimized subgroup path, we can do so simply by reading the
+    // correct lanes.
+    if (IsPackedSubgroup) {
+      loFrame = keyframeUnpack(csShuffleKeyframe(keyframe, loIndex));
+      hiFrame = keyframeUnpack(csShuffleKeyframe(keyframe, hiIndex));
+    } else {
+      uint sharedIndex = tid - loIndex;
+
+      if (sharedIndex <= 1)
+        csKeyframesShared[sharedIndex] = keyframe;
+
+      barrier();
+
+      loFrame = keyframeUnpack(csKeyframesShared[0]);
+      hiFrame = keyframeUnpack(csKeyframesShared[1]);
+      barrier();
+    }
+
+    // Prepare next iteration
+    bool hi = timestamp >= hiFrame.timestamp;
+
+    nextIndex = hi ? hiFrame.nextIndex : loFrame.nextIndex;
+    nextCount = hi ? hiFrame.nextCount : loFrame.nextCount;
+  } while (nextCount != 0u);
+
+  // Found a leaf node, store the data indices and compute the
+  // interpolation step value based on the keyframe timestamps.
+  // The returned step value may not be in the [0.0, 1.0] range.
+  CsKeyframePair result;
+  result.loIndex = loFrame.nextIndex;
+  result.hiIndex = hiFrame.nextIndex;
+  result.t = clamp((timestamp - loFrame.timestamp) /
+    (hiFrame.timestamp - loFrame.timestamp), 0.0f, 1.0f);
+  return result;
+}
+
+
+// Helper function to store a joint transform, and perform blending
+// with the previous value as necessary.
+void csStoreOutputJoint(
+        uint64_t                      instanceVa,
+        uint32_t                      jointIndex,
+        Transform                     jointTransform) {
+  instanceStoreRelativeJoint(instanceVa, 0, jointIndex, jointTransform);
+}
+
+
+// Helper function to store a morph target weight, and perform
+// blending with the previous value as necessary.
+void csStoreOutputWeight(
+        uint64_t                      instanceVa,
+        uint32_t                      weightIndex,
+        float                         weightValue) {
+  instanceStoreMorphTargetWeight(instanceVa, 2u, weightIndex,
+    int16_t(packSnorm2x16(vec2(weightValue, 0.0f))));
+}
+
+
+// Applies a blend operation to a joint transform
+shared Transform csJointsShared[AS_INSTANCE_MAX_ANIMATION_CHANNELS][CS_WORKGROUP_SIZE];
+
+void csBlendTransform(
+        uint32_t                      tid,
+  in    InstanceAnimationParameters   args,
+        Transform                     transform) {
+  switch (uint32_t(args.blendOp)) {
+    case AS_INSTANCE_ANIMATION_BLEND_OP_NONE:
+      break;
+
+    case AS_INSTANCE_ANIMATION_BLEND_OP_CHAIN:
+      transform = transChain(transform, csJointsShared[args.blendChannel][tid]);
+      break;
+
+    case AS_INSTANCE_ANIMATION_BLEND_OP_SLERP:
+      transform = transSlerp(csJointsShared[args.blendChannel][tid],
+        transform, unpackUnorm2x16(uint(args.blendWeight)).x);
+      break;
+  }
+
+  csJointsShared[args.blendChannel][tid] = transform;
+}
+
+
+// Applies a blend operation to a morph target weight
+shared float csWeightsShared[AS_INSTANCE_MAX_ANIMATION_CHANNELS][CS_WORKGROUP_SIZE];
+
+void csBlendWeight(
+        uint32_t                      tid,
+  in    InstanceAnimationParameters   args,
+        float                         weight) {
+  switch (uint32_t(args.blendOp)) {
+    case AS_INSTANCE_ANIMATION_BLEND_OP_NONE:
+      break;
+
+    case AS_INSTANCE_ANIMATION_BLEND_OP_CHAIN:
+      weight += csWeightsShared[args.blendChannel][tid];
+      break;
+
+    case AS_INSTANCE_ANIMATION_BLEND_OP_SLERP:
+      weight = mix(csWeightsShared[args.blendChannel][tid],
+        weight, unpackUnorm2x16(uint(args.blendWeight)).x);
+      break;
+  }
+
+  csWeightsShared[args.blendChannel][tid] = weight;
+}
+
+
+// Convenience method to find the local joint indices which affect
+// the joints and weights affected by the current workgroup.
+shared uint csLocalIndicesShared[2][CS_WORKGROUP_SIZE];
+
+uvec2 csFindLocalIndices(
+        uint32_t                      tid,
+  in    AnimationGroup                animationGroup,
+        uint32_t                      indexOffset) {
+  uint jointIndex = animationGroup.jointIndices[tid];
+  uint weightIndex = animationGroup.morphTargetIndices[tid];
+
+  csLocalIndicesShared[0][tid] = CS_WORKGROUP_SIZE;
+  csLocalIndicesShared[1][tid] = CS_WORKGROUP_SIZE;
+
+  barrier();
+
+  if (tid < animationGroup.jointCount &&
+      jointIndex >= indexOffset &&
+      jointIndex < indexOffset + CS_WORKGROUP_SIZE)
+    csLocalIndicesShared[0][jointIndex - indexOffset] = tid;
+
+  if (tid < animationGroup.morphTargetCount &&
+      weightIndex >= indexOffset &&
+      weightIndex < indexOffset + CS_WORKGROUP_SIZE)
+    csLocalIndicesShared[1][weightIndex - indexOffset] = tid;
+
+  barrier();
+
+  uvec2 result = uvec2(
+    csLocalIndicesShared[0][tid],
+    csLocalIndicesShared[1][tid]);
+
+  barrier();
+
+  return result;
+}
+
+
+// Convenience method to broadcast a boolean value
+// across the entire workgroup.
+shared uint csAnyShared;
+
+bool csWorkgroupAny(uint32_t tid, bool cond) {
+  bool result = subgroupAny(cond);
+
+  if (!IsSingleSubgroup) {
+    if (tid == 0u)
+      csAnyShared = 0u;
+
+    barrier();
+
+    if (subgroupElect())
+      atomicOr(csAnyShared, result ? 1u : 0u);
+
+    barrier();
+    result = csAnyShared != 0u;
+  }
+
+  return result;
+}
+
+
+void csAnimateInstanceMain() {
+  PassGroupUpdateListIn instanceList = getNodeTypeUpdateList(globals.groupBufferVa, NODE_TYPE_INSTANCE);
+
+  uint32_t workgroupId = asFlattenWorkgroupIndex();
+
+  if (workgroupId >= instanceList.header.entryCount)
+    return;
+
+  uint32_t instanceIndex = getNodeIndexFromRef(instanceList.nodeRefs[workgroupId]);
+
+  uint32_t tid = IsPackedSubgroup
+    ? gl_SubgroupInvocationID
+    : gl_LocalInvocationIndex;
+
+  // Load instance node and relevant buffer addresses
+  InstanceNode instanceNode = globals.instanceNodeBuffer.nodes[instanceIndex];
+
+  uint64_t instanceVa = instanceNode.propertyBuffer;
+  uint64_t animationVa = instanceNode.animationBuffer;
+
+  InstanceHeader instance = InstanceDataBufferIn(instanceVa).header;
+  InstanceAnimationBufferIn animationParameters = instanceGetAnimationProperties(instanceVa);
+
+  // Load animation properties from the instance buffer
+  AnimationBuffer animationHeader = AnimationBufferRef(animationVa).header;
+
+  for (uint32_t i = 0; i < max(instance.jointCount, instance.weightCount); i += CS_WORKGROUP_SIZE) {
+    // Joint and morph target index for the current thread
+    uint32_t elementIndex = i + tid;
+
+    for (uint32_t j = 0; j < animationParameters.header.animationCount; j++) {
+      InstanceAnimationParameters args = animationParameters.params[j];
+
+      if (args.groupIndex == 0xffffu) {
+        // Special code path that loads the app-defined transforms and weights
+        if (elementIndex < instance.jointCount) {
+          Transform inputTransform = instanceLoadRelativeJoint(instanceVa, 1u, elementIndex);
+          csBlendTransform(tid, args, inputTransform);
+        }
+
+        if (elementIndex < instance.weightCount) {
+          float inputWeight = unpackSnorm2x16(uint(instanceLoadMorphTargetWeight(instanceVa, 3u, elementIndex))).x;
+          csBlendWeight(tid, args, inputWeight);
+        }
+      } else if (args.groupCount == 0u) {
+        // Special code path that blends two animation channels into one
+        if (elementIndex < instance.jointCount) {
+          Transform inputTransform = csJointsShared[args.groupIndex][tid];
+          csBlendTransform(tid, args, inputTransform);
+        }
+
+        if (elementIndex < instance.weightCount) {
+          float inputWeight = csWeightsShared[args.groupIndex][tid];
+          csBlendWeight(tid, args, inputWeight);
+        }
+      } else {
+        // Standard code path that handles animation groups
+        for (uint32_t k = 0; k < args.groupCount; k++) {
+          AnimationGroup animationGroup = AnimationBufferRef(animationVa).groups[args.groupIndex + k];
+
+          // Ignore joints and weights not affected by the current animation group.
+          // This generally works because all full animations should specify identity
+          // transforms in that case. Exit early if possible.
+          uvec2 localIndices = csFindLocalIndices(tid, animationGroup, 0);
+
+          uint localJoint = localIndices.x;
+          uint localWeight = localIndices.y;
+
+          if (!csWorkgroupAny(tid, localJoint < CS_WORKGROUP_SIZE || localWeight < CS_WORKGROUP_SIZE))
+            continue;
+
+          // Find the pair of keyframes to interpolate between
+          KeyframeRef keyframeBuffer = animationGetKeyframeBuffer(animationVa, animationHeader);
+
+          CsKeyframePair keyframePair = csFindKeyframe(tid,
+            keyframeBuffer, animationGroup, args.timestamp);
+
+          // Interpolate joints for the current animation group
+          AnimationJointRef jointBuffer = animationGetJointBuffer(animationVa, animationHeader);
+
+          if (elementIndex < instance.jointCount && localJoint < CS_WORKGROUP_SIZE) {
+            Transform inputTransform = csInterpolateJoint(jointBuffer, animationGroup, keyframePair, localJoint);
+            csBlendTransform(tid, args, inputTransform);
+          }
+
+          // Interpolate morph target weights in the same manner
+          AnimationMorphTargetRef weightBuffer = animationGetMorphTargetBuffer(animationVa, animationHeader);
+
+          if (elementIndex < instance.weightCount && localWeight < CS_WORKGROUP_SIZE) {
+            float inputWeight = csInterpolateMorphTargetWeight(weightBuffer, animationGroup, keyframePair, localWeight);
+            csBlendWeight(tid, args, inputWeight);
+          }
+        }
+      }
+    }
+
+    // Write transforms to the instance buffer
+    if (elementIndex < instance.jointCount)
+      instanceStoreRelativeJoint(instanceVa, 0u, elementIndex, csJointsShared[0][tid]);
+
+    // Write morph target weights to the instance buffer, converting
+    // them to a signed normalized representation.
+    if (elementIndex < instance.weightCount) {
+      instanceStoreMorphTargetWeight(instanceVa, 2u, elementIndex,
+        int16_t(packSnorm2x16(vec2(csWeightsShared[0][tid], 0.0f)).x));
+    }
+  }
+
+  // Update node for further processing. This only needs to be
+  // performed by one single thread per instance.
+  if (tid == 0u)
+    globals.instanceNodeBuffer.nodes[instanceIndex].dirtyFrameId = globals.frameId;
+}
+
+
+#include "../as_include_tail.glsl"

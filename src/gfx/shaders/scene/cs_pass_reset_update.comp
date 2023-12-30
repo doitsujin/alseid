@@ -1,0 +1,28 @@
+// Update list reset shader.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csResetUpdateListMain
+
+// Prefer small workgroups, since we're not expecting
+// to have a large number of root BVH nodes anyway.
+#define CS_WORKGROUP_SIZE   (32)
+
+layout(local_size_x = CS_WORKGROUP_SIZE) in;
+
+#include "../as_include_head.glsl"
+
+#include "as_pass.glsl"
+
+layout(push_constant)
+uniform CsPushData {
+  uint64_t  groupBufferVa;
+} globals;
+
+
+void csResetUpdateListMain() {
+  nodeListResetUpdate(globals.groupBufferVa, gl_GlobalInvocationID.x);
+}
+
+#include "../as_include_tail.glsl"

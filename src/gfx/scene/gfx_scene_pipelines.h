@@ -77,6 +77,16 @@ static_assert(sizeof(GfxSceneTraverseResetArgs) == 16);
 
 
 /**
+ * \brief Instance animation arguments
+ */
+struct GfxSceneInstanceAnimateArgs {
+  uint64_t instanceNodeBufferVa;
+  uint64_t groupBufferVa;
+  uint32_t frameId;
+};
+
+
+/**
  * \brief Instance update arguments
  */
 struct GfxSceneInstanceUpdatePrepareArgs {
@@ -228,6 +238,53 @@ public:
     const GfxSceneTraverseBvhArgs&      args) const;
 
   /**
+   * \brief Prepares instance animations
+   *
+   * Generates a dispatch argument buffer in order to process animations.
+   * Must be run after BVH traversal, but \e before preparing the instance
+   * updates, since that will compute the absolute transforms.
+   * \param [in] context Context object
+   * \param [in] dispatch Indirect dispatch descriptor for preprocessing
+   * \param [in] args Arguments to pass to the shader
+   */
+  void prepareInstanceAnimations(
+    const GfxContext&                   context,
+    const GfxDescriptor&                dispatch,
+    const GfxSceneInstanceAnimateArgs&  args) const;
+
+  /**
+   * \brief Processes instance animations
+   *
+   * Computes relative transforms and morph target weights for all
+   * visible animated instances. Must be run after the preparation
+   * step, but before performing instance updates.
+   * \param [in] context Context object
+   * \param [in] dispatch Indirect dispatch descriptor for preprocessing
+   * \param [in] args Arguments to pass to the animation shader
+   */
+  void processInstanceAnimations(
+    const GfxContext&                   context,
+    const GfxDescriptor&                dispatch,
+    const GfxSceneInstanceAnimateArgs&  args) const;
+
+  /**
+   * \brief Performs instance animations
+   *
+   * Callers must ensure that blended animations are executed in separate
+   * passes, with an appropriate barrier in between. Buffers will be accessed
+   * as both \c GfxUsage::eShaderResource and \c GfxUsage::eShaderStorage.
+   *
+   * Animations must be processed after the instance data gets updated by the
+   * host, but before processing updates during BVH traversal. One possible way
+   * of doing this is to dispatch animations after initial BVH traversal, in
+   * order to only process instances that are actually visible.
+   * \param [in] context Context object
+   * \param [in] dispatch Indirect dispatch descriptor
+   * \param [in] args Arguments to pass to the animation shader
+   */
+  
+
+  /**
    * \brief Prepares instance updates
    *
    * \param [in] context Context object
@@ -279,6 +336,16 @@ public:
     const GfxDescriptor&                passInfos,
     const GfxSceneDrawListGenerateArgs& args) const;
 
+  /**
+   * \brief Resets update lists of a group buffer
+   *
+   * \param [in] context Context object
+   * \param [in] groupBufferVa Group buffer address
+   */
+  void resetUpdateLists(
+    const GfxContext&                   context,
+          uint64_t                      groupBufferVa) const;
+
 private:
 
   GfxDevice           m_device;
@@ -286,10 +353,13 @@ private:
   GfxComputePipeline  m_csDrawListInit;
   GfxComputePipeline  m_csDrawListGenerate;
 
+  GfxComputePipeline  m_csInstanceAnimate;
+  GfxComputePipeline  m_csInstanceAnimatePrepare;
   GfxComputePipeline  m_csInstanceUpdateExecute;
   GfxComputePipeline  m_csInstanceUpdatePrepare;
 
   GfxComputePipeline  m_csPassInit;
+  GfxComputePipeline  m_csPassResetUpdate;
   GfxComputePipeline  m_csPassTraverseBvh;
   GfxComputePipeline  m_csPassTraverseReset;
 

@@ -34,10 +34,13 @@ as_shader_builtins = [
   [ 'scene/cs_draw_list_init.comp', 'cs' ],
   [ 'scene/cs_draw_list_generate.comp', 'cs' ],
 
+  [ 'scene/cs_instance_animate.comp', 'cs' ],
+  [ 'scene/cs_instance_animate_prepare.comp', 'cs' ],
   [ 'scene/cs_instance_update_execute.comp', 'cs' ],
   [ 'scene/cs_instance_update_prepare.comp', 'cs' ],
 
   [ 'scene/cs_pass_init.comp', 'cs' ],
+  [ 'scene/cs_pass_reset_update.comp', 'cs' ],
   [ 'scene/cs_pass_traverse_bvh.comp', 'cs' ],
   [ 'scene/cs_pass_traverse_reset.comp', 'cs' ],
 

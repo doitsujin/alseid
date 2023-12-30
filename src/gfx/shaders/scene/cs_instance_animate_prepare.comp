@@ -1,0 +1,101 @@
+// Joint animation preparation shader.
+//
+// Emits compute dispatches for each animated instance with
+// a non-zero active animation count.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csPrepareAnimationsMain
+
+#include "../as_include_head.glsl"
+
+#include "as_pass.glsl"
+#include "as_scene.glsl"
+#include "as_scene_instance.glsl"
+
+// Match the instance update preparation workgroup size so that
+// we can use the same parameter buffer
+layout(local_size_x = 64) in;
+
+// Workgroup size of the animation shader
+#define CS_ANIMATE_WORKGROUP_SIZE (32)
+
+// Shader parameters, indexed by workgroup ID. Stores buffer pointers
+// as well as parameters for animation blending purposes.
+struct CsWorkgroupArgs {
+  // Instance node reference
+  uint32_t  instanceNodeRef;
+  // Offset for joint and morph target indices for the current workgroup.
+  // Relevant if an instance has more than 32 joints or morph targets.
+  uint32_t  indexOffset;
+};
+
+
+// Shader arguments. Stores buffer pointers to read data from.
+layout(push_constant)
+uniform CsPushData {
+  InstanceNodeBuffer    instanceNodeBuffer;
+  uint64_t              groupBuffer;
+  uint32_t              frameId;
+} globals;
+
+
+// Helper function to work out whether the instance even has
+// animations enabled, and to compute the dispatch workgroup
+// count as necessary.
+struct CsInvocationOutput {
+  uint32_t              instanceNodeRef;
+  uint32_t              workgroupCount;
+};
+
+uint32_t csGetInstanceNodeRef() {
+  uint32_t gid = asFlattenGlobalInvocationIndex();
+
+  // Exit early if the thread ID is out of bounds
+  PassGroupBuffer group = PassGroupBuffer(globals.groupBuffer);
+
+  PassGroupNodeListIn nodeList = PassGroupNodeListIn(globals.groupBuffer +
+    group.nodeListOffsets[NODE_TYPE_INSTANCE - NODE_TYPE_BUILTIN_COUNT].nodeList);
+
+  if (gid >= nodeList.header.entryCount)
+    return 0u;
+
+  // Load instance properties and check whether we need to update it.
+  uint32_t instanceNodeRef = nodeList.items[gid].nodeRef;
+  uint32_t instanceIndex = getNodeIndexFromRef(instanceNodeRef);
+  InstanceNode instance = globals.instanceNodeBuffer.nodes[instanceIndex];
+
+  // Exit early if the instance in question has already been updated.
+  uint32_t updateFrameId = instance.updateFrameId;
+
+  if (updateFrameId >= globals.frameId)
+    return 0u;
+
+  // Exit early if the instance does not have animations, or if the
+  // animation buffer is not resident.
+  if ((instance.flags & INSTANCE_FLAG_ANIMATION) == 0u ||
+      uint64_t(instance.propertyBuffer) == uint64_t(0u) ||
+      uint64_t(instance.animationBuffer) == uint64_t(0u))
+    return 0u;
+
+  // Exit early if the instance does not have any active animations
+  InstanceAnimationBufferIn animationBuffer = instanceGetAnimationProperties(instance.propertyBuffer);
+
+  if (animationBuffer.header.animationCount == 0u)
+    return 0u;
+
+  // The instance does have active animations
+  return instanceNodeRef;
+}
+
+
+void csPrepareAnimationsMain() {
+  uint32_t instanceNodeRef = csGetInstanceNodeRef();
+
+  if (instanceNodeRef != 0u)
+    nodeListAddUpdate(globals.groupBuffer, instanceNodeRef, 0, 1);
+}
+
+
+#include "../as_include_tail.glsl"

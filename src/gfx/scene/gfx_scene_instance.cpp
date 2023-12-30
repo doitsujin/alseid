@@ -13,6 +13,8 @@ GfxSceneInstanceDataBuffer::GfxSceneInstanceDataBuffer(
   uint32_t dataAllocator = 0u;
   allocateStorage(dataAllocator, sizeof(header));
 
+  uint32_t extraBufferCount = desc.animationCount ? 1u : 0u;
+
   header.instanceParameterOffset = allocateStorage(
     dataAllocator, desc.parameterDataSize);
   header.instanceParameterSize = desc.parameterDataSize;
@@ -21,12 +23,16 @@ GfxSceneInstanceDataBuffer::GfxSceneInstanceDataBuffer(
     dataAllocator, sizeof(GfxSceneInstanceDraw) * desc.drawCount);
   header.jointCount = desc.jointCount;
   header.jointRelativeOffset = allocateStorage(
-    dataAllocator, sizeof(QuatTransform) * desc.jointCount);
+    dataAllocator, sizeof(QuatTransform) * desc.jointCount * (1u + extraBufferCount));
   header.jointAbsoluteOffset = allocateStorage(
     dataAllocator, sizeof(QuatTransform) * desc.jointCount * 2u);
   header.weightCount = desc.weightCount;
   header.weightOffset = allocateStorage(
-    dataAllocator, sizeof(int16_t) * desc.weightCount * 3u);
+    dataAllocator, sizeof(int16_t) * desc.weightCount * (3u + extraBufferCount));
+  header.animationCount = desc.animationCount;
+  header.animationOffset = allocateStorage(
+    dataAllocator, sizeof(GfxSceneAnimationHeader) +
+    sizeof(GfxSceneAnimationParameters) * desc.animationCount);
 
   for (uint32_t i = 0; i < desc.drawCount; i++) {
     shadingParameterOffset[i] = allocateStorage(
@@ -41,14 +47,9 @@ GfxSceneInstanceDataBuffer::GfxSceneInstanceDataBuffer(
   QuatTransform identityTransform = QuatTransform::identity();
 
   auto relativeJoints = m_buffer.template getAs<QuatTransform>(header.jointRelativeOffset);
-  auto absoluteJoints = m_buffer.template getAs<QuatTransform>(header.jointAbsoluteOffset);
 
-  for (uint32_t i = 0; i < desc.jointCount; i++) {
-    relativeJoints[i] = identityTransform;
-
-    absoluteJoints[2 * i + 0] = identityTransform;
-    absoluteJoints[2 * i + 1] = identityTransform;
-  }
+  for (uint32_t i = 0; i < desc.jointCount; i++)
+    relativeJoints[i + (extraBufferCount * desc.jointCount)] = identityTransform;
 
   auto draws = m_buffer.template getAs<GfxSceneInstanceDraw>(header.drawOffset);
 
@@ -100,9 +101,9 @@ GfxSceneInstanceBuffer::~GfxSceneInstanceBuffer() {
 
 GfxBuffer GfxSceneInstanceBuffer::resizeBuffer(
   const GfxContext&                   context,
-        uint32_t                      instanceCount) {
+  const GfxSceneInstanceBufferDesc&   desc) {
   // Only recreate the buffer if necessary
-  uint64_t newSize = sizeof(GfxSceneInstanceNodeInfo) * align(instanceCount, 1u << 16);
+  uint64_t newSize = sizeof(GfxSceneInstanceNodeInfo) * align(desc.instanceCount, 1u << 16);
   uint64_t oldSize = 0;
 
   if (m_nodeBuffer)
@@ -291,6 +292,35 @@ void GfxSceneInstanceManager::updateMaterialParameters(
 }
 
 
+void GfxSceneInstanceManager::updateAnimationMetadata(
+        GfxSceneNodeRef               instance,
+  const GfxSceneAnimationHeader&      metadata) {
+  uint32_t index = uint32_t(instance.index);
+
+  auto& hostData = m_instanceHostData[index];
+
+  auto dstMetadata = hostData.dataBuffer.getAnimationMetadata();
+  *dstMetadata = metadata;
+
+  markDirty(index, GfxSceneInstanceDirtyFlag::eDirtyAnimations);
+}
+
+
+void GfxSceneInstanceManager::updateAnimationParameters(
+        GfxSceneNodeRef               instance,
+        uint32_t                      animation,
+  const GfxSceneAnimationParameters&  parameters) {
+  uint32_t index = uint32_t(instance.index);
+
+  auto& hostData = m_instanceHostData[index];
+
+  auto dstParameters = hostData.dataBuffer.getAnimationParameters();
+  dstParameters[animation] = parameters;
+
+  markDirty(index, GfxSceneInstanceDirtyFlag::eDirtyAnimations);
+}
+
+
 void GfxSceneInstanceManager::updateGeometryBuffer(
         GfxSceneNodeRef               instance,
         uint64_t                      geometryBuffer) {
@@ -300,6 +330,20 @@ void GfxSceneInstanceManager::updateGeometryBuffer(
 
   if (nodeData.geometryBuffer != geometryBuffer) {
     nodeData.geometryBuffer = geometryBuffer;
+    markDirty(index, GfxSceneInstanceDirtyFlag::eDirtyNode);
+  }
+}
+
+
+void GfxSceneInstanceManager::updateAnimationBuffer(
+        GfxSceneNodeRef               instance,
+        uint64_t                      animationBuffer) {
+  uint32_t index = uint32_t(instance.index);
+
+  auto& nodeData = m_instanceNodeData[index];
+
+  if (nodeData.animationBuffer != animationBuffer) {
+    nodeData.animationBuffer = animationBuffer;
     markDirty(index, GfxSceneInstanceDirtyFlag::eDirtyNode);
   }
 }
@@ -350,6 +394,48 @@ void GfxSceneInstanceManager::commitUpdates(
 
   cleanupInstanceNodes(lastFrameId);
   cleanupBufferSlices(lastFrameId);
+}
+
+
+void GfxSceneInstanceManager::processPassGroupAnimations(
+  const GfxContext&                   context,
+  const GfxScenePipelines&            pipelines,
+  const GfxScenePassGroupBuffer&      groupBuffer,
+        uint32_t                      frameId) {
+  context->beginDebugLabel("Process animations", 0xff78f0ff);
+  context->beginDebugLabel("Prepare dispatch", 0xffb4f6ff);
+
+  auto dispatches = groupBuffer.getDispatchDescriptors(GfxSceneNodeType::eInstance);
+
+  GfxSceneInstanceAnimateArgs args = { };
+  args.instanceNodeBufferVa = m_gpuResources.getGpuAddress();
+  args.groupBufferVa = groupBuffer.getGpuAddress();
+  args.frameId = frameId;
+
+  pipelines.prepareInstanceAnimations(context, dispatches.first, args);
+
+  context->memoryBarrier(
+    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
+    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
+
+  context->endDebugLabel();
+
+  context->beginDebugLabel("Execute dispatch", 0xffb4f6ff);
+
+  pipelines.processInstanceAnimations(context, dispatches.second, args);
+
+  context->memoryBarrier(
+    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
+    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
+
+  pipelines.resetUpdateLists(context, groupBuffer.getGpuAddress());
+
+  context->memoryBarrier(
+    GfxUsage::eShaderStorage | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
+    GfxUsage::eShaderStorage | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
+
+  context->endDebugLabel();
+  context->endDebugLabel();
 }
 
 
@@ -416,7 +502,8 @@ void GfxSceneInstanceManager::updateBufferData(
           GfxSceneInstanceDirtyFlag::eDirtyRelativeTransforms |
           GfxSceneInstanceDirtyFlag::eDirtyMorphTargetWeights |
           GfxSceneInstanceDirtyFlag::eDirtyShadingParameters |
-          GfxSceneInstanceDirtyFlag::eDirtyMaterialParameters;
+          GfxSceneInstanceDirtyFlag::eDirtyMaterialParameters |
+          GfxSceneInstanceDirtyFlag::eDirtyAnimations;
       }
 
       auto header = hostData.dataBuffer.getHeader();
@@ -427,12 +514,18 @@ void GfxSceneInstanceManager::updateBufferData(
         uploadInstanceData(context, hostData, header->drawOffset, header->drawCount * sizeof(*draws));
       }
 
-      if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyRelativeTransforms)
-        uploadInstanceData(context, hostData, header->jointRelativeOffset, header->jointCount * sizeof(QuatTransform));
+      if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyRelativeTransforms) {
+        uint32_t jointSize = header->jointCount * sizeof(QuatTransform);
+        uint32_t jointOffset = header->animationCount ? jointSize : 0u;
+
+        uploadInstanceData(context, hostData, header->jointRelativeOffset + jointOffset, jointSize);
+      }
 
       if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyMorphTargetWeights) {
         uint32_t weightSize = header->weightCount * sizeof(int16_t);
-        uploadInstanceData(context, hostData, header->weightOffset + 2u * weightSize, weightSize);
+        uint32_t weightOffset = (header->animationCount ? 3u : 2u) * weightSize;
+
+        uploadInstanceData(context, hostData, header->weightOffset + weightOffset, weightSize);
       }
 
       if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyShadingParameters)
@@ -460,6 +553,13 @@ void GfxSceneInstanceManager::updateBufferData(
         }
 
         uploadInstanceData(context, hostData, updateOffset, updateSize);
+      }
+
+      if ((dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyAnimations) && header->animationCount) {
+        uint32_t animationSize = sizeof(GfxSceneAnimationHeader) +
+          sizeof(GfxSceneAnimationParameters) * header->animationCount;
+
+        uploadInstanceData(context, hostData, header->animationOffset, animationSize);
       }
     }
   }
@@ -534,8 +634,10 @@ void GfxSceneInstanceManager::addToDirtyList(
 void GfxSceneInstanceManager::resizeGpuBuffer(
   const GfxContext&                   context,
         uint32_t                      frameId) {
-  uint32_t count = m_instanceAllocator.getCount();
-  GfxBuffer oldBuffer = m_gpuResources.resizeBuffer(context, count);
+  GfxSceneInstanceBufferDesc desc;
+  desc.instanceCount = m_instanceAllocator.getCount();
+
+  GfxBuffer oldBuffer = m_gpuResources.resizeBuffer(context, desc);
 
   if (oldBuffer)
     m_gpuBuffers.insert({ frameId, std::move(oldBuffer) });
