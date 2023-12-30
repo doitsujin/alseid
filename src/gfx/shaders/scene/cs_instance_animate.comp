@@ -292,22 +292,25 @@ shared uint csLocalIndicesShared[2][CS_WORKGROUP_SIZE];
 
 uvec2 csFindLocalIndices(
         uint32_t                      tid,
-  in    AnimationGroup                animationGroup,
+  in    AnimationBufferRef            animationBuffer,
+        uint32_t                      animationGroup,
         uint32_t                      indexOffset) {
-  uint jointIndex = animationGroup.jointIndices[tid];
-  uint weightIndex = animationGroup.morphTargetIndices[tid];
+  // This leads to weird code gen if we pass in the animation group
+  // struct directly, so do it the long and tedious way instead.
+  uint jointIndex = animationBuffer.groups[animationGroup].jointIndices[tid];
+  uint weightIndex = animationBuffer.groups[animationGroup].morphTargetIndices[tid];
 
   csLocalIndicesShared[0][tid] = CS_WORKGROUP_SIZE;
   csLocalIndicesShared[1][tid] = CS_WORKGROUP_SIZE;
 
   barrier();
 
-  if (tid < animationGroup.jointCount &&
+  if (tid < animationBuffer.groups[animationGroup].jointCount &&
       jointIndex >= indexOffset &&
       jointIndex < indexOffset + CS_WORKGROUP_SIZE)
     csLocalIndicesShared[0][jointIndex - indexOffset] = tid;
 
-  if (tid < animationGroup.morphTargetCount &&
+  if (tid < animationBuffer.groups[animationGroup].morphTargetCount &&
       weightIndex >= indexOffset &&
       weightIndex < indexOffset + CS_WORKGROUP_SIZE)
     csLocalIndicesShared[1][weightIndex - indexOffset] = tid;
@@ -372,7 +375,8 @@ void csAnimateInstanceMain() {
   InstanceAnimationBufferIn animationParameters = instanceGetAnimationProperties(instanceVa);
 
   // Load animation properties from the instance buffer
-  AnimationBuffer animationHeader = AnimationBufferRef(animationVa).header;
+  AnimationBufferRef animationBuffer = AnimationBufferRef(animationVa);
+  AnimationBuffer animationHeader = animationBuffer.header;
 
   for (uint32_t i = 0; i < max(instance.jointCount, instance.weightCount); i += CS_WORKGROUP_SIZE) {
     // Joint and morph target index for the current thread
@@ -406,18 +410,19 @@ void csAnimateInstanceMain() {
       } else {
         // Standard code path that handles animation groups
         for (uint32_t k = 0; k < args.groupCount; k++) {
-          AnimationGroup animationGroup = AnimationBufferRef(animationVa).groups[args.groupIndex + k];
-
           // Ignore joints and weights not affected by the current animation group.
           // This generally works because all full animations should specify identity
           // transforms in that case. Exit early if possible.
-          uvec2 localIndices = csFindLocalIndices(tid, animationGroup, 0);
+          uvec2 localIndices = csFindLocalIndices(tid, animationBuffer, args.groupIndex + k, i);
 
           uint localJoint = localIndices.x;
           uint localWeight = localIndices.y;
 
           if (!csWorkgroupAny(tid, localJoint < CS_WORKGROUP_SIZE || localWeight < CS_WORKGROUP_SIZE))
             continue;
+
+          // Load remaining animation group properties into memory
+          AnimationGroup animationGroup = animationBuffer.groups[args.groupIndex + k];
 
           // Find the pair of keyframes to interpolate between
           KeyframeRef keyframeBuffer = animationGetKeyframeBuffer(animationVa, animationHeader);
