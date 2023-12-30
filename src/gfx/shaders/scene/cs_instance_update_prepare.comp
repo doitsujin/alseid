@@ -13,7 +13,7 @@
 #include "as_scene_instance.glsl"
 #include "as_pass.glsl"
 
-layout(local_size_x = 64) in;
+layout(local_size_x = PASS_GROUP_WORKGROUP_SIZE) in;
 
 layout(push_constant)
 uniform PushData {
@@ -24,7 +24,7 @@ uniform PushData {
 };
 
 void csPrepareUpdate() {
-  uint32_t gid = asFlattenGlobalInvocationIndex();
+  uint32_t gid = gl_GlobalInvocationID.x;
 
   // Exit early if the thread ID is out of bounds
   PassGroupBuffer group = PassGroupBuffer(groupBuffer);

@@ -11,6 +11,8 @@
 
 #define PASS_COUNT_PER_GROUP (32u)
 
+#define PASS_GROUP_WORKGROUP_SIZE (128u)
+
 // Render pass info
 struct PassInfo {
   Projection  projection;

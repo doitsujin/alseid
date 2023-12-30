@@ -143,7 +143,7 @@ void csTraverseBvh() {
       // These functions will filter out any unwanted nodes on their own,
       // but they have to run within subgroup-uniform control flow.
       bvhListAddItem(bvhList, bvhLayer, item);
-      nodeListAddItem(groupBuffer, item, 64u);
+      nodeListAddItem(groupBuffer, item, PASS_GROUP_WORKGROUP_SIZE);
 
       nextChain = bvhNodes.nodes[nextIndex].chainedNode;
     }

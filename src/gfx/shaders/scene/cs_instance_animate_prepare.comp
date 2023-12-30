@@ -16,20 +16,7 @@
 
 // Match the instance update preparation workgroup size so that
 // we can use the same parameter buffer
-layout(local_size_x = 64) in;
-
-// Workgroup size of the animation shader
-#define CS_ANIMATE_WORKGROUP_SIZE (32)
-
-// Shader parameters, indexed by workgroup ID. Stores buffer pointers
-// as well as parameters for animation blending purposes.
-struct CsWorkgroupArgs {
-  // Instance node reference
-  uint32_t  instanceNodeRef;
-  // Offset for joint and morph target indices for the current workgroup.
-  // Relevant if an instance has more than 32 joints or morph targets.
-  uint32_t  indexOffset;
-};
+layout(local_size_x = PASS_GROUP_WORKGROUP_SIZE) in;
 
 
 // Shader arguments. Stores buffer pointers to read data from.
@@ -50,7 +37,7 @@ struct CsInvocationOutput {
 };
 
 uint32_t csGetInstanceNodeRef() {
-  uint32_t gid = asFlattenGlobalInvocationIndex();
+  uint32_t gid = gl_GlobalInvocationID.x;
 
   // Exit early if the thread ID is out of bounds
   PassGroupBuffer group = PassGroupBuffer(globals.groupBuffer);

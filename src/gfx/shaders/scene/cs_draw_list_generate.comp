@@ -6,7 +6,6 @@
 #extension GL_GOOGLE_include_directive : enable
 
 #define CS_MAIN csGenerateDraws
-#define CS_WORKGROUP_SIZE 64
 
 #include "../as_include_head.glsl"
 
@@ -15,7 +14,7 @@
 #include "as_scene_instance.glsl"
 #include "as_pass.glsl"
 
-layout(local_size_x = CS_WORKGROUP_SIZE) in;
+layout(local_size_x = PASS_GROUP_WORKGROUP_SIZE) in;
 
 layout(constant_id = SPEC_CONST_ID_TASK_SHADER_WORKGROUP_SIZE)
 const uint CsTaskShaderWorkgroupSize = 128;
@@ -100,7 +99,7 @@ InstanceDrawInfo csGetDrawInfoForThread(uint32_t invocationIndex) {
 // Helper function to push the current invocation index to another invocation
 // for data exchange purposes. Always needs to go through LDS since we cannot
 // otherwise scan the accumulated draw counts in constant time.
-shared int32_t csThreadIndexForOffsetShared[CS_WORKGROUP_SIZE];
+shared int32_t csThreadIndexForOffsetShared[PASS_GROUP_WORKGROUP_SIZE];
 
 int32_t csGetDataIndexForThread(uint32_t drawCount, uint32_t drawCountAccum) {
   uint32_t ofs = gl_SubgroupSize * gl_SubgroupID;
@@ -128,7 +127,7 @@ int32_t csGetDataIndexForThread(uint32_t drawCount, uint32_t drawCountAccum) {
 
 
 bool csPrepareNextIteration(out InstanceDrawInfo info) {
-  if (gl_SubgroupSize * gl_NumSubgroups != CS_WORKGROUP_SIZE) {
+  if (gl_SubgroupSize * gl_NumSubgroups != PASS_GROUP_WORKGROUP_SIZE) {
     // Fallback path in case the subgroup layout is weird. This will emit one
     // draw per thread and iteration with no cross-thread communication.
     InstanceDrawInfo result = instanceDrawInfo;
