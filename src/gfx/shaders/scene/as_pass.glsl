@@ -297,8 +297,12 @@ void nodeListAddUpdate(
   if ((entry % workgroupSize) == 0u) {
     uint32_t maxEntry = subgroupMax(entry);
 
-    if (subgroupElect())
-      atomicMax(list.header.dispatch.x, (maxEntry / workgroupSize) + 1u);
+    if (subgroupElect()) {
+      uvec2 workgroupCount = asGetWorkgroupCount2D((maxEntry / workgroupSize) + 1u);
+
+      atomicMax(list.header.dispatch.x, workgroupCount.x);
+      atomicMax(list.header.dispatch.y, workgroupCount.y);
+    }
   }
 }
 
