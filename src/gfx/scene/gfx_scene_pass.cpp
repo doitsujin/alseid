@@ -166,7 +166,7 @@ void GfxScenePassGroupBuffer::cleanupGpuBuffers(
 
 void GfxScenePassGroupBuffer::updateGpuBuffer(
   const GfxContext&                   context) {
-  context->beginDebugLabel("Update pass buffer", 0xff96c096u);
+  context->beginDebugLabel("Update pass group buffer", 0xff96c096u);
 
   auto scratch = context->allocScratch(GfxUsage::eCpuWrite | GfxUsage::eTransferSrc, sizeof(m_header));
   std::memcpy(scratch.map(GfxUsage::eCpuWrite, 0), &m_header, sizeof(m_header));

@@ -20,8 +20,8 @@ const uint32_t TsWorkgroupSize = 128;
 struct TsPayload {
   // Index into the instance node buffer
   uint32_t            instanceIndex;
-  // Render pass index, taken from the workgroup ID in
-  // combination with the render pass mask.
+  // Absolute render pass index, taken from the workgroup ID
+  // in combination with the render pass mask and pass group.
   uint32_t            passIndex;
   // Offset of joint indices relative to the geometry buffer.
   uint32_t            skinningDataOffset;

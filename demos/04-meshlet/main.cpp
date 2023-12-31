@@ -37,6 +37,8 @@ struct InstanceConstants {
 
 struct PushConstants {
   uint64_t drawListVa;
+  uint64_t passInfoVa;
+  uint64_t passGroupVa;
   uint64_t instanceVa;
   uint64_t sceneVa;
   uint32_t drawGroup;
@@ -183,7 +185,7 @@ public:
       passInfo.mirrorPlane = Vector4D(0.0f);
       passInfo.frustum = computeViewFrustum(passInfo.projection);
 
-      GfxScratchBuffer passBuffer = context->writeScratch(GfxUsage::eConstantBuffer, passInfo);
+      GfxScratchBuffer passBuffer = context->writeScratch(GfxUsage::eShaderResource, passInfo);
 
       uint32_t drawCount = 1024;
 
@@ -219,8 +221,7 @@ public:
         *m_scenePipelines, *m_sceneNodeManager, *m_scenePassGroup, m_frameId);
 
       m_sceneDrawBuffer->generateDraws(context, *m_scenePipelines,
-        passBuffer.getDescriptor(GfxUsage::eConstantBuffer),
-        *m_sceneNodeManager, *m_sceneInstanceManager, *m_scenePassGroup,
+        passBuffer.getGpuAddress(), *m_sceneNodeManager, *m_sceneInstanceManager, *m_scenePassGroup,
         m_frameId, 0x1, 0);
 
       GfxCommandSubmission submission;
@@ -271,12 +272,13 @@ public:
 
           PushConstants pushConstants = { };
           pushConstants.drawListVa = m_sceneDrawBuffer->getGpuAddress();
+          pushConstants.passInfoVa = passBuffer.getGpuAddress();
+          pushConstants.passGroupVa = m_scenePassGroup->getGpuAddress();
           pushConstants.instanceVa = m_sceneInstanceManager->getGpuAddress();
           pushConstants.sceneVa = m_sceneNodeManager->getGpuAddress();
           pushConstants.drawGroup = 0;
           pushConstants.frameId = m_frameId;
 
-          context->bindDescriptor(0, 0, passBuffer.getDescriptor(GfxUsage::eConstantBuffer));
           context->setShaderConstants(0, pushConstants);
 
           context->drawMeshIndirect(
@@ -471,6 +473,9 @@ private:
     m_sceneInstanceNode = instanceNode;
     m_sceneInstanceRef = instanceRef;
     m_sceneRootRef = rootRef;
+
+    uint16_t passIndex = 0;
+    m_scenePassGroup->setPasses(1, &passIndex);
   }
 
 

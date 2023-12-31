@@ -124,7 +124,7 @@ GfxBuffer GfxSceneDrawBuffer::updateLayout(
 void GfxSceneDrawBuffer::generateDraws(
   const GfxContext&                   context,
   const GfxScenePipelines&            pipelines,
-  const GfxDescriptor&                passInfos,
+        uint64_t                      passInfoVa,
   const GfxSceneNodeManager&          nodeManager,
   const GfxSceneInstanceManager&      instanceManager,
   const GfxScenePassGroupBuffer&      groupBuffer,
@@ -154,12 +154,13 @@ void GfxSceneDrawBuffer::generateDraws(
   generateArgs.drawListVa = m_buffer->getGpuAddress();
   generateArgs.instanceBufferVa = instanceManager.getGpuAddress();
   generateArgs.sceneBufferVa = nodeManager.getGpuAddress();
-  generateArgs.groupBufferVa = groupBuffer.getGpuAddress();
+  generateArgs.passInfoVa = passInfoVa;
+  generateArgs.passGroupVa = groupBuffer.getGpuAddress();
   generateArgs.frameId = frameId;
   generateArgs.passMask = passMask;
   generateArgs.lodSelectionPass = lodSelectionPass;
 
-  pipelines.generateDrawList(context, dispatch, passInfos, generateArgs);
+  pipelines.generateDrawList(context, dispatch, generateArgs);
 
   context->memoryBarrier(
     GfxUsage::eShaderStorage, GfxShaderStage::eCompute,

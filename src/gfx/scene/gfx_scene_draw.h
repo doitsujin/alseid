@@ -159,11 +159,25 @@ public:
 
   /**
    * \brief Generates draw lists
+   *
+   * \param [in] context Context object
+   * \param [in] pipelines Scene pipeline object
+   * \param [in] passInfoVa GPU address of pass info buffer
+   * \param [in] nodeManager Node manager object
+   * \param [in] instanceManager Instance manager object
+   * \param [in] passGroupBuffer Pass group object to
+   *    use for visibility tests
+   * \param [in] frameId Current frame ID
+   * \param [in] passMask Passes to include in the resulting
+   *    draw list, relative to the pass group
+   * \param [in] lodSelectionPass Absolute index of pass to
+   *    use for LOD testing. Does not have to be part of the
+   *    pass group.
    */
   void generateDraws(
     const GfxContext&                   context,
     const GfxScenePipelines&            pipelines,
-    const GfxDescriptor&                passInfos,
+          uint64_t                      passInfoVa,
     const GfxSceneNodeManager&          nodeManager,
     const GfxSceneInstanceManager&      instanceManager,
     const GfxScenePassGroupBuffer&      groupBuffer,

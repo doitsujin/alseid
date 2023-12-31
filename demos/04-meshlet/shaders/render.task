@@ -15,15 +15,11 @@ struct TsContext {
 };
 
 
-layout(set = 0, binding = 0, scalar)
-uniform PassData {
-  PassInfo          passInfos[64];
-} passes;
-
-
 layout(push_constant)
 uniform Globals {
   uint64_t          drawListVa;
+  uint64_t          passInfoVa;
+  uint64_t          passGroupVa;
   uint64_t          instanceVa;
   uint64_t          sceneVa;
   uint32_t          drawGroup;
@@ -33,7 +29,8 @@ uniform Globals {
 
 TsContext tsGetInstanceContext() {
   TsContext result;
-  result.invocation = tsGetInvocationInfo(globals.drawListVa, globals.drawGroup);
+  result.invocation = tsGetInvocationInfo(globals.drawListVa,
+    globals.passGroupVa, globals.drawGroup);
   result.drawListVa = globals.drawListVa;
   result.instanceVa = globals.instanceVa;
   result.sceneVa = globals.sceneVa;

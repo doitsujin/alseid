@@ -23,7 +23,7 @@ struct TsInvocationInfo {
   uint32_t    meshInstance;
   uint32_t    lodIndex;
   uint32_t    lodMeshletIndex;
-  int32_t     passIndex;
+  uint32_t    passIndex;
   uint32_t    shadingDataOffset;
 };
 
@@ -52,7 +52,10 @@ int32_t tsComputePassIndex(uint32_t passMask, uint32_t passIndex) {
 
 // Retrieves information for the current task shader informations from
 // built-in variables as well as the draw info buffer.
-TsInvocationInfo tsGetInvocationInfo(uint64_t drawListVa, uint32_t drawGroup) {
+TsInvocationInfo tsGetInvocationInfo(
+        uint64_t                      drawListVa,
+        uint64_t                      passGroupVa,
+        uint32_t                      drawGroup) {
   DrawListBufferIn drawList = DrawListBufferIn(drawListVa);
   DrawInstanceInfoBufferIn drawInfos = DrawInstanceInfoBufferIn(drawListVa + drawList.header.drawInfoOffset);
 
@@ -67,7 +70,8 @@ TsInvocationInfo tsGetInvocationInfo(uint64_t drawListVa, uint32_t drawGroup) {
   result.meshInstance = draw.meshInstance + gl_GlobalInvocationID.y;
   result.lodIndex = unpacked.y;
   result.lodMeshletIndex = gl_GlobalInvocationID.x;
-  result.passIndex = tsComputePassIndex(draw.passMask, gl_GlobalInvocationID.z);
+  result.passIndex = passGroupGetPassIndex(passGroupVa,
+    tsComputePassIndex(draw.passMask, gl_GlobalInvocationID.z));
   result.shadingDataOffset = draw.shadingDataOffset;
   return result;
 }

@@ -128,7 +128,8 @@ struct GfxSceneDrawListGenerateArgs {
   uint64_t drawListVa;
   uint64_t instanceBufferVa;
   uint64_t sceneBufferVa;
-  uint64_t groupBufferVa;
+  uint64_t passInfoVa;
+  uint64_t passGroupVa;
   uint32_t frameId;
   uint32_t passMask;
   uint32_t lodSelectionPass;
@@ -327,13 +328,11 @@ public:
    *
    * \param [in] context Context object
    * \param [in] dispatch Indirect dispatch descriptor
-   * \param [in] passInfos Pass info uniform buffer descriptor
    * \param [in] args Arguments to pass to the initialization shader
    */
   void generateDrawList(
     const GfxContext&                   context,
     const GfxDescriptor&                dispatch,
-    const GfxDescriptor&                passInfos,
     const GfxSceneDrawListGenerateArgs& args) const;
 
   /**

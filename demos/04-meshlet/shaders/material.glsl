@@ -36,6 +36,8 @@ FS_DECLARE_UNIFORM(FS_UNIFORM);
 layout(push_constant)
 uniform Globals {
   uint64_t          drawListVa;
+  uint64_t          passInfoVa;
+  uint64_t          passGroupVa;
   uint64_t          instanceVa;
   uint64_t          sceneVa;
   uint32_t          drawGroup;
@@ -68,12 +70,6 @@ void fsMain(in FsInput fsInput, in FsUniform fsUniform) {
 //       MESH SHADER      //
 ////////////////////////////
 #ifdef STAGE_MESH
-
-layout(set = 0, binding = 0, scalar)
-uniform PassUniforms {
-  PassInfo          passInfos[64];
-} passes;
-
 
 struct MsContext {
   MsInvocationInfo  invocation;
@@ -132,16 +128,18 @@ shared f16vec4 rotations[MAX_VERT_COUNT];
 MsVertexOut msComputeVertexPos(in MsContext context, uint vertexIndex, in MsVertexIn vertex, in Transform jointTransform) {
   MsVertexOut result;
 
+  PassInfoBuffer passInfoBuffer = PassInfoBuffer(globals.passInfoVa);
+
   Transform finalTransform = Transform(
     vec4(context.invocation.meshInstance.transform),
     vec3(context.invocation.meshInstance.translate));
 
   finalTransform = transChain(jointTransform, finalTransform);
   finalTransform = transChain(msLoadNodeTransform(0), finalTransform);
-  finalTransform = transChain(passes.passInfos[context.invocation.passIndex].viewTransform, finalTransform);
+  finalTransform = transChain(passInfoBuffer.passes[context.invocation.passIndex].viewTransform, finalTransform);
   vec3 vertexPos = transApply(finalTransform, vec3(vertex.position.xyz));
 
-  result.position = projApply(passes.passInfos[context.invocation.passIndex].projection, vertexPos);
+  result.position = projApply(passInfoBuffer.passes[context.invocation.passIndex].projection, vertexPos);
 
   rotations[vertexIndex] = f16vec4(finalTransform.rot);
   return result;

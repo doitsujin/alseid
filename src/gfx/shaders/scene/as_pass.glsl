@@ -125,6 +125,14 @@ readonly buffer PassGroupBuffer {
 };
 
 
+// Convenience method to remap a pass index from a pass group
+uint32_t passGroupGetPassIndex(
+        uint64_t                      passGroupVa,
+        uint32_t                      index) {
+  return PassGroupBuffer(passGroupVa).passIndices[index];
+}
+
+
 // Node list entry. Stores the node reference as well as visibility
 // masks that influence culling and rendering behaviour for each pass.
 struct PassGroupNodeListItem {

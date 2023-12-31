@@ -19,22 +19,17 @@ layout(local_size_x = PASS_GROUP_WORKGROUP_SIZE) in;
 layout(constant_id = SPEC_CONST_ID_TASK_SHADER_WORKGROUP_SIZE)
 const uint CsTaskShaderWorkgroupSize = 128;
 
-layout(set = 0, binding = 0, scalar)
-uniform PassData {
-  PassInfo            passInfos[64];
-};
-
-
 layout(push_constant)
 uniform PushData {
-  uint64_t            drawListBuffer;
-  uint64_t            instanceBuffer;
-  uint64_t            sceneBuffer;
-  uint64_t            groupBuffer;
+  uint64_t            drawListVa;
+  uint64_t            instanceVa;
+  uint64_t            sceneVa;
+  uint64_t            passInfoVa;
+  uint64_t            passGroupVa;
   uint32_t            frameId;
   uint32_t            passMask;
   uint32_t            lodSelectionPass;
-};
+} globals;
 
 
 struct InstanceDrawInfo {
@@ -48,7 +43,7 @@ struct InstanceDrawInfo {
 
 // Helper function to load an instance node from memory.
 InstanceNode csLoadInstanceNode(uint32_t instanceIndex) {
-  InstanceNodeBuffer instanceNodes = InstanceNodeBuffer(instanceBuffer);
+  InstanceNodeBuffer instanceNodes = InstanceNodeBuffer(globals.instanceVa);
   return instanceNodes.nodes[instanceIndex];
 }
 
@@ -57,17 +52,15 @@ InstanceNode csLoadInstanceNode(uint32_t instanceIndex) {
 // Uses the center of geometry's static AABB rather than the adjusted AABB for
 // consistency regardless of animation.
 float csComputeLodDistance(uint64_t geometryBuffer, in Transform worldTransform) {
+  PassInfo passInfo = PassInfoBuffer(globals.passInfoVa).passes[globals.lodSelectionPass];
   GeometryRef geometry = GeometryRef(geometryBuffer);
 
   vec3 staticCenter = (vec3(geometry.geometry.aabb.lo) + vec3(geometry.geometry.aabb.hi)) / 2.0f;
   staticCenter = transApply(worldTransform, staticCenter);
-  staticCenter = passTransformToViewSpace(passInfos[lodSelectionPass], staticCenter, ~0u);
+  staticCenter = passTransformToViewSpace(passInfo, staticCenter, ~0u);
 
   float viewDistanceSq = dot(staticCenter, staticCenter);
-
-  return viewDistanceSq *
-    passInfos[lodSelectionPass].lodDistanceScale *
-    passInfos[lodSelectionPass].lodDistanceScale;
+  return viewDistanceSq * passInfo.lodDistanceScale * passInfo.lodDistanceScale;
 }
 
 
@@ -262,9 +255,9 @@ void csEmitDraw(in InstanceDrawInfo drawInfo) {
     return;
 
   // Compute addresses of the various output arrays
-  DrawListBuffer drawList = DrawListBuffer(drawListBuffer);
-  DrawInstanceInfoBufferOut drawInfos = DrawInstanceInfoBufferOut(drawListBuffer + drawList.header.drawInfoOffset);
-  DrawParameterBufferOut drawArgs = DrawParameterBufferOut(drawListBuffer + drawList.header.drawParameterOffset);
+  DrawListBuffer drawList = DrawListBuffer(globals.drawListVa);
+  DrawInstanceInfoBufferOut drawInfos = DrawInstanceInfoBufferOut(globals.drawListVa + drawList.header.drawInfoOffset);
+  DrawParameterBufferOut drawArgs = DrawParameterBufferOut(globals.drawListVa + drawList.header.drawParameterOffset);
 
   // Emit actual draw parameters
   DrawInstanceInfo drawInstanceInfo;
@@ -287,9 +280,9 @@ void csEmitDraw(in InstanceDrawInfo drawInfo) {
 void csGenerateDraws() {
   uint32_t gid = gl_GlobalInvocationID.x;
 
-  PassGroupBuffer group = PassGroupBuffer(groupBuffer);
+  PassGroupBuffer group = PassGroupBuffer(globals.passGroupVa);
 
-  PassGroupNodeListIn nodeList = PassGroupNodeListIn(groupBuffer +
+  PassGroupNodeListIn nodeList = PassGroupNodeListIn(globals.passGroupVa +
     group.nodeListOffsets[NODE_TYPE_INSTANCE - NODE_TYPE_BUILTIN_COUNT].nodeList);
 
   csInitDrawInfo();
@@ -300,16 +293,16 @@ void csGenerateDraws() {
 
     InstanceNode instance = csLoadInstanceNode(instanceDrawInfo.instanceIndex);
 
-    SceneHeader scene = SceneHeader(sceneBuffer);
+    SceneHeader scene = SceneHeader(globals.sceneVa);
 
     bool hasInstanceData = instance.propertyBuffer != uint64_t(0u);
     bool hasGeometryData = instance.geometryBuffer != uint64_t(0u);
 
     if (hasInstanceData && hasGeometryData) {
       InstanceDataBufferIn instanceData = InstanceDataBufferIn(instance.propertyBuffer);
-      uint32_t transformIndex = nodeComputeTransformIndices(instance.nodeIndex, scene.nodeCount, frameId).x;
+      uint32_t transformIndex = nodeComputeTransformIndices(instance.nodeIndex, scene.nodeCount, globals.frameId).x;
 
-      SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(sceneBuffer + scene.nodeTransformOffset);
+      SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(globals.sceneVa + scene.nodeTransformOffset);
       Transform worldTransform = nodeTransforms.nodeTransforms[transformIndex].absoluteTransform;
 
       instanceDrawInfo.viewDistanceSq = csComputeLodDistance(
@@ -318,7 +311,7 @@ void csGenerateDraws() {
       // Compute bit mask of passes to test, then scalarize the pass mask
       // across all invocations. This is generally efficient since the pass
       // masks are not expected to diverge heavily.
-      instanceDrawInfo.passMask = passMask & nodeItem.partialVisibilityMask;
+      instanceDrawInfo.passMask = globals.passMask & nodeItem.partialVisibilityMask;
       uint32_t passMaskUniform = subgroupOr(instanceDrawInfo.passMask);
 
       while (passMaskUniform != 0u) {
@@ -326,7 +319,7 @@ void csGenerateDraws() {
         uint32_t passBit = 1u << passIndex;
 
         if ((instanceDrawInfo.passMask & passBit) != 0) {
-          PassInfo passInfo = passInfos[passIndex];
+          PassInfo passInfo = PassInfoBuffer(globals.passInfoVa).passes[passGroupGetPassIndex(globals.passGroupVa, passIndex)];
 
           // Use the adjusted bounding box for actual visibility tests
           Aabb aabb = Aabb(

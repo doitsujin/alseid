@@ -132,10 +132,8 @@ void GfxScenePipelines::initDrawList(
 void GfxScenePipelines::generateDrawList(
   const GfxContext&                   context,
   const GfxDescriptor&                dispatch,
-  const GfxDescriptor&                passInfos,
   const GfxSceneDrawListGenerateArgs& args) const {
   context->bindPipeline(m_csDrawListGenerate);
-  context->bindDescriptor(0, 0, passInfos);
   context->setShaderConstants(0, args);
   context->dispatchIndirect(dispatch);
 }
