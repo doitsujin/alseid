@@ -12,7 +12,6 @@ as_shader_includes = files(
   'ms_template.glsl',
   'ts_common.glsl',
   'ts_template.glsl',
-  'vs_template.glsl',
 
   'render/ms_render_common.glsl',
   'render/ms_render_instance.glsl',
