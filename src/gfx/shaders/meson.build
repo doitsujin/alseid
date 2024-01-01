@@ -36,6 +36,11 @@ as_shader_builtins = [
   [ 'scene/cs_instance_update_execute.comp', 'cs' ],
   [ 'scene/cs_instance_update_prepare.comp', 'cs' ],
 
+  [ 'scene/cs_pass_info_update_execute.comp', 'cs' ],
+  [ 'scene/cs_pass_info_update_copy.comp', 'cs' ],
+  [ 'scene/cs_pass_info_update_init.comp', 'cs' ],
+  [ 'scene/cs_pass_info_update_prepare.comp', 'cs' ],
+
   [ 'scene/cs_pass_init.comp', 'cs' ],
   [ 'scene/cs_pass_reset_update.comp', 'cs' ],
   [ 'scene/cs_pass_traverse_bvh.comp', 'cs' ],

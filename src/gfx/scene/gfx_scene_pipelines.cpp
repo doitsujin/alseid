@@ -10,6 +10,11 @@
 #include <cs_instance_update_execute.h>
 #include <cs_instance_update_prepare.h>
 
+#include <cs_pass_info_update_copy.h>
+#include <cs_pass_info_update_execute.h>
+#include <cs_pass_info_update_init.h>
+#include <cs_pass_info_update_prepare.h>
+
 #include <cs_pass_init.h>
 #include <cs_pass_reset_update.h>
 #include <cs_pass_traverse_bvh.h>
@@ -28,6 +33,10 @@ GfxScenePipelines::GfxScenePipelines(
 , m_csInstanceAnimatePrepare(createComputePipeline("cs_instance_animate_prepare", cs_instance_animate_prepare))
 , m_csInstanceUpdateExecute (createComputePipeline("cs_instance_update_execute", cs_instance_update_execute))
 , m_csInstanceUpdatePrepare (createComputePipeline("cs_instance_update_prepare", cs_instance_update_prepare))
+, m_csPassInfoUpdateCopy    (createComputePipeline("cs_pass_info_update_copy", cs_pass_info_update_copy))
+, m_csPassInfoUpdateExecute (createComputePipeline("cs_pass_info_update_execute", cs_pass_info_update_execute))
+, m_csPassInfoUpdateInit    (createComputePipeline("cs_pass_info_update_init", cs_pass_info_update_init))
+, m_csPassInfoUpdatePrepare (createComputePipeline("cs_pass_info_update_prepare", cs_pass_info_update_prepare))
 , m_csPassInit              (createComputePipeline("cs_pass_init", cs_pass_init))
 , m_csPassResetUpdate       (createComputePipeline("cs_pass_reset_update", cs_pass_reset_update))
 , m_csPassTraverseBvh       (createComputePipeline("cs_pass_traverse_bvh", cs_pass_traverse_bvh))
@@ -147,6 +156,47 @@ void GfxScenePipelines::resetUpdateLists(
   context->dispatch(gfxComputeWorkgroupCount(
     Extent3D(uint32_t(GfxSceneNodeType::eCount) - uint32_t(GfxSceneNodeType::eBuiltInCount), 1u, 1u),
     m_csPassResetUpdate->getWorkgroupSize()));
+}
+
+
+void GfxScenePipelines::initRenderPassUpdateList(
+  const GfxContext&                   context,
+        uint64_t                      passListVa) const {
+  context->bindPipeline(m_csPassInfoUpdateInit);
+  context->setShaderConstants(0, passListVa);
+  context->dispatch(Extent3D(1, 1, 1));
+}
+
+
+void GfxScenePipelines::copyRenderPassInfos(
+  const GfxContext&                   context,
+  const GfxPassInfoUpdateCopyArgs&    args) const {
+  context->bindPipeline(m_csPassInfoUpdateCopy);
+  context->setShaderConstants(0, args);
+  context->dispatch(gfxComputeWorkgroupCount(
+    Extent3D(args.passUpdateCount, 1, 1),
+    m_csPassInfoUpdateCopy->getWorkgroupSize()));
+}
+
+
+void GfxScenePipelines::prepareRenderPassUpdates(
+  const GfxContext&                   context,
+  const GfxPassInfoUpdatePrepareArgs& args) const {
+  context->bindPipeline(m_csPassInfoUpdatePrepare);
+  context->setShaderConstants(0, args);
+  context->dispatch(gfxComputeWorkgroupCount(
+    Extent3D(args.passCount, 1, 1),
+    m_csPassInfoUpdatePrepare->getWorkgroupSize()));
+}
+
+
+void GfxScenePipelines::executeRenderPassUpdates(
+  const GfxContext&                   context,
+  const GfxDescriptor&                dispatch,
+  const GfxPassInfoUpdateExecuteArgs& args) const {
+  context->bindPipeline(m_csPassInfoUpdateExecute);
+  context->setShaderConstants(0, args);
+  context->dispatchIndirect(dispatch);
 }
 
 }

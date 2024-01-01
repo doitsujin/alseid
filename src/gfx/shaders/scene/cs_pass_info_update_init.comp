@@ -1,0 +1,28 @@
+// Render pass update initialization shader
+//
+// Initializes the update list.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csInitPassUpdateList
+
+#include "../as_include_head.glsl"
+
+#include "as_pass.glsl"
+
+layout(local_size_x = 1) in;
+
+// Buffer pointers and parameters
+layout(push_constant)
+uniform PushData {
+  PassGroupUpdateList   passListBuffer;
+} globals;
+
+
+void csInitPassUpdateList() {
+  globals.passListBuffer.header.dispatch = uvec3(0u, 1u, 1u);
+  globals.passListBuffer.header.entryCount = 0u;
+}
+
+#include "../as_include_tail.glsl"

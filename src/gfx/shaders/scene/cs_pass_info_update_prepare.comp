@@ -1,0 +1,71 @@
+// Render pass update preparation shader
+//
+// Finds render passes that need to be updated.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csPreparePassUpdates
+
+#include "../as_include_head.glsl"
+
+#include "as_pass.glsl"
+
+// Prefer larger workgroups here since the shader will run
+// one thread for every single render pass each frame.
+#define CS_WORKGROUP_SIZE (PASS_GROUP_WORKGROUP_SIZE)
+layout(local_size_x = CS_WORKGROUP_SIZE) in;
+
+// Buffer pointers and parameters
+layout(push_constant)
+uniform PushData {
+  PassInfoBufferIn      passInfoBuffer;
+  PassGroupUpdateList   passListBuffer;
+  uint32_t              frameId;
+  uint32_t              passCount;
+} globals;
+
+
+void csPreparePassUpdates() {
+  uint32_t gid = gl_GlobalInvocationID.x;
+
+  // Update the pass if any properties have changed, special flags are set, or if
+  // the camera or mirror are attached to a valid node which may have been updated.
+  // Also consider that any dirty pass needs to be updated twice so that both view
+  // transforms are made valid.
+  bool requiresUpdate = false;
+  
+  if (gid < globals.passCount) {
+    requiresUpdate = (globals.passInfoBuffer.passes[gid].dirtyFrameId >= globals.passInfoBuffer.passes[gid].updateFrameId) ||
+      (globals.passInfoBuffer.passes[gid].flags & PASS_FLAG_IGNORE_OCCLUSION_TEST) != 0 ||
+      (globals.passInfoBuffer.passes[gid].cameraNode >= 0) ||
+      (globals.passInfoBuffer.passes[gid].mirrorNode >= 0);
+  }
+
+  // Manually add pass index to the update list. This differs from the regular code
+  // path since the workgroup size is large, and the list is allocated elsewhere.
+  uvec4 ballot = subgroupBallot(requiresUpdate);
+
+  uint32_t count = subgroupBallotBitCount(ballot);
+  uint32_t index = subgroupBallotExclusiveBitCount(ballot);
+  uint32_t first;
+
+  if (subgroupElect())
+    first = atomicAdd(globals.passListBuffer.header.entryCount, count);
+
+  first = subgroupBroadcastFirst(first);
+  index += first;
+
+  if (requiresUpdate) {
+    globals.passListBuffer.nodeRefs[index] = gid;
+
+    if ((index % PASS_GROUP_WORKGROUP_SIZE) == 0u) {
+      if (subgroupElect()) {
+        atomicMax(globals.passListBuffer.header.dispatch.x,
+          asComputeWorkgroupCount1D(first + count, PASS_GROUP_WORKGROUP_SIZE));
+      }
+    }
+  }
+}
+
+#include "../as_include_tail.glsl"

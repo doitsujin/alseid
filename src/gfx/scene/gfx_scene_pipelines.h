@@ -137,6 +137,40 @@ struct GfxSceneDrawListGenerateArgs {
 
 
 /**
+ * \brief Render pass host copy args
+ */
+struct GfxPassInfoUpdateCopyArgs {
+  uint64_t dstPassInfoVa;
+  uint64_t srcPassIndexVa;
+  uint64_t srcPassInfoVa;
+  uint32_t frameId;
+  uint32_t passUpdateCount;
+};
+
+
+/**
+ * \brief Render pass update preparation args
+ */
+struct GfxPassInfoUpdatePrepareArgs {
+  uint64_t passInfoVa;
+  uint64_t passListVa;
+  uint32_t frameId;
+  uint32_t passCount;
+};
+
+
+/**
+ * \brief Render pass update execution args
+ */
+struct GfxPassInfoUpdateExecuteArgs {
+  uint64_t passInfoVa;
+  uint64_t passListVa;
+  uint64_t sceneVa;
+  uint32_t frameId;
+};
+
+
+/**
  * \brief Pipelines for scene rendering
  *
  * Creates compute and graphics pipelines for built-in shaders
@@ -269,23 +303,6 @@ public:
     const GfxSceneInstanceAnimateArgs&  args) const;
 
   /**
-   * \brief Performs instance animations
-   *
-   * Callers must ensure that blended animations are executed in separate
-   * passes, with an appropriate barrier in between. Buffers will be accessed
-   * as both \c GfxUsage::eShaderResource and \c GfxUsage::eShaderStorage.
-   *
-   * Animations must be processed after the instance data gets updated by the
-   * host, but before processing updates during BVH traversal. One possible way
-   * of doing this is to dispatch animations after initial BVH traversal, in
-   * order to only process instances that are actually visible.
-   * \param [in] context Context object
-   * \param [in] dispatch Indirect dispatch descriptor
-   * \param [in] args Arguments to pass to the animation shader
-   */
-  
-
-  /**
    * \brief Prepares instance updates
    *
    * \param [in] context Context object
@@ -345,6 +362,53 @@ public:
     const GfxContext&                   context,
           uint64_t                      groupBufferVa) const;
 
+  /**
+   * \brief Initializes render pass update list
+   *
+   * Should ideally run with other shaders in parallel.
+   * \param [in] context Context object
+   * \param [in] passListVa Pass list buffer address
+   */
+  void initRenderPassUpdateList(
+    const GfxContext&                   context,
+          uint64_t                      passListVa) const;
+
+  /**
+   * \brief Copies render pass infos from a host buffer
+   *
+   * \param [in] context Context object
+   * \param [in] args Arguments to pass to the shader
+   */
+  void copyRenderPassInfos(
+    const GfxContext&                   context,
+    const GfxPassInfoUpdateCopyArgs&    args) const;
+
+  /**
+   * \brief Prepares render pass updates
+   *
+   * Scans render passes for passes that require an update. This includes
+   * any pass that has not been updated by the host but is attached to a
+   * node, or has been otherwise updated by the GPU.
+   * \param [in] context Context object
+   * \param [in] args Arguments to pass to the shader
+   */
+  void prepareRenderPassUpdates(
+    const GfxContext&                   context,
+    const GfxPassInfoUpdatePrepareArgs& args) const;
+
+  /**
+   * \brief Executes render pass updates
+   *
+   * Must be performed prior to BVH traversal.
+   * \param [in] context Context object
+   * \param [in] dispatch Indirect dispatch descriptor
+   * \param [in] args Arguments to pass to the shader
+   */
+  void executeRenderPassUpdates(
+    const GfxContext&                   context,
+    const GfxDescriptor&                dispatch,
+    const GfxPassInfoUpdateExecuteArgs& args) const;
+
 private:
 
   GfxDevice           m_device;
@@ -356,6 +420,11 @@ private:
   GfxComputePipeline  m_csInstanceAnimatePrepare;
   GfxComputePipeline  m_csInstanceUpdateExecute;
   GfxComputePipeline  m_csInstanceUpdatePrepare;
+
+  GfxComputePipeline  m_csPassInfoUpdateCopy;
+  GfxComputePipeline  m_csPassInfoUpdateExecute;
+  GfxComputePipeline  m_csPassInfoUpdateInit;
+  GfxComputePipeline  m_csPassInfoUpdatePrepare;
 
   GfxComputePipeline  m_csPassInit;
   GfxComputePipeline  m_csPassResetUpdate;

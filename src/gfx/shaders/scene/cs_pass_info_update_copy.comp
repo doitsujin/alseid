@@ -1,0 +1,94 @@
+// Render pass update shader
+//
+// Copies updated render pass properties to the pass buffer.
+// Render pass updates must be committed afterwards.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csUpdatePassInfos
+
+#include "../as_include_head.glsl"
+
+#include "as_pass.glsl"
+
+
+// Try to run only a small number of threads for this
+layout(local_size_x_id = SPEC_CONST_ID_MAX_SUBGROUP_SIZE) in;
+
+
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+readonly buffer PassDataBuffer {
+  PassInfo passes[];
+};
+
+
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+readonly buffer PassIndexBuffer {
+  uint16_t passIndices[];
+};
+
+
+// Buffer pointers and parameters
+layout(push_constant)
+uniform PushData {
+  PassInfoBuffer  dstPassInfoBuffer;
+  PassIndexBuffer srcPassIndexBuffer;
+  PassDataBuffer  srcPassInfoBuffer;
+  uint32_t        frameId;
+  uint32_t        passUpdateCount;
+} globals;
+
+
+void csUpdatePassInfos() {
+  uint32_t gid = gl_GlobalInvocationID.x;
+
+  if (gid >= globals.passUpdateCount)
+    return;
+
+  uint32_t index = globals.srcPassIndexBuffer.passIndices[gid];
+  uint32_t passFlags = globals.srcPassInfoBuffer.passes[gid].flags;
+
+  // Update render pass metadata as necessary. The frame ID must be updated
+  // anyway, everything else will generally only be set on the first update.
+  globals.dstPassInfoBuffer.passes[index].dirtyFrameId = globals.frameId;
+  globals.dstPassInfoBuffer.passes[index].updateFrameId = 0u;
+
+  if ((passFlags & PASS_FLAG_KEEP_METADATA) == 0u) {
+    globals.dstPassInfoBuffer.passes[index].flags = passFlags;
+    globals.dstPassInfoBuffer.passes[index].passTypeMask = globals.srcPassInfoBuffer.passes[gid].passTypeMask;
+    globals.dstPassInfoBuffer.passes[index].cameraNode = globals.srcPassInfoBuffer.passes[gid].cameraNode;
+    globals.dstPassInfoBuffer.passes[index].cameraJoint = globals.srcPassInfoBuffer.passes[gid].cameraJoint;
+    globals.dstPassInfoBuffer.passes[index].mirrorNode = globals.srcPassInfoBuffer.passes[gid].mirrorNode;
+    globals.dstPassInfoBuffer.passes[index].mirrorJoint = globals.srcPassInfoBuffer.passes[gid].mirrorJoint;
+  } else if ((passFlags & PASS_SPECIAL_FLAG_MASK) != 0u) {
+    globals.dstPassInfoBuffer.passes[index].flags |= passFlags & PASS_SPECIAL_FLAG_MASK;
+  }
+
+  // Copy actual render pass properties
+  if ((passFlags & PASS_FLAG_KEEP_PROJECTION) == 0u)
+    globals.dstPassInfoBuffer.passes[index].projection = globals.srcPassInfoBuffer.passes[gid].projection;
+
+  if ((passFlags & PASS_FLAG_KEEP_VIEW_TRANSFORM) == 0u)
+    globals.dstPassInfoBuffer.passes[index].relativeTransform = globals.srcPassInfoBuffer.passes[gid].relativeTransform;
+
+  if ((passFlags & PASS_FLAG_KEEP_MIRROR_PLANE) == 0u)
+    globals.dstPassInfoBuffer.passes[index].relativeMirrorPlane = globals.srcPassInfoBuffer.passes[gid].relativeMirrorPlane;
+
+  if ((passFlags & PASS_FLAG_KEEP_VIEWPORT_LAYER_INDEX) == 0u) {
+    globals.dstPassInfoBuffer.passes[index].layerIndex = globals.srcPassInfoBuffer.passes[gid].layerIndex;
+    globals.dstPassInfoBuffer.passes[index].viewportIndex = globals.srcPassInfoBuffer.passes[gid].viewportIndex;
+  }
+
+  if ((passFlags & PASS_FLAG_KEEP_VIEWPORT_REGION) == 0u) {
+    globals.dstPassInfoBuffer.passes[index].viewportOffset = globals.srcPassInfoBuffer.passes[gid].viewportOffset;
+    globals.dstPassInfoBuffer.passes[index].viewportExtent = globals.srcPassInfoBuffer.passes[gid].viewportExtent;
+  }
+
+  if ((passFlags & PASS_FLAG_KEEP_VIEW_DISTANCE) == 0u) {
+    globals.dstPassInfoBuffer.passes[index].viewDistanceLimit = globals.srcPassInfoBuffer.passes[gid].viewDistanceLimit;
+    globals.dstPassInfoBuffer.passes[index].lodDistanceScale = globals.srcPassInfoBuffer.passes[gid].lodDistanceScale;
+  }
+}
+
+#include "../as_include_tail.glsl"

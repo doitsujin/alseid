@@ -1,0 +1,183 @@
+// Render pass update preparation shader
+//
+// Finds render passes that need to be updated.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csExecutePassUpdates
+
+#include "../as_include_head.glsl"
+
+#include "as_scene.glsl"
+#include "as_pass.glsl"
+
+// Prefer larger workgroups here since the shader will run
+// one thread for every single render pass each frame.
+#define CS_WORKGROUP_SIZE (PASS_GROUP_WORKGROUP_SIZE)
+layout(local_size_x = CS_WORKGROUP_SIZE) in;
+
+#include "as_scene_node_transform.glsl"
+
+// Buffer pointers and parameters
+layout(push_constant)
+uniform PushData {
+  PassInfoBuffer        passInfoBuffer;
+  PassGroupUpdateListIn passListBuffer;
+  uint64_t              sceneVa;
+  uint32_t              frameId;
+} globals;
+
+
+// Helper function to serialize node updates. Node transforms must
+// be recomputed if passes have a camera or mirror plane attached
+// to a scene node.
+shared uint32_t csUpdateNodeCountShared;
+shared uint32_t csUpdateNodeIndicesShared[CS_WORKGROUP_SIZE * 2u];
+
+void csPushNodeUpdates(ivec2 nodeIndices) {
+  uint32_t tid = gl_LocalInvocationIndex;
+
+  if (tid == 0u)
+    csUpdateNodeCountShared = 0u;
+
+  barrier();
+
+  // Avoid LDS bank conflicts within a single write by first writing
+  // the first indices consecutively, then the second set.
+  uvec4 xBallot = subgroupBallot(nodeIndices.x >= 0);
+  uvec4 yBallot = subgroupBallot(nodeIndices.y >= 0);
+
+  uint32_t xCount = subgroupBallotBitCount(xBallot);
+  uint32_t yCount = subgroupBallotBitCount(yBallot);
+
+  uint32_t xIndex = subgroupBallotExclusiveBitCount(xBallot);
+  uint32_t yIndex = subgroupBallotExclusiveBitCount(yBallot);
+
+  uint32_t first;
+
+  if (subgroupElect())
+    first = atomicAdd(csUpdateNodeCountShared, xCount + yCount);
+
+  first = subgroupBroadcastFirst(first);
+
+  xIndex += first;
+  yIndex += first + xCount;
+
+  if (nodeIndices.x >= 0)
+    csUpdateNodeIndicesShared[xIndex] = uint32_t(nodeIndices.x);
+  if (nodeIndices.y >= 0)
+    csUpdateNodeIndicesShared[yIndex] = uint32_t(nodeIndices.y);
+
+  barrier();
+}
+
+
+// Helper function to perform node updates. This iterates over the
+// pending node array and ensures that any updates are made visible
+// to the entire workgroup.
+void csExecuteNodeUpdates(
+  in    SceneNodeInfoBuffer           nodeInfos,
+  in    SceneNodeTransformBufferOut   nodeTransforms,
+        uint32_t                      nodeCount) {
+  uint32_t updateCount = csUpdateNodeCountShared;
+
+  if (updateCount == 0u)
+    return;
+
+  for (uint32_t i = 0; i < updateCount; i += gl_WorkGroupSize.x) {
+    uint32_t index = i + gl_LocalInvocationIndex;
+
+    if (index < updateCount) {
+      csComputeNodeTransform(nodeInfos, nodeTransforms,
+        csUpdateNodeIndicesShared[index], nodeCount, globals.frameId);
+    }
+  }
+
+  controlBarrier(gl_ScopeWorkgroup, gl_ScopeWorkgroup,
+    gl_StorageSemanticsBuffer, gl_SemanticsAcquireRelease);
+}
+
+
+void csExecutePassUpdates() {
+  uint32_t gid = gl_GlobalInvocationID.x;
+  uint32_t passIndex = ~0u;
+
+  // Load scene buffer pointers
+  SceneHeader sceneHeader = SceneHeader(globals.sceneVa);
+  SceneNodeInfoBuffer nodeInfos = SceneNodeInfoBuffer(globals.sceneVa + sceneHeader.nodeParameterOffset);
+  SceneNodeTransformBufferOut nodeTransforms = SceneNodeTransformBufferOut(globals.sceneVa + sceneHeader.nodeTransformOffset);
+
+  uint32_t nodeCount = sceneHeader.nodeCount;
+  uint32_t nodeOffset = nodeCount * (globals.frameId & 1u);
+
+  // While in uniform control flow, update nodes that passes may be
+  // attached to. Doing it this way may reduce the iteration count
+  // of the expensive node update function.
+  ivec2 nodeIndices = ivec2(-1, -1);
+
+  if (gid < globals.passListBuffer.header.entryCount) {
+    passIndex = globals.passListBuffer.nodeRefs[gid];
+
+    nodeIndices = ivec2(
+      globals.passInfoBuffer.passes[passIndex].cameraNode,
+      globals.passInfoBuffer.passes[passIndex].mirrorNode);
+  }
+
+  csPushNodeUpdates(nodeIndices);
+  csExecuteNodeUpdates(nodeInfos, nodeTransforms, nodeCount);
+
+  if (passIndex != ~0u) {
+    uint32_t oldPassFlags = globals.passInfoBuffer.passes[passIndex].flags;
+    uint32_t newPassFlags = oldPassFlags;
+
+    // Clear occlusion test ignore flag if this is the second consecutive update,
+    // since the current frame transforms will generally be valid at this point.
+    if (globals.passInfoBuffer.passes[passIndex].dirtyFrameId < globals.frameId)
+      newPassFlags &= ~PASS_FLAG_IGNORE_OCCLUSION_TEST;
+
+    // Only write pass flags if they have actually changed
+    if (newPassFlags != oldPassFlags)
+      globals.passInfoBuffer.passes[passIndex].flags = newPassFlags;
+
+    globals.passInfoBuffer.passes[passIndex].updateFrameId = globals.frameId;
+
+    // Compute view transforms and write out the result
+    Transform viewTransform = globals.passInfoBuffer.passes[passIndex].relativeTransform.transform;
+    Transform currTransform = globals.passInfoBuffer.passes[passIndex].currTransform.transform;
+
+    if (nodeIndices.x >= 0) {
+      Transform nodeTransform = nodeTransforms.nodeTransforms[nodeOffset + nodeIndices.x].absoluteTransform;
+      viewTransform = transChain(viewTransform, transInverse(nodeTransform));
+    }
+
+    if ((oldPassFlags & PASS_FLAG_IGNORE_OCCLUSION_TEST) != 0u)
+      currTransform = viewTransform;
+
+    globals.passInfoBuffer.passes[passIndex].currTransform = PassTransform(viewTransform, 0u);
+    globals.passInfoBuffer.passes[passIndex].prevTransform = PassTransform(currTransform, 0u);
+
+    // If necessary, compute the view space mirror plane.
+    if ((newPassFlags & PASS_FLAG_USES_MIRROR_PLANE) != 0u) {
+      if (nodeIndices.y >= 0) {
+        Transform nodeTransform = nodeTransforms.nodeTransforms[nodeOffset + nodeIndices.y].absoluteTransform;
+        viewTransform = transChain(viewTransform, nodeTransform);
+      }
+
+      vec4 viewMirrorPlane = transApplyPlane(viewTransform, globals.passInfoBuffer.passes[passIndex].relativeMirrorPlane);
+      vec4 currMirrorPlane = globals.passInfoBuffer.passes[passIndex].currMirrorPlane;
+
+      if ((oldPassFlags & PASS_FLAG_IGNORE_OCCLUSION_TEST) != 0u)
+        currMirrorPlane = viewMirrorPlane;
+
+      globals.passInfoBuffer.passes[passIndex].currMirrorPlane = viewMirrorPlane;
+      globals.passInfoBuffer.passes[passIndex].prevMirrorPlane = currMirrorPlane;
+    }
+
+    // Compute view frustum from projection, with z planes taking the last two indices.
+    globals.passInfoBuffer.passes[passIndex].frustum = projComputeViewFrustum(
+      globals.passInfoBuffer.passes[passIndex].projection);
+  }
+}
+
+#include "../as_include_tail.glsl"
