@@ -33,3 +33,39 @@ vec4 projApply(in Projection p, vec3 v) {
   result.w = isPerspective ? -v.z : 1.0f;
   return result;
 }
+
+
+// View frustum. Can be computed directly from a projection.
+struct ViewFrustum {
+  f32vec4 planes[6];
+};
+
+ViewFrustum projComputeViewFrustum(in Projection p) {
+  bool isPerspective = p.zScale == 0.0f;
+
+  vec2 zw = isPerspective
+    ? vec2(-1.0f, 0.0f)
+    : vec2(0.0f, 1.0f);
+
+  float zNear, zFar;
+
+  if (isPerspective) {
+    zNear = p.zBias;
+    zFar = 0.0f;
+  } else {
+    float invScale = 1.0f / p.zScale;
+    zFar = p.zBias * invScale;
+    zNear = zFar - invScale;
+  }
+
+  ViewFrustum f;
+  f.planes[0] = vec4(-p.xScale, 0.0f, zw);
+  f.planes[1] = vec4( p.xScale, 0.0f, zw);
+  f.planes[2] = vec4(0.0f, -p.yScale, zw);
+  f.planes[3] = vec4(0.0f,  p.yScale, zw);
+  f.planes[4] = vec4(0.0f, 0.0f, -1.0f, -zNear);
+  f.planes[5] = isPerspective
+    ? vec4(0.0f)
+    : vec4(0.0f, 0.0f, 1.0f, zFar);
+  return f;
+}
