@@ -50,7 +50,7 @@ void csTraverseBvh() {
     : gl_LocalInvocationIndex;
 
   // Render pass info buffer
-  PassInfoBuffer passInfos = PassInfoBuffer(passBuffer);
+  PassInfoBufferIn passInfos = PassInfoBufferIn(passBuffer);
 
   // Node property and transform buffers, used to load the BVH transform as well
   // as to update child node transforms.

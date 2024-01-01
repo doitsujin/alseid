@@ -128,7 +128,7 @@ shared f16vec4 rotations[MAX_VERT_COUNT];
 MsVertexOut msComputeVertexPos(in MsContext context, uint vertexIndex, in MsVertexIn vertex, in Transform jointTransform) {
   MsVertexOut result;
 
-  PassInfoBuffer passInfoBuffer = PassInfoBuffer(globals.passInfoVa);
+  PassInfoBufferIn passInfoBuffer = PassInfoBufferIn(globals.passInfoVa);
 
   Transform finalTransform = Transform(
     vec4(context.invocation.meshInstance.transform),
@@ -136,7 +136,7 @@ MsVertexOut msComputeVertexPos(in MsContext context, uint vertexIndex, in MsVert
 
   finalTransform = transChain(jointTransform, finalTransform);
   finalTransform = transChain(msLoadNodeTransform(0), finalTransform);
-  finalTransform = transChain(passInfoBuffer.passes[context.invocation.passIndex].viewTransform, finalTransform);
+  finalTransform = transChain(passInfoBuffer.passes[context.invocation.passIndex].currTransform.transform, finalTransform);
   vec3 vertexPos = transApply(finalTransform, vec3(vertex.position.xyz));
 
   result.position = projApply(passInfoBuffer.passes[context.invocation.passIndex].projection, vertexPos);

@@ -13,38 +13,51 @@ constexpr uint32_t GfxMaxPassesPerGroup = 32u;
 
 
 /**
- * \brief Render pass type
- */
-enum class GfxScenePassType : uint32_t {
-  /** Flat render pass, with a defined view frustum. Used for
-   *  regular rendering and directional shadows. */
-  eFlat   = 0u,
-  /** Flat render pass that mirrors around a plane in world space. */
-  eMirror = 1u,
-  /** Cube map render pass. Used for shadow maps for point lights,
-   *  reflection probes, and similar passes. */
-  eCube   = 1u,
-};
-
-
-/**
  * \brief Render pass flags
  */
 enum class GfxScenePassFlag : uint32_t {
-  /** Indicates that the pass uses lighting, and that a light list
-   *  should be generated for any pass group containing this pass. */
-  eEnableLighting       = (1u << 0),
-  /** Indicates that frustum culling should be performed on nodes
-   *  during this pass. Should be enabled for flat and mirror passes. */
-  ePerformFrustumTest   = (1u << 1),
+  /** Indicates that the render pass renders a cube map. */
+  eIsCubeMap              = (1u << 0),
+  /** Indicates that the render pass uses a mirror plane. */
+  eUsesMirrorPlane        = (1u << 1),
+  /** Indicates that the render pass uses a custom viewport region.
+   *  If not set, the viewport region must be ignored. */
+  eUsesViewportRegion     = (1u << 2),
+
   /** Indicates that occlusion testing will be performed for this pass.
    *  If set, occlusion testing \e must be performed, or objects will
    *  remain invisible. */
-  ePerformOcclusionTest = (1u << 2),
+  ePerformOcclusionTest   = (1u << 8),
   /** Indicates that occlusion test results from the previous frame
    *  should be ignored. This should be set if the view has changed
    *  significantly, e.g. after a camera cut, to avoid glitches. */
-  eIgnoreOcclusionTest  = (1u << 3),
+  eIgnoreOcclusionTest    = (1u << 9),
+
+  /** Indicates that pass metadata has already been set and should
+   *  be ignored during host updates. This includes most pass flags. */
+  eKeepMetadata           = (1u << 16),
+  /** Indicates that the projecction is provided by the GPU and should
+   *  be ignored during host updates. */
+  eKeepProjection         = (1u << 17),
+  /** Indicates that the view transform is provided by the GPU
+   *  and should be ignored during host updates. */
+  eKeepViewTransform      = (1u << 18),
+  /** Indicates that the mirror plane is provided by the GPU
+   *  and should be ignored during host updates. */
+  eKeepMirrorPlane        = (1u << 19),
+  /** Indicates that the viewport index and layer index are provided
+   *  by the GPU and should be ignored during host updates. */
+  eKeepViewportLayerIndex = (1u << 20),
+  /** Indicates that the viewport region is provided by the GPU and
+   *  should be ignored during host updates. */
+  eKeepViewportRegion     = (1u << 21),
+  /** Indicates that view distance properties are provided by the GPU
+   *  and should be ignored during host updates. */
+  eKeepViewDistance       = (1u << 22),
+
+  /** Indicates that the pass uses lighting, and that a light list
+   *  should be generated for any pass group containing this pass. */
+  eEnableLighting         = (1u << 24),
 
   eFlagEnum = 0
 };
@@ -59,43 +72,72 @@ using GfxScenePassFlags = Flags<GfxScenePassFlag>;
  * preprocessed every frame in order to resolve relative transforms.
  */
 struct GfxScenePassInfo {
-  /** Projection for the render pass. */
-  Projection projection;
-  /** Rotation component of the world to view space transform. For
-   *  cube map passes, this must be an identity quaternion. */
-  Vector4D viewSpaceRotation;
-  /** Translation component of the world to view space transform. */
-  Vector3D viewSpaceTranslation;
-  /** Render pass type */
-  GfxScenePassType type;
   /** Render pass flags */
   GfxScenePassFlags flags;
+  /** Application-defined pass types that this pass can be used for.
+   *  Can be used to filter out certain instances during rendering. */
+  uint32_t passTypeMask;
+  /** Frame ID of when the pass has last been updated. */
+  uint32_t dirtyFrameId;
+  /** Frame ID of when pass updates have been committed. */
+  uint32_t updateFrameId;
+  /** Projection for the render pass. */
+  Projection projection;
+  /** View transform, either from world space coordinates, or relative
+   *  to a given node. Only used when updating the pass. */
+  QuatTransform viewTransform;
+  /** View space transform for the current frame. */
+  QuatTransform currTransform;
+  /** View space transform for the previous frame. Should only be
+   *  used to compute motion vectors. */
+  QuatTransform prevTransform;
+  /** Mirror plane, in world space or relative to a given node. */
+  Vector4D mirrorPlane;
+  /** Transformed mirror plane, in view space. May also be used as a clipping
+   *  plane when rendering planar reflections, and must be processed by the
+   *  mesh shader right before applying the projection. */
+  Vector4D currMirrorPlane;
+  /** Mirror plane of the previous frame. Used to compute motion vectors. */
+  Vector4D prevMirrorPlane;
+  /** Node index for the view transform. This can be used to attach the
+   *  camera to a given node without further host intervention. If negative,
+   *  the view transform will be used as-is. */
+  int32_t cameraNode;
+  /** Joint to attach the camera to. */
+  int32_t cameraJoint;
+  /** Node index for the mirror plane. Useful for rendering actual mirrors. */ 
+  int32_t mirrorNode;
+  /** Joint to attach the mirror plane to. */
+  int32_t mirrorJoint;
   /** Maximum view distance of this render pass. Useful for shadow
    *  maps of point lights since the number of instances contributing
    *  to visible shadows is limited by the light's maximum range.
    *  A value of 0 or less indicates an infinite view distance. */
   float viewDistanceLimit;
-  /** Distance scaling factor. Can be set to change the effective view
-   *  distance of instances and BVH nodes. Values lower than 1 will
-   *  increase the view distance, values greater than 1 will decrease it. */
-  float viewDistanceScale;
   /** Distance scaling factor for LOD selection. Can be used to render
    *  instances at a lower or higher level of detail without affecting
    *  the maximum view distance. */
   float lodDistanceScale;
-  /** Mirror plane, in view space. */
-  Vector4D mirrorPlane;
-
-  union {
-    /** View-space frustum planes for flat render passes. Generally
-     *  computed directly from the projection. */
-    ViewFrustum frustum;
-    /** Rotation transforms for each face of a cube render pass. */
-    std::array<Vector4D, 6> faceRotations;
-  };
+  /** First render target array layer to use for this render pass.
+   *  It is up to the mesh shader to apply this correctly. This is
+   *  primarily intended for use cases such as stereo 3D rendering. */
+  uint32_t layerIndex;
+  /** First hardware viewport to use for this render pass. It is up
+   *  to the mesh shader to apply this correctly. */
+  uint32_t viewportIndex;
+  /** Virtual viewport region, in pixels. This is primarily intended for
+   *  rendering large atlas textures when the exact regions to render are not
+   *  known up front. Mesh shaders must apply the transform after applying
+   *  the initial projection, and clip against the view frustum as necessary. */
+  Offset2D viewportOffset;
+  Extent2D viewportSize;
+  /** View-space frustum planes. Generally computed directly from the
+   *  projection. For cube map passes, the global per-face rotation must
+   *  be applied for culling purposes. */
+  ViewFrustum frustum;
 };
 
-static_assert(sizeof(GfxScenePassInfo) == 176);
+static_assert(sizeof(GfxScenePassInfo) == 320);
 
 
 /**

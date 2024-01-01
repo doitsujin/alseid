@@ -5,25 +5,79 @@
 
 #include "../as_quaternion.glsl"
 
-#define PASS_TYPE_FLAT    (0u)
-#define PASS_TYPE_MIRROR  (1u)
-#define PASS_TYPE_CUBE    (2u)
+#define PASS_FLAG_IS_FIRST_UPDATE           (1u << 0)
+#define PASS_FLAG_IS_CUBE_MAP               (1u << 1)
+#define PASS_FLAG_USES_MIRROR_PLANE         (1u << 2)
+#define PASS_FLAG_USES_VIEWPORT_REGION      (1u << 3)
+
+#define PASS_FLAG_PERFORM_OCCLUSION_TEST    (1u << 8)
+#define PASS_FLAG_IGNORE_OCCLUSION_TEST     (1u << 9)
+
+#define PASS_FLAG_KEEP_METADATA             (1u << 16)
+#define PASS_FLAG_KEEP_PROJECTION           (1u << 17)
+#define PASS_FLAG_KEEP_VIEW_TRANSFORM       (1u << 18)
+#define PASS_FLAG_KEEP_MIRROR_PLANE         (1u << 19)
+#define PASS_FLAG_KEEP_VIEWPORT_LAYER_INDEX (1u << 20)
+#define PASS_FLAG_KEEP_VIEWPORT_REGION      (1u << 21)
+#define PASS_FLAG_KEEP_VIEW_DISTANCE        (1u << 22)
+
+#define PASS_FLAG_ENABLE_LIGHTING           (1u << 24)
+
+#define PASS_SPECIAL_FLAG_MASK              (PASS_FLAG_IGNORE_OCCLUSION_TEST)
 
 #define PASS_COUNT_PER_GROUP (32u)
 
 #define PASS_GROUP_WORKGROUP_SIZE (128u)
 
-// Render pass info
+// View space transform of a render pass. Padded by an extra
+// dword for alignment, and to match host structures.
+struct PassTransform {
+  Transform     transform;
+  uint32_t      reserved;
+};
+
+
+// Render pass info. 
 struct PassInfo {
-  Projection  projection;
-  Transform   viewTransform;
-  uint32_t    type;
-  uint32_t    flags;
-  float32_t   viewDistanceLimit;
-  float32_t   viewDistanceScale;
-  float32_t   lodDistanceScale;
-  f32vec4     mirrorPlane;
-  f32vec4     frustumOrFaceRotations[6];
+  uint32_t      flags;
+  uint32_t      passTypeMask;
+  uint32_t      dirtyFrameId;
+  uint32_t      updateFrameId;
+  Projection    projection;
+  PassTransform relativeTransform;
+  PassTransform currTransform;
+  PassTransform prevTransform;
+  f32vec4       relativeMirrorPlane;
+  f32vec4       currMirrorPlane;
+  f32vec4       prevMirrorPlane;
+  int32_t       cameraNode;
+  int32_t       cameraJoint;
+  int32_t       mirrorNode;
+  int32_t       mirrorJoint;
+  float32_t     viewDistanceLimit;
+  float32_t     lodDistanceScale;
+  uint32_t      layerIndex;
+  uint32_t      viewportIndex;
+  u32vec2       viewportOffset;
+  u32vec2       viewportExtent;
+  ViewFrustum   frustum;
+};
+
+
+// Render pass info buffer. Stores all render pass properties,
+// as well as global information that may apply to all passes.
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+readonly buffer PassInfoBufferIn {
+  // vec4          cubeFaceRotations[6];
+  PassInfo      passes[];
+};
+
+
+// Read-write variant of render pass info buffer.
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+buffer PassInfoBuffer {
+  // vec4          cubeFaceRotations[6];
+  PassInfo      passes[];
 };
 
 
@@ -40,12 +94,12 @@ vec3 passTransformToViewSpace(
   in    PassInfo                      pass,
         vec3                          vertex,
         uint32_t                      face) {
-  vertex = transApply(pass.viewTransform, vertex);
+  vertex = transApply(pass.currTransform.transform, vertex);
 
-  if (pass.type == PASS_TYPE_MIRROR)
-    vertex = mirrorVertex(pass.mirrorPlane, vertex);
-  else if (pass.type == PASS_TYPE_CUBE && face < 6)
-    vertex = quatApply(pass.frustumOrFaceRotations[face], vertex);
+  // if (pass.type == PASS_TYPE_MIRROR)
+  //   vertex = mirrorVertex(pass.mirrorPlane, vertex);
+  // else if (pass.type == PASS_TYPE_CUBE && face < 6)
+  //   vertex = quatApply(pass.frustumOrFaceRotations[face], vertex);
 
   return vertex;
 }
@@ -63,7 +117,7 @@ bool passTestViewDistance(
     return true;
 
   center = passTransformToViewSpace(pass, center, ~0u);
-  float dist = length(center) * pass.viewDistanceScale - radius;
+  float dist = length(center) - radius;
   return dist < pass.viewDistanceLimit;
 }
 
@@ -81,13 +135,13 @@ uint32_t passTestViewFrustum(
         float                         radius) {
   uint32_t result = 0;
 
-  if (pass.type == PASS_TYPE_CUBE)
-    return result;
+  // if (pass.type == PASS_TYPE_CUBE)
+  //   return result;
 
   center = passTransformToViewSpace(pass, center, ~0u);
 
   for (uint32_t i = 0; i < 6; i++) {
-    vec4 plane = pass.frustumOrFaceRotations[i];
+    vec4 plane = pass.frustum.planes[i];
 
     if (plane.w + dot(center, plane.xyz) < -radius)
       result |= 1u << i;
@@ -95,15 +149,6 @@ uint32_t passTestViewFrustum(
 
   return result;
 }
-
-
-// Render pass info buffer reference. Useful when access to pass
-// infos is highly divergent, otherwise this should be passed in
-// as a uniform buffer.
-layout(buffer_reference, buffer_reference_align = 16, scalar)
-readonly buffer PassInfoBuffer {
-  PassInfo passes[];
-};
 
 
 // Pair of node list offsets within the pass group

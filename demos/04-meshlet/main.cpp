@@ -160,6 +160,8 @@ public:
       m_eye += yDir * m_frameDelta * deltaY;
       m_eye += zDir * m_frameDelta * deltaZ;
 
+      m_rotation += m_frameDelta;
+
       m_sceneNodeManager->updateNodeTransform(m_sceneInstanceNode,
         QuatTransform(computeRotationQuaternion(Vector4D(0.0f, 1.0f, 0.0f, 0.0f), m_rotation), Vector4D(0.0f)));
 
@@ -170,19 +172,15 @@ public:
       QuatTransform camera = computeViewTransform(m_eye, normalize(m_dir), up);
 
       GfxScenePassInfo passInfo = { };
-      passInfo.projection = computePerspectiveProjection(
-        Vector2D(1280.0f, 720.0f), 2.0f, 0.001f);
-      passInfo.viewSpaceRotation = camera.getRotation().getVector();
-      passInfo.viewSpaceTranslation = Vector3D(camera.getTranslation());
-      passInfo.type = GfxScenePassType::eFlat;
       passInfo.flags = GfxScenePassFlag::eEnableLighting
-        | GfxScenePassFlag::ePerformFrustumTest
         | GfxScenePassFlag::ePerformOcclusionTest
         | GfxScenePassFlag::eIgnoreOcclusionTest;
+      passInfo.projection = computePerspectiveProjection(
+        Vector2D(1280.0f, 720.0f), 2.0f, 0.001f);
+      passInfo.currTransform = camera;
+      passInfo.prevTransform = camera;
       passInfo.viewDistanceLimit = 0.0f;
-      passInfo.viewDistanceScale = 1.0f;
       passInfo.lodDistanceScale = 1.0f;
-      passInfo.mirrorPlane = Vector4D(0.0f);
       passInfo.frustum = computeViewFrustum(passInfo.projection);
 
       GfxScratchBuffer passBuffer = context->writeScratch(GfxUsage::eShaderResource, passInfo);

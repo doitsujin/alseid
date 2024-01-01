@@ -52,7 +52,7 @@ InstanceNode csLoadInstanceNode(uint32_t instanceIndex) {
 // Uses the center of geometry's static AABB rather than the adjusted AABB for
 // consistency regardless of animation.
 float csComputeLodDistance(uint64_t geometryBuffer, in Transform worldTransform) {
-  PassInfo passInfo = PassInfoBuffer(globals.passInfoVa).passes[globals.lodSelectionPass];
+  PassInfo passInfo = PassInfoBufferIn(globals.passInfoVa).passes[globals.lodSelectionPass];
   GeometryRef geometry = GeometryRef(geometryBuffer);
 
   vec3 staticCenter = (vec3(geometry.geometry.aabb.lo) + vec3(geometry.geometry.aabb.hi)) / 2.0f;
@@ -319,7 +319,7 @@ void csGenerateDraws() {
         uint32_t passBit = 1u << passIndex;
 
         if ((instanceDrawInfo.passMask & passBit) != 0) {
-          PassInfo passInfo = PassInfoBuffer(globals.passInfoVa).passes[passGroupGetPassIndex(globals.passGroupVa, passIndex)];
+          PassInfo passInfo = PassInfoBufferIn(globals.passInfoVa).passes[passGroupGetPassIndex(globals.passGroupVa, passIndex)];
 
           // Use the adjusted bounding box for actual visibility tests
           Aabb aabb = Aabb(
