@@ -184,4 +184,20 @@ Transform transSlerp(in Transform a, in Transform b, float w) {
   return Transform(quatSlerp(a.rot, b.rot, w), mix(a.pos, b.pos, w));
 }
 
+
+// Inverts normalized transform
+Transform transInverse(in Transform a) {
+  vec4 rot = quatConjugate(a.rot);
+  return Transform(rot, quatApply(rot, -a.pos));
+}
+
+
+// Transforms a plane. This is a bit more involved since we need to find
+// a point on the plane first and then reconstruct the plane equation.
+vec4 transApplyPlane(in Transform a, vec4 p) {
+  vec3 n = quatApply(a.rot, p.xyz);
+  vec3 o = transApply(a, p.xyz * -p.w);
+  return vec4(n, -dot(n, o));
+}
+
 #endif /* AS_QUATERION_H */
