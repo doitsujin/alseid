@@ -15,19 +15,19 @@ layout(constant_id = SPEC_CONST_ID_MESH_SHADER_WORKGROUP_SIZE)
 const uint MsWorkgroupSize = 128u;
 
 
-// Cull mode and front face state. Used to perform primitive culling
-// within the mesh shader. Note that this does not define a front
-// face, instead the winding order is used directly.
-#define FACE_CULL_MODE_NONE                           (0)
-#define FACE_CULL_MODE_CW                             (1)
-#define FACE_CULL_MODE_CCW                            (2)
+// Flip face orientation. This is generally required for mirrored
+// mesh instances in order to maintain a consistent front face.
+#define MS_FLAG_FLIP_FACE               (1u << 0)
 
+// Face culling flags. This does not take the front face into account,
+// and instead only looks at the final primitive winding order.
+#define MS_FLAG_CULL_FACE_CW            (1u << 1)
+#define MS_FLAG_CULL_FACE_CCW           (1u << 2)
+#define MS_FLAG_CULL_FACE_ANY           (MS_FLAG_CULL_FACE_CW | MS_FLAG_CULL_FACE_CW)
 
-// Mesh shader render state
-struct MsRenderState {
-  uint32_t        cullMode;
-  bool            faceFlip;
-};
+// If set, motion vectors are set to 0. Generally depends on the
+// state of the current render pass.
+#define MS_FLAG_NO_MOTION_VECTORS       (1u << 3)
 
 
 // Decodes meshlet payload. Returns the offset of the meshlet header
@@ -95,9 +95,8 @@ MsInvocationInfo msGetInvocationInfo(
 
 
 // Convenience method to load node transforms from the task shader payload.
-Transform msLoadNodeTransform(uint32_t set) {
-  return tsPayload.transforms[set].absoluteTransform;
+Transform msLoadNodeTransform(bool currFrame) {
+  return tsPayload.transforms[currFrame ? 0u : 1u].absoluteTransform;
 }
-
 
 #endif // MS_COMMON_H

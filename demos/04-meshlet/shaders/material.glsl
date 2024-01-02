@@ -23,7 +23,7 @@ struct MsUniformOut {
 // Data structures shared between FS and VS/MS
 #define FS_INPUT                                  \
   FS_INPUT_VAR((location = 0), vec3, normal)      \
-  FS_INPUT_VAR((location = 1), vec2, texcoord)
+  FS_INPUT_VAR((location = 1), vec2, motion)
 
 FS_DECLARE_INPUT(FS_INPUT);
 
@@ -55,10 +55,8 @@ layout(location = 0) out vec4 fsColor;
 void fsMain(in FsInput fsInput, in FsUniform fsUniform) {
   float factor = 0.5f + 0.5f * dot(normalize(fsInput.normal), vec3(0.0f, 1.0f, 0.0f));
 
-  vec3 color = 0.25f + 0.125f * vec3(
-    float((fsUniform.meshlet & 0x007) >> 0),
-    float((fsUniform.meshlet & 0x031) >> 3),
-    float((fsUniform.meshlet & 0x1c0) >> 6));
+  vec2 motion = 0.5f + 0.5f * (100.0f * fsInput.motion);
+  vec3 color = vec3(motion, 1.0f - dot(motion, motion));
 
   fsColor = vec4(color * factor, 1.0f);
 }
@@ -73,7 +71,7 @@ void fsMain(in FsInput fsInput, in FsUniform fsUniform) {
 
 struct MsContext {
   MsInvocationInfo  invocation;
-  MsRenderState     renderState;
+  uint32_t          flags;
 };
 
 
@@ -104,18 +102,30 @@ MsContext msGetInstanceContext() {
 
   MsContext context;
   context.invocation = msGetInvocationInfo(globals.instanceVa, globals.frameId);
-  context.renderState.cullMode = FACE_CULL_MODE_CW;
-  context.renderState.faceFlip = false;
+  context.flags = MS_FLAG_CULL_FACE_CW;
+
+  if (asGetMirrorMode(context.invocation.meshInstance.extra) != MESH_MIRROR_NONE)
+    context.flags |= MS_FLAG_FLIP_FACE;
+
+  if ((PassInfoBufferIn(globals.passInfoVa).passes[context.invocation.passIndex].flags & PASS_FLAG_IGNORE_OCCLUSION_TEST) != 0u)
+    context.flags |= MS_FLAG_NO_MOTION_VECTORS;
+
   return context;
 }
 
 
-void msMorphVertex(inout MsVertexIn vertex, in MsMorphIn morph, float weight) {
+void msMorphVertex(
+  inout MsVertexIn                    vertex,
+  in    MsMorphIn                     morph,
+        float                         weight) {
   vertex.position += morph.position * float16_t(weight);
 }
 
 
-void msMorphShading(inout MsShadingIn shading, in MsMorphIn morph, float weight) {
+void msMorphShading(
+  inout MsShadingIn                   shading,
+  in    MsMorphIn                     morph,
+        float                         weight) {
   shading.normal = packSnorm3x10(normalize(
     unpackSnorm3x10(shading.normal) +
     unpackSnorm3x10(morph.normal) * weight));
@@ -125,7 +135,12 @@ void msMorphShading(inout MsShadingIn shading, in MsMorphIn morph, float weight)
 shared f16vec4 rotations[MAX_VERT_COUNT];
 
 
-MsVertexOut msComputeVertexPos(in MsContext context, uint vertexIndex, in MsVertexIn vertex, in Transform jointTransform) {
+MsVertexOut msComputeVertexOutput(
+  in    MsContext                     context,
+        uint                          vertexIndex,
+  in    MsVertexIn                    vertex,
+  in    Transform                     jointTransform,
+        bool                          currFrame) {
   MsVertexOut result;
 
   PassInfoBufferIn passInfoBuffer = PassInfoBufferIn(globals.passInfoVa);
@@ -134,29 +149,45 @@ MsVertexOut msComputeVertexPos(in MsContext context, uint vertexIndex, in MsVert
     vec4(context.invocation.meshInstance.transform),
     vec3(context.invocation.meshInstance.translate));
 
+  Transform passTransform = currFrame
+    ? passInfoBuffer.passes[context.invocation.passIndex].currTransform.transform
+    : passInfoBuffer.passes[context.invocation.passIndex].prevTransform.transform;
+
+  Transform nodeTransform = msLoadNodeTransform(currFrame);
+
   finalTransform = transChain(jointTransform, finalTransform);
-  finalTransform = transChain(msLoadNodeTransform(0), finalTransform);
-  finalTransform = transChain(passInfoBuffer.passes[context.invocation.passIndex].currTransform.transform, finalTransform);
+  finalTransform = transChain(nodeTransform, finalTransform);
+  finalTransform = transChain(passTransform, finalTransform);
   vec3 vertexPos = transApply(finalTransform, vec3(vertex.position.xyz));
 
   result.position = projApply(passInfoBuffer.passes[context.invocation.passIndex].projection, vertexPos);
 
-  rotations[vertexIndex] = f16vec4(finalTransform.rot);
+  if (currFrame)
+    rotations[vertexIndex] = f16vec4(finalTransform.rot);
+
   return result;
 }
 
 
-FsInput msComputeFsInput(in MsContext context, uint vertexIndex, in MsVertexIn vertex, in MsVertexOut vertexOut, in MsShadingIn shading, in MsUniformOut uniformOut) {
+FsInput msComputeFsInput(
+  in    MsContext                     context,
+        uint                          vertexIndex,
+  in    MsVertexIn                    vertexIn,
+  in    MsVertexOut                   vertexOut,
+        vec2                          motionVector,
+  in    MsShadingIn                   shadingIn,
+  in    MsUniformOut                  uniformOut) {
   vec4 transform = vec4(rotations[vertexIndex]);
 
   FsInput result;
-  result.normal = normalize(quatApplyNorm(transform, unpackSnorm3x10(shading.normal)));
-  result.texcoord = unpackUnorm2x16(shading.texcoord);
+  result.normal = normalize(quatApplyNorm(transform, unpackSnorm3x10(shadingIn.normal)));
+  result.motion = motionVector;
   return result;
 }
 
 
-MsUniformOut msComputeUniformOut(in MsContext context) {
+MsUniformOut msComputeUniformOut(
+  in    MsContext                     context) {
   MsUniformOut result;
   result.meshlet = tsPayload.meshlets[gl_WorkGroupID.x];
   return result;

@@ -22,6 +22,9 @@
 //                          target animations.
 //    MS_NO_SKINNING:       Set if the geometry is not skinned. Disables
 //                          all joint-related computations.
+//    MS_NO_MOTION_VECTORS: Set if motion vectors are not used for the material
+//                          or render pass. Disables all code that computes the
+//                          vertex position based on previous frame data.
 //    MS_EXPORT_LAYER:      Set if the render pass needs to export
 //                          the gl_Layer built-in.
 //    MS_EXPORT_VIEWPORT:   Set if the render pass needs to export
@@ -146,12 +149,18 @@
 // This should apply all transforms, including projection.
 // Applications may store per-vertex data in shared memory,
 // using the provided vertex index.
+// This is also used to compute the previous frame's vertex
+// positions for motion vectors, in which case only the final
+// vertex position should be computed, and no shared memory
+// should be written.
 //
-//    MsVertexOut msComputeVertexPos(
+//    MsVertexOut msComputeVertexOutput(
 //      in      MsContext   context,    /* Context object */
 //              uint        index,      /* Vertex index */
 //      in      MsVertexIn  vertex,     /* Morphed input data */
-//      in      Transform   transform); /* Joint transform */
+//      in      Transform   transform,  /* Joint transform */
+//              bool        currFrame); /* true for current frame,
+//                                         false for previous frame. */
 //
 //
 // Computes fragment shader inputs. The parameters passed to
@@ -161,10 +170,11 @@
 //
 //    FsInput msComputeFsInput(
 //      in      MsContext   context,    /* Context object */
-//      in      MsVertexIn  vertex,     /* if MS_NO_VERTEX_DATA is not set */
-//              uint        index,      /* Vertex index */
+//              uint        vertexIndex, /* Vertex index */
+//      in      MsVertexIn  vertexIn,   /* if MS_NO_VERTEX_DATA is not set */
 //      in      MsVertexOut vertexOut,  /* Final vertex position, etc. */
-//      in      MsShadingIn shading,    /* if MS_NO_SHADING_DATA is not set */
+//              vec2        motionVector, /* if MS_NO_MOTION_VECTORS is not set */
+//      in      MsShadingIn shadingIn,  /* if MS_NO_SHADING_DATA is not set */
 //      in      MsUniformOut uniformOut); /* if MS_NO_UNIFORM_OUTPUT is not set */
 #ifndef MS_RENDER_INSTANCE
 #define MS_RENDER_INSTANCE
@@ -287,11 +297,10 @@ bool msMeshletHasDualIndexing(in Meshlet meshlet) {
 
 // Helper to load primitive indices
 uvec3 msLoadPrimitive(in MsContext context, in Meshlet meshlet, uint index) {
-  uint64_t address = meshletComputeAddress(
-    context.invocation.meshletVa, meshlet.primitiveOffset);
+  uint64_t address = meshletComputeAddress(context.invocation.meshletVa, meshlet.primitiveOffset);
 
   uvec3 result = uvec3(MeshletPrimitiveDataRef(address).primitives[index]);
-  return context.renderState.faceFlip ? result.xzy : result.xyz;;
+  return ((context.flags & MS_FLAG_FLIP_FACE) != 0u) ? result.xzy : result.xyz;
 }
 
 
@@ -384,7 +393,10 @@ DualQuat msLoadJointDualQuat(in Meshlet meshlet, uint joint) {
 }
 
 // Loads local joints into shared memory.
-void msLoadLocalJointsFromMemory(in MsContext context, in Meshlet meshlet, uint32_t jointSet) {
+void msLoadLocalJointsFromMemory(
+  in    MsContext                       context,
+  in    Meshlet                         meshlet,
+        uint32_t                        jointSet) {
   MeshSkinningRef skinningBuffer = MeshSkinningRef(context.invocation.skinningVa);
   uint jointIndex = uint(meshlet.jointIndex);
 
@@ -538,7 +550,9 @@ bool msCullPrimitive(in MsContext context, uvec3 indices) {
   // Perform back-face culling first. Doing this may be useful when
   // rendering heavily-animated objects for which cone culling is
   // not an option.
-  if (context.renderState.cullMode != FACE_CULL_MODE_NONE) {
+  uint cullMode = context.flags & MS_FLAG_CULL_FACE_ANY;
+
+  if (cullMode != 0u) {
     vec2 ab = b.xy - a.xy;
     vec2 ac = c.xy - a.xy;
 
@@ -546,7 +560,7 @@ bool msCullPrimitive(in MsContext context, uvec3 indices) {
 
     float face = z.x - z.y;
 
-    if (context.renderState.cullMode == FACE_CULL_MODE_CCW)
+    if (cullMode == MS_FLAG_CULL_FACE_CCW)
       face = -face;
 
     if (face <= 0.0f)
@@ -584,7 +598,7 @@ bool msCullPrimitive(in MsContext context, uvec3 indices) {
 // Morph target weight data and mask. We will discard any morph
 // targets with a weight of zero in order to speed up processing.
 shared MeshletMorphTarget msMorphTargetMetadataShared[MAX_MORPH_TARGET_COUNT];
-shared float msMorphTargetWeightsShared[MAX_MORPH_TARGET_COUNT];
+shared uint msMorphTargetWeightsShared[MAX_MORPH_TARGET_COUNT];
 
 shared uint msMorphTargetCountShared;
 
@@ -619,21 +633,29 @@ uint msAllocateMorphTarget() {
 }
 
 
-// Loads morph target weight from the instance buffer
-// and converts it to a normalized signed float.
-float msLoadMorphTargetWeight(in MsContext context, uint32_t weightSet, uint32_t weightIndex) {
+// Loads morph target weights from the instance buffer for both
+// the current and previous frame, if motion vectors are enabled.
+uint msLoadMorphTargetWeights(in MsContext context, uint32_t weightIndex) {
   InstanceWeightBufferIn weightBuffer = InstanceWeightBufferIn(
     context.invocation.instanceNode.propertyBuffer +
     context.invocation.instanceInfo.weightOffset);
-  uint16_t weight = uint16_t(weightBuffer.weights[weightIndex + weightSet * context.invocation.instanceInfo.weightCount]);
-  return unpackSnorm2x16(uint(weight)).x;
+
+  u16vec2 packedWeights;
+  packedWeights.x = uint16_t(weightBuffer.weights[weightIndex]);
+  packedWeights.y = uint16_t(0u);
+
+#ifndef MS_NO_MOTION_VECTORS
+  packedWeights.y = uint16_t(weightBuffer.weights[weightIndex + context.invocation.instanceInfo.weightCount]);
+#endif
+
+  return packUint2x16(packedWeights);
 }
 
 
 // Load morph target weights into shared memory and generate a
 // precise mask of morph targets that influence the meshlets.
 // Any morph targets with a weight of zero will be disabled.
-uint msLoadMorphTargetMetadataFromMemory(in MsContext context, in Meshlet meshlet, uint32_t weightSet) {
+uint msLoadMorphTargetMetadataFromMemory(in MsContext context, in Meshlet meshlet) {
   // Fast path, no morph targets affect this mesh at all
   if (meshlet.morphTargetCount == 0)
     return 0;
@@ -645,20 +667,20 @@ uint msLoadMorphTargetMetadataFromMemory(in MsContext context, in Meshlet meshle
   MS_LOOP_WORKGROUP(index, meshlet.morphTargetCount, meshlet.morphTargetCount) {
     MeshletMorphTarget metadata = morphTargets.metadata[index];
 
-    float weight = msLoadMorphTargetWeight(context, weightSet, uint(metadata.targetIndex));
+    uint packedWeights = msLoadMorphTargetWeights(context, uint32_t(metadata.targetIndex));
+    vec2 actualWeights = unpackSnorm2x16(packedWeights);
 
-    if (abs(weight) > 0.0001f) {
+    if (max(abs(actualWeights.x), abs(actualWeights.y)) > 0.0001f) {
       uint index = msAllocateMorphTarget();
 
       if (index < MAX_MORPH_TARGET_COUNT) {
         msMorphTargetMetadataShared[index] = metadata;
-        msMorphTargetWeightsShared[index] = weight;
+        msMorphTargetWeightsShared[index] = packedWeights;
       }
     }
   }
 
   barrier();
-
   return min(msMorphTargetCountShared, MAX_MORPH_TARGET_COUNT);
 }
 
@@ -696,15 +718,16 @@ int msScanMorphTargetVertexMask(in MeshletMorphTarget morphTarget, uint vertexIn
 // data.
 #define MS_DEFINE_MORPH_FUNCTION(function, type, call)                    \
 void function(in MsContext context, in Meshlet meshlet,                   \
-    inout type variable, uint vertexIndex, uint morphTargetCount) {       \
+    inout type variable, uint vertexIndex, uint morphTargetCount,         \
+    uint weightSet) {                                                     \
   MsInputMorphDataRef morphData = msGetMeshletMorphData(context, meshlet);\
   for (uint i = 0; i < morphTargetCount; i++) {                           \
     MeshletMorphTarget target = msMorphTargetMetadataShared[i];           \
-    float weight = msMorphTargetWeightsShared[i];                         \
+    vec2 weights = unpackSnorm2x16(msMorphTargetWeightsShared[i]);        \
     int dataIndex = msScanMorphTargetVertexMask(target, vertexIndex);     \
     if (dataIndex >= 0) {                                                 \
       MsMorphIn delta = morphData.vertices[dataIndex + target.dataIndex]; \
-      call(variable, delta, weight);                                      \
+      call(variable, delta, weights[weightSet]);                          \
     }                                                                     \
   }                                                                       \
 }
@@ -727,6 +750,39 @@ MS_DEFINE_MORPH_FUNCTION(msMorphCombinedData, MsCombinedIn, msMorphCombined)
 #endif // MS_COMBINED_DATA
 
 #endif // MS_NO_MORPH_DATA
+
+
+#ifndef MS_NO_MOTION_VECTORS
+// Shared motion vectors, as packed normalized signed integers. A value
+// of 1.0 indicates a motion from the very edge of the negative side of
+// the viewport to the very edge of the positive side.
+shared uint32_t msMotionVectorsShared[MAX_VERT_COUNT];
+
+void msStoreMotionVector(uint32_t index, vec2 vector) {
+  msMotionVectorsShared[index] = packSnorm2x16(vector);
+}
+
+vec2 msLoadMotionVector(uint32_t index) {
+  return unpackSnorm2x16(msMotionVectorsShared[index]);
+}
+
+// Convenience method to compute a motion vector
+vec2 msComputeMotionVector(vec4 oldPos, vec4 newPos) {
+  vec2 oldxy = oldPos.xy / oldPos.w;
+  vec2 newxy = newPos.xy / newPos.w;
+
+  return 0.5f * (newxy - oldxy);
+}
+
+// Checks whether motion vectors can be used for the current instance.
+// This is the case if the instance has been updated in the current
+// frame and does not have the flag to explicitly disable them.
+bool msInstanceUsesMotionVectors(in MsContext context) {
+  return (context.flags & MS_FLAG_NO_MOTION_VECTORS) == 0u
+      && (context.invocation.instanceNode.updateFrameId == context.invocation.frameId)
+      && (context.invocation.instanceNode.flags & INSTANCE_FLAG_NO_MOTION_VECTORS) == 0u;
+}
+#endif // MS_NO_MOTION_VECTORS
 
 
 // Shared index data array. When written, this is already in output
@@ -794,13 +850,6 @@ void msMain() {
   if (hasDualIndexing)
     msLoadDualVertexIndicesFromMemory(context, meshlet);
 
-  // If local joints are used for this meshlet, load all joints
-  // into shared memory so we can reuse them later on.
-#ifndef MS_NO_SKINNING
-  JointInfluenceRef jointData = msGetJointInfluenceData(context, meshlet);
-  msLoadLocalJointsFromMemory(context, meshlet, 0u);
-#endif
-
   // Insert a barrier here since LDS initialization needs
   // to have finished before processing morph targets.
   barrier();
@@ -809,7 +858,7 @@ void msMain() {
   // the morph target weights provided by the application.
   uint morphTargetCount = 0;
 #ifndef MS_NO_MORPH_DATA
-  morphTargetCount = msLoadMorphTargetMetadataFromMemory(context, meshlet, 0u);
+  morphTargetCount = msLoadMorphTargetMetadataFromMemory(context, meshlet);
 #endif // MS_NO_MORPH_DATA
 
   // If any morph targets are active, we cannot compact vertex
@@ -821,6 +870,59 @@ void msMain() {
     ? meshlet.vertexCount
     : meshlet.vertexDataCount;
 
+#ifndef MS_NO_SKINNING
+  // If local joints are used for this meshlet, we will need to load
+  // all joints into shared memory so we can reuse them later on.
+  JointInfluenceRef jointData = msGetJointInfluenceData(context, meshlet);
+#endif // MS_NO_SKINNING
+
+#ifndef MS_NO_MOTION_VECTORS
+  // Check whether the instance or render pass have motion vectors
+  // disabled for the current frame for whatever reason.
+  bool useMotionVectors = msInstanceUsesMotionVectors(context);
+  
+  // If motion vectors are enabled, start by using the previous frame's
+  // set of joints, and compute vertex positions in the same way we would
+  // for the current frame.
+  if (useMotionVectors) {
+#ifndef MS_NO_SKINNING
+    msLoadLocalJointsFromMemory(context, meshlet, 1u);
+    barrier();
+#endif // MS_NO_SKINNING
+
+    MS_LOOP_WORKGROUP(index, outputVertexCount, MAX_VERT_COUNT) {
+      uint inputIndex = index;
+
+      if (hasUnpackedVertexOutputs)
+        inputIndex = msGetDualVertexIndex(index).x;
+
+      MsVertexIn vertexIn = msVertexInputShared[inputIndex];
+#ifndef MS_NO_MORPH_DATA
+      msMorphVertexData(context, meshlet, vertexIn, index, morphTargetCount, 1u);
+#endif // MS_NO_MORPH_DATA
+
+#ifndef MS_NO_SKINNING
+      Transform jointTransform = msComputeJointTransform(context, meshlet, jointData, inputIndex);
+#endif // MS_NO_SKINNING
+
+      msVertexDataShared[index].position = msComputeVertexOutput(context
+        , index, vertexIn
+#ifndef MS_NO_SKINNING
+        , jointTransform
+#endif // MS_NO_SKINNING
+        , false).position;
+    }
+  }
+
+  barrier();
+#endif // MS_NO_MOTION_VECTORS
+
+#ifndef MS_NO_SKINNING
+  // Load the current frame's joints into shared memors
+  msLoadLocalJointsFromMemory(context, meshlet, 0u);
+  barrier();
+#endif
+
   // Compute vertex positions and write the results to shared memory
   MS_LOOP_WORKGROUP(index, outputVertexCount, MAX_VERT_COUNT) {
     uint inputIndex = index;
@@ -830,19 +932,34 @@ void msMain() {
 
     MsVertexIn vertexIn = msVertexInputShared[inputIndex];
 #ifndef MS_NO_MORPH_DATA
-    msMorphVertexData(context, meshlet, vertexIn, index, morphTargetCount);
+    msMorphVertexData(context, meshlet, vertexIn, index, morphTargetCount, 0u);
 #endif // MS_NO_MORPH_DATA
 
 #ifndef MS_NO_SKINNING
     Transform jointTransform = msComputeJointTransform(context, meshlet, jointData, inputIndex);
 #endif
 
-    msVertexDataShared[index] = msComputeVertexPos(context
+    MsVertexOut newVertex = msComputeVertexOutput(context
       , index, vertexIn
 #ifndef MS_NO_SKINNING
       , jointTransform
 #endif // MS_NO_SKINNING
-    );
+      , true);
+
+#ifndef MS_NO_MOTION_VECTORS
+    vec2 motionVector = vec2(0.0f);
+
+    if (useMotionVectors) {
+      vec4 oldPos = vec4(msVertexDataShared[index].position);
+      vec4 newPos = vec4(newVertex.position);
+
+      motionVector = msComputeMotionVector(oldPos, newPos);
+    }
+
+    msStoreMotionVector(index, motionVector);
+#endif
+
+    msVertexDataShared[index] = newVertex;
   }
 
   barrier();
@@ -936,7 +1053,7 @@ void msMain() {
 #endif // MS_NO_SHADING_DATA
 
 #ifndef MS_NO_MORPH_DATA
-    msMorphCombinedData(context, meshlet, vertexIn, index, morphTargetCount);
+    msMorphCombinedData(context, meshlet, vertexIn, index, morphTargetCount, 0u);
 #endif // MS_NO_MORPH_DATA
 #endif // MS_COMBINED_DATA
 
@@ -946,6 +1063,9 @@ void msMain() {
       , vertexIn.vertex
 #endif // MS_NO_VERTEX_DATA
       , vertexOut
+#ifndef MS_NO_MOTION_VECTORS
+      , msLoadMotionVector(outputIndex)
+#endif
 #ifndef MS_NO_SHADING_DATA
       , vertexIn.shading
 #endif // MS_NO_SHADING_DATA
