@@ -22,19 +22,6 @@
 
 using namespace as;
 
-struct SceneConstants {
-  Projection projection;
-  QuatTransform viewTransform;
-  ViewFrustum viewFrustum;
-};
-
-
-struct InstanceConstants {
-  QuatTransform modelTransform;
-  float morphWeights[4];
-};
-
-
 struct PushConstants {
   uint64_t drawListVa;
   uint64_t passInfoVa;
@@ -95,6 +82,7 @@ public:
 
     // Initialize scene objects
     m_sceneNodeManager = std::make_unique<GfxSceneNodeManager>(m_device);
+    m_scenePassManager = std::make_unique<GfxScenePassManager>(m_device);
     m_sceneInstanceManager = std::make_unique<GfxSceneInstanceManager>(m_device);
     m_scenePassGroup = std::make_unique<GfxScenePassGroupBuffer>(m_device);
     m_scenePipelines = std::make_unique<GfxScenePipelines>(m_device);
@@ -169,21 +157,10 @@ public:
 
       Vector3D up = Vector3D(0.0f, 1.0f, 0.0f);
 
-      QuatTransform camera = computeViewTransform(m_eye, normalize(m_dir), up);
-
-      GfxScenePassInfo passInfo = { };
-      passInfo.flags = GfxScenePassFlag::eEnableLighting
-        | GfxScenePassFlag::ePerformOcclusionTest
-        | GfxScenePassFlag::eIgnoreOcclusionTest;
-      passInfo.projection = computePerspectiveProjection(
-        Vector2D(1280.0f, 720.0f), 2.0f, 0.001f);
-      passInfo.currTransform = camera;
-      passInfo.prevTransform = camera;
-      passInfo.viewDistanceLimit = 0.0f;
-      passInfo.lodDistanceScale = 1.0f;
-      passInfo.frustum = computeViewFrustum(passInfo.projection);
-
-      GfxScratchBuffer passBuffer = context->writeScratch(GfxUsage::eShaderResource, passInfo);
+      m_scenePassManager->updateRenderPassProjection(m_scenePassIndex,
+        computePerspectiveProjection(Vector2D(1280.0f, 720.0f), 2.0f, 0.001f));
+      m_scenePassManager->updateRenderPassTransform(m_scenePassIndex,
+        computeViewTransform(m_eye, normalize(m_dir), up), false);
 
       uint32_t drawCount = 1024;
 
@@ -198,6 +175,8 @@ public:
         *m_scenePipelines, m_frameId, m_frameId - 1);
       m_sceneInstanceManager->commitUpdates(context,
         *m_scenePipelines, m_frameId, m_frameId - 1);
+      m_scenePassManager->commitUpdates(context,
+        *m_scenePipelines, m_frameId, m_frameId - 1);
       m_scenePassGroup->commitUpdates(context,
         m_frameId, m_frameId - 1);
 
@@ -205,8 +184,11 @@ public:
         GfxUsage::eShaderStorage | GfxUsage::eTransferDst, GfxShaderStage::eCompute,
         GfxUsage::eShaderStorage | GfxUsage::eShaderResource, GfxShaderStage::eCompute);
 
+      m_scenePassManager->processPasses(context,
+        *m_scenePipelines, *m_sceneNodeManager, m_frameId);
+
       GfxScenePassGroupInfo passGroup = { };
-      passGroup.passBufferVa = passBuffer.getGpuAddress();
+      passGroup.passBufferVa = m_scenePassManager->getGpuAddress();
       passGroup.rootNodeCount = 1;
       passGroup.rootNodes = &m_sceneRootRef;
 
@@ -219,7 +201,7 @@ public:
         *m_scenePipelines, *m_sceneNodeManager, *m_scenePassGroup, m_frameId);
 
       m_sceneDrawBuffer->generateDraws(context, *m_scenePipelines,
-        passBuffer.getGpuAddress(), *m_sceneNodeManager, *m_sceneInstanceManager, *m_scenePassGroup,
+        m_scenePassManager->getGpuAddress(), *m_sceneNodeManager, *m_sceneInstanceManager, *m_scenePassGroup,
         m_frameId, 0x1, 0);
 
       GfxCommandSubmission submission;
@@ -228,7 +210,7 @@ public:
 
       m_device->submit(GfxQueue::eGraphics, std::move(submission));
 
-      m_presenter->present([this, &passBuffer] (const GfxPresenterContext& args) {
+      m_presenter->present([this] (const GfxPresenterContext& args) {
         GfxContext context = args.getContext();
         GfxImage image = args.getImage();
 
@@ -270,7 +252,7 @@ public:
 
           PushConstants pushConstants = { };
           pushConstants.drawListVa = m_sceneDrawBuffer->getGpuAddress();
-          pushConstants.passInfoVa = passBuffer.getGpuAddress();
+          pushConstants.passInfoVa = m_scenePassManager->getGpuAddress();
           pushConstants.passGroupVa = m_scenePassGroup->getGpuAddress();
           pushConstants.instanceVa = m_sceneInstanceManager->getGpuAddress();
           pushConstants.sceneVa = m_sceneNodeManager->getGpuAddress();
@@ -354,6 +336,7 @@ private:
   std::unique_ptr<GfxSceneInstanceManager>    m_instanceManager;
 
   std::unique_ptr<GfxSceneNodeManager>        m_sceneNodeManager;
+  std::unique_ptr<GfxScenePassManager>        m_scenePassManager;
   std::unique_ptr<GfxSceneInstanceManager>    m_sceneInstanceManager;
   std::unique_ptr<GfxScenePassGroupBuffer>    m_scenePassGroup;
   std::unique_ptr<GfxScenePipelines>          m_scenePipelines;
@@ -362,6 +345,8 @@ private:
   uint32_t              m_sceneInstanceNode   = 0u;
   GfxSceneNodeRef       m_sceneInstanceRef    = { };
   GfxSceneNodeRef       m_sceneRootRef        = { };
+
+  uint16_t              m_scenePassIndex      = { };
 
   void updateAnimation() {
     if (m_geometry->animations.empty())
@@ -472,8 +457,13 @@ private:
     m_sceneInstanceRef = instanceRef;
     m_sceneRootRef = rootRef;
 
-    uint16_t passIndex = 0;
-    m_scenePassGroup->setPasses(1, &passIndex);
+    GfxScenePassDesc passDesc;
+    passDesc.flags = GfxScenePassFlag::eEnableLighting |
+      GfxScenePassFlag::ePerformOcclusionTest;
+    passDesc.typeMask = ~0u;
+
+    m_scenePassIndex = m_scenePassManager->createRenderPass(passDesc);
+    m_scenePassGroup->setPasses(1, &m_scenePassIndex);
   }
 
 

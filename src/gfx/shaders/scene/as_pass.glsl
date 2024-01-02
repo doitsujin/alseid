@@ -68,7 +68,7 @@ struct PassInfo {
 // as well as global information that may apply to all passes.
 layout(buffer_reference, buffer_reference_align = 16, scalar)
 readonly buffer PassInfoBufferIn {
-  // vec4          cubeFaceRotations[6];
+  vec4          cubeFaceRotations[6];
   PassInfo      passes[];
 };
 
@@ -76,7 +76,7 @@ readonly buffer PassInfoBufferIn {
 // Read-write variant of render pass info buffer.
 layout(buffer_reference, buffer_reference_align = 16, scalar)
 buffer PassInfoBuffer {
-  // vec4          cubeFaceRotations[6];
+  vec4          cubeFaceRotations[6];
   PassInfo      passes[];
 };
 
