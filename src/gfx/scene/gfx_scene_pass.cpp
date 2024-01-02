@@ -192,4 +192,389 @@ uint32_t GfxScenePassGroupBuffer::allocStorage(
   return offset;
 }
 
+
+
+
+GfxScenePassManager::GfxScenePassManager(
+        GfxDevice                     device)
+: m_device(std::move(device)) {
+
+}
+
+
+GfxScenePassManager::~GfxScenePassManager() {
+
+}
+
+
+uint16_t GfxScenePassManager::createRenderPass(
+  const GfxScenePassDesc&             desc) {
+  uint16_t index = uint16_t(m_passAllocator.allocate());
+
+  auto& passInfo = m_passData.emplace(index);
+  passInfo.flags = desc.flags;
+  passInfo.dirtyFrameId = ~0u;
+  passInfo.passTypeMask = desc.typeMask;
+  passInfo.cameraNode = desc.cameraNode;
+  passInfo.cameraJoint = desc.cameraJoint;
+  passInfo.mirrorNode = desc.mirrorNode;
+  passInfo.mirrorJoint = desc.mirrorJoint;
+  passInfo.lodDistanceScale = 1.0f;
+
+  GfxScenePassFlags flags = desc.flags;
+  flags -= GfxScenePassFlag::eKeepMetadata;
+  flags |= GfxScenePassFlag::eIgnoreOcclusionTest;
+
+  addDirtyPass(index, flags);
+  return index;
+}
+
+
+void GfxScenePassManager::freeRenderPass(
+        uint16_t                      pass) {
+  // Instead of destroying the pass object, just initialize it with
+  // default properties so that update shaders can safely skip it.
+  auto& passInfo = m_passData[pass];
+
+  // Keep the dirty frame ID since we abuse this for dirty tracking
+  uint32_t dirtyFrameId = passInfo.dirtyFrameId;
+
+  passInfo = GfxScenePassInfo();
+  passInfo.dirtyFrameId = dirtyFrameId;
+  passInfo.cameraNode = -1;
+  passInfo.mirrorNode = -1;
+
+  m_passAllocator.free(pass);
+
+  addDirtyPass(pass, 0u);
+}
+
+
+void GfxScenePassManager::updateRenderPassMetadata(
+        uint16_t                      pass,
+  const GfxScenePassDesc&             desc) {
+  auto& passInfo = m_passData[pass];
+  passInfo.flags = desc.flags;
+  passInfo.passTypeMask = desc.typeMask;
+  passInfo.cameraNode = desc.cameraNode;
+  passInfo.cameraJoint = desc.cameraJoint;
+  passInfo.mirrorNode = desc.mirrorNode;
+  passInfo.mirrorJoint = desc.mirrorJoint;
+
+  GfxScenePassFlags flags = desc.flags;
+  flags -= GfxScenePassFlag::eKeepMetadata;
+  flags |= GfxScenePassFlag::eIgnoreOcclusionTest;
+
+  addDirtyPass(pass, flags);
+}
+
+
+void GfxScenePassManager::updateRenderPassProjection(
+        uint16_t                      pass,
+  const Projection&                   projection) {
+  auto& passInfo = m_passData[pass];
+  passInfo.projection = projection;
+
+  if (!(passInfo.flags & GfxScenePassFlag::eKeepProjection))
+    addDirtyPass(pass, passInfo.flags | GfxScenePassFlag::eIgnoreOcclusionTest);
+}
+
+
+void GfxScenePassManager::updateRenderPassTransform(
+        uint16_t                      pass,
+  const QuatTransform&                transform,
+        bool                          cut) {
+  auto& passInfo = m_passData[pass];
+  passInfo.viewTransform = transform;
+
+  GfxScenePassFlags flags = passInfo.flags;
+
+  if (cut)
+    flags |= GfxScenePassFlag::eIgnoreOcclusionTest;
+
+  if (!(flags & GfxScenePassFlag::eKeepViewTransform))
+    addDirtyPass(pass, flags);
+}
+
+
+void GfxScenePassManager::updateRenderPassMirrorPlane(
+        uint16_t                      pass,
+  const Vector4D&                     plane,
+        bool                          cut) {
+  auto& passInfo = m_passData[pass];
+  passInfo.mirrorPlane = plane;
+
+  GfxScenePassFlags flags = passInfo.flags;
+
+  if (cut)
+    flags |= GfxScenePassFlag::eIgnoreOcclusionTest;
+
+  if (!(flags & GfxScenePassFlag::eKeepMirrorPlane))
+    addDirtyPass(pass, flags);
+}
+
+
+void GfxScenePassManager::updateRenderPassViewDistance(
+        uint16_t                      pass,
+        float                         viewDistance) {
+  auto& passInfo = m_passData[pass];
+  passInfo.viewDistanceLimit = viewDistance;
+
+  if (!(passInfo.flags & GfxScenePassFlag::eKeepViewDistance))
+    addDirtyPass(pass, passInfo.flags);
+}
+
+
+void GfxScenePassManager::updateRenderPassLodSelection(
+        uint16_t                      pass,
+        float                         factor) {
+  auto& passInfo = m_passData[pass];
+  passInfo.lodDistanceScale = factor;
+
+  if (!(passInfo.flags & GfxScenePassFlag::eKeepViewDistance))
+    addDirtyPass(pass, passInfo.flags);
+}
+
+
+void GfxScenePassManager::updateRenderPassViewportLayer(
+        uint16_t                      pass,
+        uint32_t                      viewport,
+        uint32_t                      layer) {
+  auto& passInfo = m_passData[pass];
+  passInfo.viewportIndex = viewport;
+  passInfo.layerIndex = layer;
+
+  if (!(passInfo.flags & GfxScenePassFlag::eKeepViewportLayerIndex))
+    addDirtyPass(pass, passInfo.flags);
+}
+
+
+void GfxScenePassManager::updateRenderPassViewportRegion(
+        uint16_t                      pass,
+  const Offset2D&                     offset,
+  const Extent2D&                     extent) {
+  auto& passInfo = m_passData[pass];
+  passInfo.viewportOffset = offset;
+  passInfo.viewportExtent = extent;
+
+  if (!(passInfo.flags & GfxScenePassFlag::eKeepViewportRegion))
+    addDirtyPass(pass, passInfo.flags);
+}
+
+
+void GfxScenePassManager::commitUpdates(
+  const GfxContext&                   context,
+  const GfxScenePipelines&            pipelines,
+        uint32_t                      currFrameId,
+        uint32_t                      lastFrameId) {
+  cleanupGpuBuffers(lastFrameId);
+
+  context->beginDebugLabel("Update render passes", 0xff96c096u);
+  resizeBuffer(context, m_passAllocator.getCount(), currFrameId);
+
+  if (!m_dirtyList.empty())
+    dispatchHostCopy(context, pipelines, currFrameId);
+
+  dispatchUpdateListInit(context, pipelines);
+  context->endDebugLabel();
+}
+
+
+void GfxScenePassManager::processPasses(
+  const GfxContext&                   context,
+  const GfxScenePipelines&            pipelines,
+  const GfxSceneNodeManager&          nodeManager,
+        uint32_t                      currFrameId) {
+  context->beginDebugLabel("Process render passes", 0xff78f0ff);
+  context->beginDebugLabel("Scan pass list", 0xffb4f6ff);
+
+  GfxPassInfoUpdatePrepareArgs prepArgs = { };
+  prepArgs.passInfoVa = getGpuAddress();
+  prepArgs.passListVa = getGpuAddress() + m_bufferUpdateOffset;
+  prepArgs.frameId = currFrameId;
+  prepArgs.passCount = m_passAllocator.getCount();
+
+  pipelines.prepareRenderPassUpdates(context, prepArgs);
+
+  context->memoryBarrier(
+    GfxUsage::eShaderStorage | GfxUsage::eShaderResource, GfxShaderStage::eCompute,
+    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
+
+  context->endDebugLabel();
+
+  context->beginDebugLabel("Execute update", 0xffb4f6ff);
+
+  GfxPassInfoUpdateExecuteArgs execArgs = { };
+  execArgs.passInfoVa = getGpuAddress();
+  execArgs.passListVa = getGpuAddress() + m_bufferUpdateOffset;
+  execArgs.sceneVa = nodeManager.getGpuAddress();
+  execArgs.frameId = currFrameId;
+
+  GfxDescriptor dispatch = m_buffer->getDescriptor(GfxUsage::eParameterBuffer,
+    m_bufferUpdateOffset, sizeof(GfxDispatchArgs));
+  pipelines.executeRenderPassUpdates(context, dispatch, execArgs);
+
+  context->memoryBarrier(
+    GfxUsage::eShaderStorage | GfxUsage::eShaderResource, GfxShaderStage::eCompute,
+    GfxUsage::eShaderResource, GfxShaderStage::eCompute | GfxShaderStage::eTask | GfxShaderStage::eMesh);
+
+  context->endDebugLabel();
+  context->endDebugLabel();
+}
+
+
+void GfxScenePassManager::resizeBuffer(
+        GfxContext                    context,
+        uint32_t                      passCount,
+        uint32_t                      currFrameId) {
+  // 1/sqrt = sin(pi/4) = cos(pi/4)
+  constexpr float f = 0.7071067812f;
+
+  // Pad pass count so that we avoid frequent reallocations
+  passCount = align(passCount, 1024u);
+
+  uint64_t passDataSize = align<uint64_t>(sizeof(GfxScenePassBufferHeader) + sizeof(GfxScenePassInfo) * passCount, 256u);
+  uint64_t passListSize = align<uint64_t>(sizeof(GfxSceneNodeListHeader) + sizeof(uint32_t) * passCount, 256u);
+
+  uint64_t newSize = passDataSize + passListSize;
+  uint64_t oldSize = m_buffer ? m_buffer->getDesc().size : uint64_t(0u);
+
+  if (newSize <= oldSize)
+    return;
+
+  GfxBufferDesc bufferDesc;
+  bufferDesc.debugName = "Render pass buffer";
+  bufferDesc.usage = GfxUsage::eParameterBuffer |
+    GfxUsage::eTransferDst |
+    GfxUsage::eTransferSrc |
+    GfxUsage::eShaderResource |
+    GfxUsage::eShaderStorage;
+  bufferDesc.size = newSize;
+  bufferDesc.flags = GfxBufferFlag::eDedicatedAllocation;
+
+  GfxBuffer newBuffer = m_device->createBuffer(bufferDesc, GfxMemoryType::eAny);
+  GfxBuffer oldBuffer = std::move(m_buffer);
+
+  // Initialize the buffer with a fixed header
+  GfxScenePassBufferHeader header = { };
+  header.cubeFaceRotations[0] = Quaternion(0.0f, 0.0f,    f,    f);  /* +X */
+  header.cubeFaceRotations[1] = Quaternion(0.0f, 0.0f,   -f,    f);  /* -X */
+  header.cubeFaceRotations[2] = Quaternion(   f, 0.0f, 0.0f,    f);  /* +Y */
+  header.cubeFaceRotations[3] = Quaternion(  -f, 0.0f, 0.0f,    f);  /* -Y */
+  header.cubeFaceRotations[4] = Quaternion(0.0f, 0.0f, 1.0f, 0.0f);  /* +Z */
+  header.cubeFaceRotations[5] = Quaternion(0.0f, 0.0f, 0.0f, 1.0f);  /* -Z */
+
+  // Initialize buffer and copy existing pass infos from the old buffer.
+  GfxScratchBuffer scratch = context->writeScratch(GfxUsage::eTransferSrc, header);
+  context->copyBuffer(newBuffer, 0, scratch.buffer, scratch.offset, scratch.size);
+
+  if (oldBuffer) {
+    context->copyBuffer(
+      newBuffer, sizeof(header),
+      oldBuffer, sizeof(header),
+      m_bufferUpdateOffset - sizeof(header));
+  }
+
+  uint64_t clearOffset = oldBuffer ? m_bufferUpdateOffset : sizeof(header);
+  context->clearBuffer(newBuffer, clearOffset, newSize - clearOffset);
+
+  context->memoryBarrier(
+    GfxUsage::eTransferDst, 0,
+    GfxUsage::eTransferSrc | GfxUsage::eShaderStorage | GfxUsage::eShaderResource,
+    GfxShaderStage::eCompute);
+
+  m_bufferUpdateOffset = passDataSize;  
+  m_buffer = std::move(newBuffer);
+
+  if (oldBuffer)
+    m_gpuBuffers.insert({ currFrameId, std::move(oldBuffer) });
+}
+
+
+void GfxScenePassManager::dispatchUpdateListInit(
+  const GfxContext&                   context,
+  const GfxScenePipelines&            pipelines) {
+  pipelines.initRenderPassUpdateList(context,
+    getGpuAddress() + m_bufferUpdateOffset);
+}
+
+
+void GfxScenePassManager::dispatchHostCopy(
+  const GfxContext&                   context,
+  const GfxScenePipelines&            pipelines,
+        uint32_t                      currFrameId) {
+  GfxScratchBuffer hostPassInfos = context->allocScratch(
+    GfxUsage::eCpuWrite | GfxUsage::eShaderResource,
+    sizeof(GfxScenePassInfo) * m_dirtyList.size());
+
+  GfxScratchBuffer hostPassIndices = context->allocScratch(
+    GfxUsage::eCpuWrite | GfxUsage::eShaderResource,
+    sizeof(uint16_t) * m_dirtyList.size());
+
+  // Populate scratch buffers
+  auto passInfos = reinterpret_cast<GfxScenePassInfo*>(hostPassInfos.map(GfxUsage::eCpuWrite, 0));
+  auto passIndices = reinterpret_cast<uint16_t*>(hostPassIndices.map(GfxUsage::eCpuWrite, 0));
+
+  for (size_t i = 0; i < m_dirtyList.size(); i++) {
+    const auto& dirty = m_dirtyList[i];
+
+    GfxScenePassInfo passInfo = m_passData[dirty.pass];
+    passInfo.flags = dirty.flags;
+    passInfo.dirtyFrameId = currFrameId;
+
+    passInfos[i] = passInfo;
+    passIndices[i] = dirty.pass;
+
+    m_passData[dirty.pass].dirtyFrameId = ~0u;
+  }
+
+  // Dispatch host update shader
+  GfxPassInfoUpdateCopyArgs args = { };
+  args.dstPassInfoVa = getGpuAddress();
+  args.srcPassIndexVa = hostPassIndices.getGpuAddress();
+  args.srcPassInfoVa = hostPassInfos.getGpuAddress();
+  args.frameId = currFrameId;
+  args.passUpdateCount = uint32_t(m_dirtyList.size());
+
+  pipelines.copyRenderPassInfos(context, args);
+
+  m_dirtyList.clear();
+}
+
+
+void GfxScenePassManager::cleanupGpuBuffers(
+        uint32_t                      lastFrameId) {
+  m_gpuBuffers.erase(lastFrameId);
+}
+
+
+void GfxScenePassManager::addDirtyPass(
+        uint16_t                      pass,
+        GfxScenePassFlags             flags) {
+  std::lock_guard lock(m_dirtyMutex);
+  auto& passInfo = m_passData[pass];
+
+  // Use the dirty frame ID field as an index into the dirty list.
+  // If the index is invalid, append a new element.
+  uint32_t dirtyCount = m_dirtyList.size();
+
+  if (passInfo.dirtyFrameId < dirtyCount) {
+    auto& dirty = m_dirtyList[passInfo.dirtyFrameId];
+    dbg_assert(dirty.pass == pass);
+
+    // Logically AND all the flags to ensure that some potentially undesired
+    // keep flags get masked out, and OR special flags back in.
+    GfxScenePassFlags specialFlags = GfxScenePassFlag::eIgnoreOcclusionTest;
+
+    dirty.flags &= flags;
+    dirty.flags |= flags & specialFlags;
+  } else {
+    passInfo.dirtyFrameId = dirtyCount;
+
+    auto& dirty = m_dirtyList.emplace_back();
+    dirty.pass = pass;
+    dirty.flags = flags;
+  }
+}
+
 }

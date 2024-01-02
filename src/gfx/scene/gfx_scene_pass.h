@@ -1,6 +1,7 @@
 #pragma once
 
 #include "gfx_scene_node.h"
+#include "gfx_scene_pipelines.h"
 
 namespace as {
 
@@ -130,7 +131,7 @@ struct GfxScenePassInfo {
    *  known up front. Mesh shaders must apply the transform after applying
    *  the initial projection, and clip against the view frustum as necessary. */
   Offset2D viewportOffset;
-  Extent2D viewportSize;
+  Extent2D viewportExtent;
   /** View-space frustum planes. Generally computed directly from the
    *  projection. For cube map passes, the global per-face rotation must
    *  be applied for culling purposes. */
@@ -371,6 +372,274 @@ private:
   static uint32_t allocStorage(
           uint32_t&                     allocator,
           size_t                        size);
+
+};
+
+
+/**
+ * \brief Render pass metadata
+ *
+ * Stores some properties of the render pass which are not expected
+ * to change frequently.
+ */
+struct GfxScenePassDesc {
+  /** Render pass flags. Defines the type and behaviour of the pass,
+   *  as well as info on which parts of the pass are provided by the
+   *  GPU on the fly. */
+  GfxScenePassFlags flags = 0u;
+  /** Application-defined render pass type mask. This can be used to
+   *  mark passes as shadow map or mirror passes, which can be useful
+   *  to lock out specific instances out of certain passes. */
+  uint32_t typeMask = 0u;
+  /** Node to attach the camera to. If negative, the camera will be
+   *  in world space without any further transforms. */
+  int32_t cameraNode = -1;
+  /** Joint to attach the camera to. Ignored if negative or if no node
+   *  is specified, otherwise this refers to an instance joint. */
+  int32_t cameraJoint = -1;
+  /** Node to attach the mirror plane to. If negative, the plane will
+   *  in world space. Ignored if the \c GfxScenePassFlag::eUsesMirrorPlane
+   *  flag is not set. */
+  int32_t mirrorNode = -1;
+  /** Joint to attach the mirror plane to. */
+  int32_t mirrorJoint = -1;
+};
+
+
+/**
+ * \brief Pass buffer header
+ */
+struct GfxScenePassBufferHeader {
+  /** Rotation quaternions to apply to the final view transform
+   *  when rendering cube maps. */
+  std::array<Quat, 6> cubeFaceRotations;
+};
+
+static_assert(sizeof(GfxScenePassBufferHeader) == 96);
+
+
+/**
+ * \brief Render pass manager
+ *
+ * Stores a GPU buffer with render pass properties, and provides methods
+ * to create and update render passes from the application.
+ */
+class GfxScenePassManager {
+
+public:
+
+  GfxScenePassManager(
+          GfxDevice                     device);
+
+  ~GfxScenePassManager();
+
+  /**
+   * \brief Queries GPU address of pass buffer
+   *
+   * Used for culling as well as rendering.
+   * \returns GPU address of render pass buffer.
+   */
+  uint64_t getGpuAddress() {
+    return m_buffer ? m_buffer->getGpuAddress() : uint64_t(0u);
+  }
+
+  /**
+   * \brief Creates a render pass
+   *
+   * \param [in] desc Render pass description
+   * \returns Index of newly created render pass
+   */
+  uint16_t createRenderPass(
+    const GfxScenePassDesc&             desc);
+
+  /**
+   * \brief Frees render pass
+   *
+   * The render pass will be overwritten with a set of default
+   * properties on the GPU buffer in order to ensure safe
+   * operation, and the index will be freed for reuse.
+   * \param [in] pass Render pass index
+   */
+  void freeRenderPass(
+          uint16_t                      pass);
+
+  /**
+   * \brief Updates render pass metadata
+   *
+   * Can be used to change render pass flags or to attach the camera
+   * to a different node on the fly. If any property changes, this
+   * will count as a camera cut, see \c updateRenderPassTransform.
+   * \param [in] pass Render pass index
+   * \param [in] desc Render pass metadata
+   */
+  void updateRenderPassMetadata(
+          uint16_t                      pass,
+    const GfxScenePassDesc&             desc);
+
+  /**
+   * \brief Updates projection
+   *
+   * If the projection differs from the existing one, this will
+   * count as a camera cut, see \c updateRenderPassTransform.
+   * \param [in] pass Render pass index
+   * \param [in] projection New projection
+   */
+  void updateRenderPassProjection(
+          uint16_t                      pass,
+    const Projection&                   projection);
+
+  /**
+   * \brief Updates view space transform
+   *
+   * The transform is given relative to the camera node or joint,
+   * or in world space if no camera node is specified.
+   * \param [in] pass Render pass index
+   * \param [in] transform World to view space transform
+   * \param [in] cut If true, this update will be treated as a camera
+   *    cut, and occlusion culling as well as motion vectors will be
+   *    disabled for this pass for one single frame.
+   */
+  void updateRenderPassTransform(
+          uint16_t                      pass,
+    const QuatTransform&                transform,
+          bool                          cut);
+
+  /**
+   * \brief Updates mirror plane
+   *
+   * \param [in] pass Render pass index
+   * \param [in] plane Plane equation
+   * \param [in] cut Whether to consider this a camera cut,
+   *    see \c updateRenderPassTransform for details.
+   */
+  void updateRenderPassMirrorPlane(
+          uint16_t                      pass,
+    const Vector4D&                     plane,
+          bool                          cut);
+
+  /**
+   * \brief Updates maximum view distance
+   *
+   * \param [in] pass Render pass index
+   * \param [in] viewDistance Maximum view distance. If 0,
+   *    the view distance will be considered infinite.
+   */
+  void updateRenderPassViewDistance(
+          uint16_t                      pass,
+          float                         viewDistance);
+
+  /**
+   * \brief Updates maximum view distance
+   *
+   * \param [in] pass Render pass index
+   * \param [in] factor Distance factor for LOD selection. If less
+   *    than 1.0, this will generally lead to higher geometry LODs
+   *    being used at long view distances.
+   */
+  void updateRenderPassLodSelection(
+          uint16_t                      pass,
+          float                         factor);
+
+  /**
+   * \brief Updates viewport and array layer index
+   *
+   * Can be used to render to a different part of an image in
+   * a multi-pass scenario.
+   * \param [in] pass Render pass index
+   * \param [in] viewport New viewport index
+   * \param [in] layer New layer index
+   */
+  void updateRenderPassViewportLayer(
+          uint16_t                      pass,
+          uint32_t                      viewport,
+          uint32_t                      layer);
+
+  /**
+   * \brief Updates virtual viewport region
+   *
+   * Ignored if the \c GfxScenePassFlag::eUsesViewportRegion flag is
+   * not set for the pass. Can be used when using real viewports is
+   * not an option for whatever reason.
+   * \param [in] pass Render pass index
+   * \param [in] offset Region offset
+   * \param [in] extent Region extent
+   */
+  void updateRenderPassViewportRegion(
+          uint16_t                      pass,
+    const Offset2D&                     offset,
+    const Extent2D&                     extent);
+
+  /**
+   * \brief Commits render pass updates
+   *
+   * Uploads modified pass properties to the GPU.
+   * \param [in] context Context object
+   * \param [in] pipelines Update pipelines
+   * \param [in] currFrameId Current frame ID
+   * \param [in] lastFrameId Last completed frame ID
+   */
+  void commitUpdates(
+    const GfxContext&                   context,
+    const GfxScenePipelines&            pipelines,
+          uint32_t                      currFrameId,
+          uint32_t                      lastFrameId);
+
+  /**
+   * \brief Processes render passes
+   *
+   * Finalizes render pass updates and computes absolute transforms,
+   * mirror planes and view frustums as necessary.
+   * \param [in] context Context object
+   * \param [in] pipelines Update pipelines
+   * \param [in] nodeManager Node manager
+   * \param [in] currFrameId Current frame ID
+   */
+  void processPasses(
+    const GfxContext&                   context,
+    const GfxScenePipelines&            pipelines,
+    const GfxSceneNodeManager&          nodeManager,
+          uint32_t                      currFrameId);
+
+private:
+
+  struct DirtyPass {
+    uint16_t          pass;
+    uint16_t          reserved;
+    GfxScenePassFlags flags;
+  };
+
+  GfxDevice                           m_device;
+  GfxBuffer                           m_buffer;
+  uint64_t                            m_bufferUpdateOffset = 0u;
+
+  std::unordered_map<uint32_t, GfxBuffer> m_gpuBuffers;
+
+  ObjectAllocator                     m_passAllocator;
+  ObjectMap<GfxScenePassInfo, 8u, 8u> m_passData;
+
+  std::mutex                          m_dirtyMutex;
+  std::vector<DirtyPass>              m_dirtyList;
+
+  void resizeBuffer(
+          GfxContext                    context,
+          uint32_t                      passCount,
+          uint32_t                      currFrameId);
+
+  void dispatchUpdateListInit(
+    const GfxContext&                   context,
+    const GfxScenePipelines&            pipelines);
+
+  void dispatchHostCopy(
+    const GfxContext&                   context,
+    const GfxScenePipelines&            pipelines,
+          uint32_t                      currFrameId);
+
+  void cleanupGpuBuffers(
+          uint32_t                      lastFrameId);
+
+  void addDirtyPass(
+          uint16_t                      pass,
+          GfxScenePassFlags             flags);
 
 };
 
