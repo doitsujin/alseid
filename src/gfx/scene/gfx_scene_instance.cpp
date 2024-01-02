@@ -127,6 +127,10 @@ GfxBuffer GfxSceneInstanceBuffer::resizeBuffer(
 
   context->clearBuffer(newBuffer, oldSize, newSize - oldSize);
 
+  context->memoryBarrier(
+    GfxUsage::eTransferDst, 0,
+    GfxUsage::eShaderStorage, GfxShaderStage::eCompute);
+
   m_nodeBuffer = std::move(newBuffer);
   return oldBuffer;
 }
