@@ -77,27 +77,4 @@ uint tsGetOutputCount() {
   return tsOutputIndexLocal;
 }
 
-
-// Tests sphere against a frustum plane. When culling vertices, just
-// pass 0 as the radius. Returns true if the sphere is outside the
-// half-space and should be culled.
-bool tsCullSphere(vec3 center, float radius, vec4 plane) {
-  return plane.w + dot(center, plane.xyz) < -radius;
-}
-
-
-// Tests cone visibility. Returns true if the cone faces away from
-// the camera and should be culled. The cutoff is equivalent to
-// cos(angle / 2).
-bool tsCullCone(vec3 origin, vec3 axis, float cutoff) {
-  // Input vectors may not be normalized. This is equivalent to:
-  // dot(normalize(origin), normalize(axis)) > abs(cutoff)
-  float squareCutoff = cutoff * cutoff;
-  float squareScale  = dot(origin, origin) * dot(axis, axis);
-  float squareDot    = dot(origin, axis);
-        squareDot   *= abs(squareDot);
-
-  return (squareDot > squareCutoff * squareScale);
-}
-
 #endif // TS_COMMON_H

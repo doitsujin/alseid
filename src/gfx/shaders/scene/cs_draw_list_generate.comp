@@ -48,6 +48,21 @@ InstanceNode csLoadInstanceNode(uint32_t instanceIndex) {
 }
 
 
+// Convenience method to transform a model space vertex to view space,
+// including any mirroring etc. from the render pass.
+vec3 csTransformVertex(
+  in    PassInfo                      passInfo,
+  in    Transform                     transform,
+        vec3                          vertex) {
+  vertex = transApply(transform, vertex);
+
+  if ((passInfo.flags & PASS_FLAG_USES_MIRROR_PLANE) != 0u)
+    vertex = planeMirror(passInfo.currMirrorPlane, vertex);
+
+  return vertex;
+}
+
+
 // Helper function to compute the view distance for the purpose of LOD selection.
 // Uses the center of geometry's static AABB rather than the adjusted AABB for
 // consistency regardless of animation.
@@ -55,9 +70,13 @@ float csComputeLodDistance(uint64_t geometryBuffer, in Transform worldTransform)
   PassInfo passInfo = PassInfoBufferIn(globals.passInfoVa).passes[globals.lodSelectionPass];
   GeometryRef geometry = GeometryRef(geometryBuffer);
 
-  vec3 staticCenter = (vec3(geometry.geometry.aabb.lo) + vec3(geometry.geometry.aabb.hi)) / 2.0f;
-  staticCenter = transApply(worldTransform, staticCenter);
-  staticCenter = passTransformToViewSpace(passInfo, staticCenter, ~0u);
+  Transform viewTransform = transChain(passInfo.currTransform.transform, worldTransform);
+
+  vec3 staticCenter = mix(
+    vec3(geometry.geometry.aabb.lo),
+    vec3(geometry.geometry.aabb.hi), 0.5f);
+
+  staticCenter = csTransformVertex(passInfo, viewTransform, staticCenter);
 
   float viewDistanceSq = dot(staticCenter, staticCenter);
   return viewDistanceSq * passInfo.lodDistanceScale * passInfo.lodDistanceScale;
@@ -72,7 +91,7 @@ void csInitDrawInfo() {
   instanceDrawInfo.instanceIndex = 0u;
   instanceDrawInfo.drawCount = 0u;
   instanceDrawInfo.drawIndex = 0u;
-  instanceDrawInfo.viewDistanceSq = 0u;
+  instanceDrawInfo.viewDistanceSq = 0.0f;
   instanceDrawInfo.passMask = 0u;
 }
 
@@ -305,9 +324,6 @@ void csGenerateDraws() {
       SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(globals.sceneVa + scene.nodeTransformOffset);
       Transform worldTransform = nodeTransforms.nodeTransforms[transformIndex].absoluteTransform;
 
-      instanceDrawInfo.viewDistanceSq = csComputeLodDistance(
-        instance.geometryBuffer, worldTransform);
-
       // Compute bit mask of passes to test, then scalarize the pass mask
       // across all invocations. This is generally efficient since the pass
       // masks are not expected to diverge heavily.
@@ -318,33 +334,72 @@ void csGenerateDraws() {
         uint32_t passIndex = findLSB(passMaskUniform);
         uint32_t passBit = 1u << passIndex;
 
-        if ((instanceDrawInfo.passMask & passBit) != 0) {
-          PassInfo passInfo = PassInfoBufferIn(globals.passInfoVa).passes[passGroupGetPassIndex(globals.passGroupVa, passIndex)];
+        // Remap pass index and load render pass metadata
+        passIndex = passGroupGetPassIndex(globals.passGroupVa, passIndex);
+        PassInfo passInfo = PassInfoBufferIn(globals.passInfoVa).passes[passIndex];
 
-          // Use the adjusted bounding box for actual visibility tests
+        // Ignore the instance if BVH-level visibility tests already failed for the current pass.
+        bool isVisible = (instanceDrawInfo.passMask & passBit) != 0;
+
+        if (isVisible) {
+          // If the bounding box is empty, ignore it and always render the instance.
+          // This essentially assumes that the instance is infinitely large.
           Aabb aabb = Aabb(
             vec3(instanceData.header.aabb.lo),
             vec3(instanceData.header.aabb.hi));
 
-          vec3 center = transApply(worldTransform, aabbComputeCenter(aabb));
-          float radius = length(instanceData.header.aabb.hi - instanceData.header.aabb.lo) / 2.0f;
+          float aabbRadiusSq = dot(aabb.hi - aabb.lo, aabb.hi - aabb.lo) * 0.5f;
 
-          // Perform distance and frustum culling tests, or always
-          // render the instance if the bounding box is empty.
-          bool isVisible = true;
+          if (aabbRadiusSq > 0.0f) {
+            // Compute final view transform. Used for both distance and frustum tests.
+            Transform viewTransform = transChain(passInfo.currTransform.transform, worldTransform);
 
-          if (radius > 0.0f) {
-            isVisible = passTestViewDistance(passInfo, center, radius);
+            // If the current render pass has a limited view distance, test the distance to
+            // the bounding sphere around the transformed AABB. This is conservative, but
+            // is reasonably fast. Further culling can happen at a per-meshlet level.
+            float maxDistance = passInfo.viewDistanceLimit;
 
-            if (isVisible) {
-              uint32_t planeTestFailMask = 0x3fu;
+            if (maxDistance > 0.0f) {
+                vec3 aabbCenter = csTransformVertex(passInfo, viewTransform, aabbComputeCenter(aabb));
 
-              for (uint32_t i = 0; i < 8; i++) {
-                vec3 vertex = transApply(worldTransform, aabbComputeVertex(aabb, i));
-                planeTestFailMask &= passTestViewFrustum(passInfo, vertex, 0.0f);
+                float maxDistanceSq = maxDistance * maxDistance;
+                float boxDistanceSq = dot(aabbCenter, aabbCenter);
+
+                if (boxDistanceSq > maxDistance)
+                  isVisible = sqrt(boxDistanceSq) - sqrt(aabbRadiusSq) <= maxDistance;
+            }
+
+            // Perform frustum culling. The idea is to test every transformed vertex of
+            // the bounding box against the view frustum for non-cube map passes. Control
+            // flow is expected to be relatively uniform up until this point; do not try
+            // to parallelize instance-level culling any further.
+            if ((passInfo.flags & PASS_FLAG_IS_CUBE_MAP) == 0u && isVisible) {
+              vec3 v0 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(aabb, 0));
+              vec3 v1 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(aabb, 1));
+              vec3 v2 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(aabb, 2));
+              vec3 v3 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(aabb, 3));
+              vec3 v4 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(aabb, 4));
+              vec3 v5 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(aabb, 5));
+              vec3 v6 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(aabb, 6));
+              vec3 v7 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(aabb, 7));
+
+              for (uint32_t i = 0; i < 6 && isVisible; i++) {
+                vec4 frustumPlane = passInfo.frustum.planes[i];
+
+                float d012 = max(max(
+                  planeDistanceToPoint(frustumPlane, v0),
+                  planeDistanceToPoint(frustumPlane, v1)),
+                  planeDistanceToPoint(frustumPlane, v2));
+                float d345 = max(max(
+                  planeDistanceToPoint(frustumPlane, v3),
+                  planeDistanceToPoint(frustumPlane, v4)),
+                  planeDistanceToPoint(frustumPlane, v5));
+                float d67 = max(
+                  planeDistanceToPoint(frustumPlane, v6),
+                  planeDistanceToPoint(frustumPlane, v7));
+
+                isVisible = max(max(d012, d345), d67) >= 0.0f;
               }
-
-              isVisible = planeTestFailMask == 0u;
             }
           }
 
@@ -355,8 +410,11 @@ void csGenerateDraws() {
         passMaskUniform -= passBit;
       }
 
-      if (instanceDrawInfo.passMask != 0u)
+      if (instanceDrawInfo.passMask != 0u) {
         instanceDrawInfo.drawCount = instanceData.header.drawCount;
+        instanceDrawInfo.viewDistanceSq = csComputeLodDistance(
+          instance.geometryBuffer, worldTransform);
+      }
     }
   }
 

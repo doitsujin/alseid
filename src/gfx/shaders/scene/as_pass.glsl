@@ -81,13 +81,6 @@ buffer PassInfoBuffer {
 };
 
 
-// Mirrors a point through a plane.
-vec3 mirrorVertex(vec4 plane, vec3 point) {
-  float dist = plane.w + dot(plane.xyz, point);
-  return point - 2.0f * dist * plane.xyz;
-}
-
-
 // Transforms a world space coordinate to a view space coordinate for the
 // given pass. Takes the pass info and cube map face index as arguments.
 vec3 passTransformToViewSpace(
@@ -102,23 +95,6 @@ vec3 passTransformToViewSpace(
   //   vertex = quatApply(pass.frustumOrFaceRotations[face], vertex);
 
   return vertex;
-}
-
-
-// Tests whether a given sphere passes the distance test of a given pass.
-//
-// Takes the world space coordinates of the center of the bounding box,
-// as well as the distance to the most distant vertex from the center.
-bool passTestViewDistance(
-  in    PassInfo                      pass,
-        vec3                          center,
-        float                         radius) {
-  if (pass.viewDistanceLimit <= 0.0f)
-    return true;
-
-  center = passTransformToViewSpace(pass, center, ~0u);
-  float dist = length(center) - radius;
-  return dist < pass.viewDistanceLimit;
 }
 
 

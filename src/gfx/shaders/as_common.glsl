@@ -101,9 +101,28 @@ float tanForCos(float c) {
 }
 
 
+// Computes the distance from a vertex to a plane. If the result is
+// positive, the vertex is on the side of the plane that the normal
+// vector points to.
+float planeDistanceToPoint(vec4 plane, vec3 vertex) {
+  return plane.w + dot(vertex, plane.xyz);
+}
+
+
+// Mirrors a vertex or normal vector through a plane.
+vec3 planeMirror(vec4 plane, vec3 point) {
+  float dist = plane.w + dot(plane.xyz, point);
+  return point - 2.0f * dist * plane.xyz;
+}
+
+
 // Tests whether a point lies within a cone. The cone axis must
 // be normalized, and the cone cutoff is equal to cos(angle/2).
-bool testConePoint(vec3 point, vec3 coneOrigin, vec3 coneAxis, float coneCutoff) {
+bool testConePoint(
+        vec3                          point,
+        vec3                          coneOrigin,
+        vec3                          coneAxis,
+        float                         coneCutoff) {
   vec3 dir = normalize(point - coneOrigin);
   return dot(dir, coneAxis) > coneCutoff;
 }
@@ -111,7 +130,12 @@ bool testConePoint(vec3 point, vec3 coneOrigin, vec3 coneAxis, float coneCutoff)
 
 // Tests whether a sphere intersects a cone. The cone axis must be
 // normalized, and the absolute cone cutoff must be less than 1.
-bool testConeSphere(vec3 sphereCenter, float sphereRadius, vec3 coneOrigin, vec3 coneAxis, float coneCutoff) {
+bool testConeSphere(
+        vec3                          sphereCenter,
+        float                         sphereRadius,
+        vec3                          coneOrigin,
+        vec3                          coneAxis,
+        float                         coneCutoff) {
   vec3 dir = sphereCenter - coneOrigin;
 
   float coneSin = sinForCos(coneCutoff);
@@ -122,6 +146,34 @@ bool testConeSphere(vec3 sphereCenter, float sphereRadius, vec3 coneOrigin, vec3
   float s = sqrt(dot(dir, dir) - coneDot * coneDot);
   float x = coneCutoff * s - coneDot * coneSin;
   return x <= sphereRadius;
+}
+
+
+// Tests cone visibility. Returns true if the cone faces away from
+// the camera and should be culled. The cutoff is equivalent to
+// cos(angle / 2).
+bool testConeFacing(
+        vec3                          coneOrigin,
+        float                         coneCutoff,
+        vec3                          direction) {
+  // Input vectors may not be normalized. This is equivalent to:
+  // dot(normalize(coneOrigin), normalize(direction)) > abs(coneCutoff)
+  float squareCutoff = coneCutoff * coneCutoff;
+  float squareScale  = dot(coneOrigin, coneOrigin) * dot(direction, direction);
+  float squareDot    = dot(coneOrigin, direction);
+        squareDot   *= abs(squareDot);
+
+  return (squareDot < squareCutoff * squareScale);
+}
+
+
+// Tests whether any part of a sphere lies within the half-space of
+// a plane indicated by the direction of the normal vector.
+bool testPlaneSphere(
+        vec4                          plane,
+        vec3                          sphereCenter,
+        float                         sphereRadius) {
+  return planeDistanceToPoint(plane, sphereCenter) >= -sphereRadius;
 }
 
 
