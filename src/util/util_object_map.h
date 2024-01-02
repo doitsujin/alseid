@@ -15,11 +15,10 @@ namespace as {
  * Implements a map-like container, except that this uses arrays internally in
  * order to provide constant-time thread-safe insertion, deletion and lookup.
  */
-template<typename T>
+template<typename T,
+  uint32_t BottomLevelBits  = 16u,
+  uint32_t TopLevelBits     = 8u>
 class ObjectMap {
-  constexpr static uint32_t BottomLevelBits = 16;
-  constexpr static uint32_t TopLevelBits    = 8;
-
   struct alignas(T) Storage {
     char data[sizeof(T)];
   };
