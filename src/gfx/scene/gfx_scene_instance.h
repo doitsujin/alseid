@@ -143,8 +143,8 @@ enum class GfxSceneAnimationBlendOp : uint8_t {
  * \brief Animation parameters
  */
 struct GfxSceneAnimationParameters {
-  static constexpr uint16_t GroupIndexUseAppDefined = 0xffffu;
-  static constexpr uint16_t GroupCountUseBlendChannel = 0x0u;
+  static constexpr uint16_t cGroupIndexUseAppDefined = 0xffffu;
+  static constexpr uint16_t cGroupCountUseBlendChannel = 0x0u;
 
   /** Blend operation for this animation. */
   GfxSceneAnimationBlendOp blendOp;
@@ -449,6 +449,24 @@ struct GfxSceneInstanceDesc {
    *  material parameters. */
   const GfxSceneInstanceDraw* draws = nullptr;
 };
+
+
+/**
+ * \brief Instance node update info buffer
+ *
+ * Stores an index into the destination node buffer, as well as
+ * an index into the scratch buffer to read node data from.
+ */
+struct GfxSceneInstanceNodeUpdateEntry {
+  static constexpr uint32_t cSrcIndexNone = ~0u;
+  /** Instance node index to update */
+  uint32_t dstIndex;
+  /** Index into the host data buffer. When set to \c cSrcIndexNone,
+   *  only the dirty frame ID for the given node will be updated. */
+  uint32_t srcIndex;
+};
+
+static_assert(sizeof(GfxSceneInstanceNodeUpdateEntry) == 8);
 
 
 /**
@@ -790,6 +808,8 @@ private:
   alignas(CacheLineSize)
   std::mutex                          m_dirtyMutex;
   std::vector<uint32_t>               m_dirtyIndices;
+
+  std::vector<GfxSceneInstanceNodeUpdateEntry> m_updateEntries;
 
   alignas(CacheLineSize)
   std::mutex                          m_freeMutex;

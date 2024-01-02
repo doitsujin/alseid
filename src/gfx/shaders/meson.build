@@ -34,6 +34,7 @@ as_shader_builtins = [
   [ 'scene/cs_instance_animate.comp', 'cs' ],
   [ 'scene/cs_instance_animate_prepare.comp', 'cs' ],
   [ 'scene/cs_instance_update_execute.comp', 'cs' ],
+  [ 'scene/cs_instance_update_node.comp', 'cs' ],
   [ 'scene/cs_instance_update_prepare.comp', 'cs' ],
 
   [ 'scene/cs_pass_info_update_execute.comp', 'cs' ],

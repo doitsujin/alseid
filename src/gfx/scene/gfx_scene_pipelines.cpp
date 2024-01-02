@@ -8,6 +8,7 @@
 #include <cs_instance_animate.h>
 #include <cs_instance_animate_prepare.h>
 #include <cs_instance_update_execute.h>
+#include <cs_instance_update_node.h>
 #include <cs_instance_update_prepare.h>
 
 #include <cs_pass_info_update_copy.h>
@@ -32,6 +33,7 @@ GfxScenePipelines::GfxScenePipelines(
 , m_csInstanceAnimate       (createComputePipeline("cs_instance_animate", cs_instance_animate))
 , m_csInstanceAnimatePrepare(createComputePipeline("cs_instance_animate_prepare", cs_instance_animate_prepare))
 , m_csInstanceUpdateExecute (createComputePipeline("cs_instance_update_execute", cs_instance_update_execute))
+, m_csInstanceUpdateNode    (createComputePipeline("cs_instance_update_node", cs_instance_update_node))
 , m_csInstanceUpdatePrepare (createComputePipeline("cs_instance_update_prepare", cs_instance_update_prepare))
 , m_csPassInfoUpdateCopy    (createComputePipeline("cs_pass_info_update_copy", cs_pass_info_update_copy))
 , m_csPassInfoUpdateExecute (createComputePipeline("cs_pass_info_update_execute", cs_pass_info_update_execute))
@@ -108,6 +110,16 @@ void GfxScenePipelines::processInstanceAnimations(
 }
 
 
+void GfxScenePipelines::updateInstanceNodes(
+  const GfxContext&                   context,
+  const GfxSceneInstanceUpdateNodeArgs& args) const {
+  context->bindPipeline(m_csInstanceUpdateNode);
+  context->setShaderConstants(0, args);
+  context->dispatch(m_csInstanceUpdateNode->computeWorkgroupCount(
+    Extent3D(args.updateCount, 1, 1)));
+}
+
+
 void GfxScenePipelines::prepareInstanceUpdates(
   const GfxContext&                   context,
   const GfxDescriptor&                dispatch,
@@ -153,9 +165,8 @@ void GfxScenePipelines::resetUpdateLists(
         uint64_t                      groupBufferVa) const {
   context->bindPipeline(m_csPassResetUpdate);
   context->setShaderConstants(0, groupBufferVa);
-  context->dispatch(gfxComputeWorkgroupCount(
-    Extent3D(uint32_t(GfxSceneNodeType::eCount) - uint32_t(GfxSceneNodeType::eBuiltInCount), 1u, 1u),
-    m_csPassResetUpdate->getWorkgroupSize()));
+  context->dispatch(m_csPassResetUpdate->computeWorkgroupCount(
+    Extent3D(uint32_t(GfxSceneNodeType::eCount) - uint32_t(GfxSceneNodeType::eBuiltInCount), 1u, 1u)));
 }
 
 
@@ -173,9 +184,8 @@ void GfxScenePipelines::copyRenderPassInfos(
   const GfxPassInfoUpdateCopyArgs&    args) const {
   context->bindPipeline(m_csPassInfoUpdateCopy);
   context->setShaderConstants(0, args);
-  context->dispatch(gfxComputeWorkgroupCount(
-    Extent3D(args.passUpdateCount, 1, 1),
-    m_csPassInfoUpdateCopy->getWorkgroupSize()));
+  context->dispatch(m_csPassInfoUpdateCopy->computeWorkgroupCount(
+    Extent3D(args.passUpdateCount, 1, 1)));
 }
 
 
@@ -184,9 +194,8 @@ void GfxScenePipelines::prepareRenderPassUpdates(
   const GfxPassInfoUpdatePrepareArgs& args) const {
   context->bindPipeline(m_csPassInfoUpdatePrepare);
   context->setShaderConstants(0, args);
-  context->dispatch(gfxComputeWorkgroupCount(
-    Extent3D(args.passCount, 1, 1),
-    m_csPassInfoUpdatePrepare->getWorkgroupSize()));
+  context->dispatch(m_csPassInfoUpdatePrepare->computeWorkgroupCount(
+    Extent3D(args.passCount, 1, 1)));
 }
 
 

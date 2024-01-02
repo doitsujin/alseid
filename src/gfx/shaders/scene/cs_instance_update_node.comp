@@ -1,0 +1,56 @@
+// Instance node update shader.
+//
+// Copies node data from a scratch buffer, or at least updates the
+// dirty frame ID to the current frame if any other instance data
+// got updated.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csUpdateInstanceNodes
+
+#include "../as_include_head.glsl"
+
+#include "as_scene_instance.glsl"
+
+layout(local_size_x = 128) in;
+
+struct InstanceNodeUpdate {
+  uint32_t  dstIndex;
+  uint32_t  srcIndex;
+};
+
+layout(buffer_reference, buffer_reference_align = 8, scalar)
+readonly buffer InstanceNodeUpdateBuffer {
+  InstanceNodeUpdate updates[];
+};
+
+layout(push_constant)
+uniform PushData {
+  InstanceNodeBuffer        dstInstanceBuffer;
+  InstanceNodeBufferIn      srcInstanceBuffer;
+  InstanceNodeUpdateBuffer  updateBuffer;
+  uint32_t                  updateCount;
+  uint32_t                  frameId;
+} globals;
+
+void csUpdateInstanceNodes() {
+  uint32_t gid = gl_GlobalInvocationID.x;
+
+  if (gid >= globals.updateCount)
+    return;
+
+  InstanceNodeUpdate update = globals.updateBuffer.updates[gid];
+
+  if (update.srcIndex < globals.updateCount) {
+    InstanceNode node = globals.srcInstanceBuffer.nodes[update.srcIndex];
+    node.dirtyFrameId = globals.frameId;
+    node.updateFrameId = 0u;
+
+    globals.dstInstanceBuffer.nodes[update.dstIndex] = node;
+  } else {
+    globals.dstInstanceBuffer.nodes[update.dstIndex].dirtyFrameId = globals.frameId;
+  }
+}
+
+#include "../as_include_tail.glsl"

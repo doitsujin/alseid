@@ -489,18 +489,25 @@ void GfxSceneInstanceManager::updateBufferData(
   const GfxContext&                   context,
   const GfxScenePipelines&            pipelines,
         uint32_t                      frameId) {
+  if (m_dirtyIndices.empty())
+    return;
+
   context->beginDebugLabel("Update instances", 0xff96c096u);
 
-  for (auto index : m_dirtyIndices) {
-    // Update frame ID for all nodes before dispatching the node update.
-    m_instanceNodeData[index].dirtyFrameId = frameId;
+  resizeGpuBuffer(context, frameId);
 
-    // Check dirty flags and dispatch the necessary buffer updates
+  // Initialize node update allocator in case the update
+  // shader actually needs to copy node data later on.
+  m_updateEntries.reserve(m_dirtyIndices.size());
+  uint32_t updateNodeCount = 0u;
+
+  for (auto index : m_dirtyIndices) {
     auto& hostData = m_instanceHostData[index];
 
-    if (hostData.dataSlice.buffer) {
-      GfxSceneInstanceDirtyFlags dirtyFlags = hostData.dirtyFlags.exchange(0);
+    // Check dirty flags and dispatch the necessary buffer updates
+    GfxSceneInstanceDirtyFlags dirtyFlags = hostData.dirtyFlags.exchange(0);
 
+    if (hostData.dataSlice.buffer) {
       if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyHeader) {
         dirtyFlags |=
           GfxSceneInstanceDirtyFlag::eDirtyRelativeTransforms |
@@ -566,20 +573,51 @@ void GfxSceneInstanceManager::updateBufferData(
         uploadInstanceData(context, hostData, header->animationOffset, animationSize);
       }
     }
+
+    // If the node itself is dirty, allocate an update entry
+    auto& updateEntry = m_updateEntries.emplace_back();
+    updateEntry.dstIndex = index;
+    updateEntry.srcIndex = GfxSceneInstanceNodeUpdateEntry::cSrcIndexNone;
+
+    if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyNode)
+      updateEntry.srcIndex = updateNodeCount++;
   }
 
-  // Update basic node data
-  if (!m_dirtyIndices.empty()) {
-    resizeGpuBuffer(context, frameId);
+  // If necessary, allocate another scratch buffer and populate
+  // it with the actual host data.
+  GfxScratchBuffer updateInfoBuffer = context->writeScratch(GfxUsage::eShaderResource,
+    m_updateEntries.size() * sizeof(GfxSceneInstanceNodeUpdateEntry),
+    m_updateEntries.data());
+  GfxScratchBuffer updateDataBuffer;
+  
+  if (updateNodeCount) {
+    updateDataBuffer = context->allocScratch(
+      GfxUsage::eCpuWrite | GfxUsage::eShaderResource,
+      sizeof(GfxSceneInstanceNodeInfo) * updateNodeCount);
+    auto updateData = reinterpret_cast<GfxSceneInstanceNodeInfo*>(
+      updateDataBuffer.map(GfxUsage::eCpuWrite, 0u));
 
-    pipelines.updateSceneBuffer(context,
-      m_gpuResources.getGpuAddress(),
-      m_dirtyIndices.size(),
-      m_dirtyIndices.data(),
-      m_instanceNodeData);
+    for (const auto& e : m_updateEntries) {
+      if (e.srcIndex != GfxSceneInstanceNodeUpdateEntry::cSrcIndexNone)
+        updateData[e.srcIndex] = m_instanceNodeData[e.dstIndex];
+    }
   }
+
+  // Dispatch node update compute shader
+  GfxSceneInstanceUpdateNodeArgs args = { };
+  args.dstInstanceVa = m_gpuResources.getGpuAddress();
+
+  if (updateNodeCount)
+    args.srcInstanceVa = updateDataBuffer.getGpuAddress();
+
+  args.updateListVa = updateInfoBuffer.getGpuAddress();
+  args.updateCount = uint32_t(m_updateEntries.size());
+  args.frameId = frameId;
+
+  pipelines.updateInstanceNodes(context, args);
 
   m_dirtyIndices.clear();
+  m_updateEntries.clear();
 
   context->endDebugLabel();
 }

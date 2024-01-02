@@ -44,10 +44,16 @@ void csPrepareUpdate() {
   uint32_t instanceFlags = instance.flags;
   uint32_t updateFrameId = instance.updateFrameId;
 
+  // Exit early if the instance has already been updated this frame
+  if (updateFrameId == frameId)
+    return;
+
   // Disable motion vectors for the instance if there is no data for the
   // previous frame. This happens either if the instance was not visible,
   // or if it has not been updated in the current frame.
-  if (updateFrameId + 1 < frameId)
+  instanceFlags &= ~INSTANCE_FLAG_NO_MOTION_VECTORS;
+
+  if (updateFrameId + 1u < frameId || updateFrameId == 0u)
     instanceFlags |= INSTANCE_FLAG_NO_MOTION_VECTORS;
 
   // Dispatch an update for transforms and morph target weights if necessary

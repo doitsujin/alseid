@@ -55,6 +55,7 @@ struct GfxScratchBuffer {
   uint64_t getGpuAddress() const {
     return buffer->getGpuAddress() + offset;
   }
+
   /**
    * \brief Returns pointer to mapped memory region
    *

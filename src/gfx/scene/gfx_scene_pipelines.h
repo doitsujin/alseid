@@ -83,7 +83,24 @@ struct GfxSceneInstanceAnimateArgs {
   uint64_t instanceNodeBufferVa;
   uint64_t groupBufferVa;
   uint32_t frameId;
+  uint32_t reserved;
 };
+
+static_assert(sizeof(GfxSceneInstanceAnimateArgs) == 24);
+
+
+/**
+ * \brief Instance node update arguments
+ */
+struct GfxSceneInstanceUpdateNodeArgs {
+  uint64_t dstInstanceVa;
+  uint64_t srcInstanceVa;
+  uint64_t updateListVa;
+  uint32_t updateCount;
+  uint32_t frameId;
+};
+
+static_assert(sizeof(GfxSceneInstanceUpdateNodeArgs) == 32);
 
 
 /**
@@ -315,6 +332,16 @@ public:
     const GfxSceneInstanceUpdatePrepareArgs& args) const;
 
   /**
+   * \brief Updates instance node data
+   *
+   * \param [in] context Context object
+   * \param [in] args Arguments to pass to the shader
+   */
+  void updateInstanceNodes(
+    const GfxContext&                   context,
+    const GfxSceneInstanceUpdateNodeArgs& args) const;
+
+  /**
    * \brief Executes instance updates
    *
    * \param [in] context Context object
@@ -419,6 +446,7 @@ private:
   GfxComputePipeline  m_csInstanceAnimate;
   GfxComputePipeline  m_csInstanceAnimatePrepare;
   GfxComputePipeline  m_csInstanceUpdateExecute;
+  GfxComputePipeline  m_csInstanceUpdateNode;
   GfxComputePipeline  m_csInstanceUpdatePrepare;
 
   GfxComputePipeline  m_csPassInfoUpdateCopy;
