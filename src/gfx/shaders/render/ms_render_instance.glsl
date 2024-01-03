@@ -763,7 +763,6 @@ shared vec3 msPrevFrameVertexPosShared[MAX_VERT_COUNT];
 // frame and does not have the flag to explicitly disable them.
 bool msInstanceUsesMotionVectors(in MsContext context) {
   return (context.flags & MS_FLAG_NO_MOTION_VECTORS) == 0u
-      && (context.invocation.instanceNode.updateFrameId == context.invocation.frameId)
       && (context.invocation.instanceNode.flags & INSTANCE_FLAG_NO_MOTION_VECTORS) == 0u;
 }
 #endif // MS_NO_MOTION_VECTORS

@@ -41,59 +41,72 @@ void csPrepareUpdate() {
 
   InstanceNode instance = instanceBuffer.nodes[instanceIndex];
 
-  uint32_t instanceFlags = instance.flags;
-  uint32_t updateFrameId = instance.updateFrameId;
-
   // Exit early if the instance has already been updated this frame
-  if (updateFrameId == frameId)
+  if (instance.updateFrameId == frameId)
     return;
 
-  // Disable motion vectors for the instance if there is no data for the
-  // previous frame. This happens either if the instance was not visible,
-  // or if it has not been updated in the current frame.
-  instanceFlags &= ~INSTANCE_FLAG_NO_MOTION_VECTORS;
+  // Disable motion vectors for the instance if the instance node itself has
+  // been updated, since this indicates that it has been made resident.
+  instance.flags &= ~INSTANCE_FLAG_NO_MOTION_VECTORS;
 
-  if (updateFrameId + 1u < frameId || updateFrameId == 0u)
-    instanceFlags |= INSTANCE_FLAG_NO_MOTION_VECTORS;
+  if (instance.updateFrameId == 0u)
+    instance.flags |= INSTANCE_FLAG_NO_MOTION_VECTORS;
 
-  // Dispatch an update for transforms and morph target weights if necessary
+  // Also disable motion vectors if the previous frame's node transform is not
+  // up to date. This can happen if the containing BVH node got culled.
+  SceneHeader scene = SceneHeader(sceneBuffer);
+  SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(sceneBuffer + scene.nodeTransformOffset);
+
+  uvec2 nodeTransformIndices = nodeComputeTransformIndices(instance.nodeIndex, scene.nodeCount, frameId);
+  uint nodeTransformUpdate = nodeTransforms.nodeTransforms[nodeTransformIndices.y].updateFrameId;
+
+  if (nodeTransformUpdate + 1u < frameId)
+    instance.flags |= INSTANCE_FLAG_NO_MOTION_VECTORS;
+
+  // Dispatch an update for transforms and morph target weights if necessary.
+  bool requiresUpdate = false;
+
   if ((instance.flags & INSTANCE_FLAG_DEFORM) != 0) {
-    if (updateFrameId < instance.dirtyFrameId) {
-      nodeListAddUpdate(groupBuffer, instanceNodeRef, 0, 1);
-      updateFrameId = frameId;
+    // Always dispatch one extra update after the instance has last been
+    // changed, so that the previous frame's animation data is valid.
+    requiresUpdate = instance.updateFrameId <= instance.dirtyFrameId;
+
+    if (instance.updateFrameId < instance.dirtyFrameId) {
+      // Ensure that we do actually dispatch another update next frame.
+      instance.dirtyFrameId = frameId;
+
+      // If the instance hasn't been rendered since the last change to its
+      // animation data more than one frame ago, motion vectors are invalid.
+      if (instance.updateFrameId + 1u < frameId)
+        instance.flags |= INSTANCE_FLAG_NO_MOTION_VECTORS;
     }
   }
 
-  // Check whether the absolute transform has changed since the last frame,
-  // and update the frame ID if it has. We only do this after dispatching
-  // the node update so that we do not redundantly recompute joint transforms.
-  if (updateFrameId < frameId) {
-    SceneHeader scene = SceneHeader(sceneBuffer);
-    SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(sceneBuffer + scene.nodeTransformOffset);
+  // Dispatch the node update if necessary.
+  if (requiresUpdate)
+    nodeListAddUpdate(groupBuffer, instanceNodeRef, 0, 1);
 
-    uvec2 nodeIndices = nodeComputeTransformIndices(instance.nodeIndex, scene.nodeCount, frameId);
-    Transform currTransform = nodeTransforms.nodeTransforms[nodeIndices.x].absoluteTransform;
-    Transform prevTransform = nodeTransforms.nodeTransforms[nodeIndices.y].absoluteTransform;
+  if ((instance.flags & INSTANCE_FLAG_STATIC) != 0) {
+    // Data from the previous frame is irrelevant for rendering shadow maps
+    requiresUpdate = instance.updateFrameId < instance.dirtyFrameId;
 
-    if (any(notEqual(currTransform.rot, prevTransform.rot))
-     || any(notEqual(currTransform.pos, prevTransform.pos)))
-      updateFrameId = frameId;
-  }
+    // Also check whether the absolute transform has changed between frames
+    if (!requiresUpdate) {
+      Transform currTransform = nodeTransforms.nodeTransforms[nodeTransformIndices.x].absoluteTransform;
+      Transform prevTransform = nodeTransforms.nodeTransforms[nodeTransformIndices.y].absoluteTransform;
 
-  // If necessary, update the update frame ID of the instance, and also add
-  // it to the list of updated static instances if the instance is static.
-  if (updateFrameId != instance.updateFrameId) {
-    instanceBuffer.nodes[instanceIndex].updateFrameId = updateFrameId;
-
-    if ((instance.flags & INSTANCE_FLAG_STATIC) != 0) {
-      // TODO add node to list of updated static nodes so that static
-      // shadow maps can decide whether an update is required or not
+      requiresUpdate = any(notEqual(currTransform.rot, prevTransform.rot))
+                    || any(notEqual(currTransform.pos, currTransform.pos));
     }
+
+    // TODO add node to list of updated static nodes so that static
+    // shadow maps can decide whether an update is required or not
   }
 
-  // Update instance flags as necessary
-  if (instanceFlags != instance.flags)
-    instanceBuffer.nodes[instanceIndex].flags = instanceFlags;
+  // Write back any updated node properties, as well as the frame ID.
+  instanceBuffer.nodes[instanceIndex].flags = instance.flags;
+  instanceBuffer.nodes[instanceIndex].dirtyFrameId = instance.dirtyFrameId;
+  instanceBuffer.nodes[instanceIndex].updateFrameId = frameId;
 }
 
 #include "../as_include_tail.glsl"
