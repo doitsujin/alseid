@@ -214,3 +214,33 @@ uvec2 asGetWorkgroupCount2D(uint32_t workgroupCount) {
     sqr + uint32_t(tot <  workgroupCount),
     sqr - uint32_t(tot >= workgroupCount + sqr));
 }
+
+
+#if defined(STAGE_COMP) || defined(STAGE_MESH) || defined(STAGE_TASK)
+// Cooperatively finds the index of the n-th set bit in a bit mask. Requires
+// that all parameters are uniform, as well as full subgroups and uniform
+// control flow. Returns -1 if the bit mask does not have the required number
+// of bits set.
+int32_t asFindIndexOfSetBitCooperative(
+        uint32_t                      bitMask,
+        uint32_t                      setIndex,
+        uint32_t                      maxCount) {
+  uint32_t resultMask = 0u;
+
+  // This may statically limit the number of iterations needed to
+  // scan the bit mask. If the subgroup size is greater or equal
+  // to the maximum bit count, only one iteration is needed.
+  uint32_t bitsPerIteration = min(maxCount, gl_SubgroupSize);
+
+  for (uint32_t i = 0; i < maxCount; i += bitsPerIteration) {
+    int32_t bitIndex = int32_t(i + gl_SubgroupInvocationID);
+
+    uint32_t bitMaskLocal = bitfieldExtract(bitMask, 0, bitIndex + 1);
+    uint32_t bitCountLocal = bitCount(bitMaskLocal);
+
+    resultMask |= subgroupBallot(bitCountLocal > setIndex).x << i;
+  }
+
+  return findLSB(resultMask);
+}
+#endif

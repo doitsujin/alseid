@@ -6,11 +6,9 @@
 
 #include "ts_render_payload.glsl"
 
-// Encodes meshlet data offset and a four-bit payload as a single
-// 32-bit integer. This is possible because the buffer offset is
-// aligned.
-uint32_t tsEncodeMeshlet(uint32_t offset, uint32_t payload) {
-  return offset | (payload & 0xfu);
+// Encodes meshlet payload to store in the task shader payload.
+uint16_t tsEncodeMeshletPayload(uint32_t index, uint32_t viewMask) {
+  return uint16_t(viewMask | (index << 6));
 }
 
 
@@ -26,28 +24,6 @@ struct TsInvocationInfo {
   uint32_t    passIndex;
   uint32_t    shadingDataOffset;
 };
-
-
-// Finds the index of the set bit within the pass mask that corresponds
-// to the given invocation pass index.
-int32_t tsComputePassIndex(uint32_t passMask, uint32_t passIndex) {
-  uint32_t resultMask = 0u;
-
-  // Use subgroup operations to quickly scan the pass mask. With a
-  // subgroup size of 32 or more, only one iteration will be necessary.
-  uint32_t bitsPerIteration = min(PASS_COUNT_PER_GROUP, gl_SubgroupSize);
-
-  for (uint32_t i = 0; i < PASS_COUNT_PER_GROUP; i += bitsPerIteration) {
-    int32_t bitIndex = int32_t(i + gl_SubgroupInvocationID);
-
-    uint32_t passMaskLocal = bitfieldExtract(passMask, 0, bitIndex);
-    uint32_t passCountLocal = bitCount(passMaskLocal);
-
-    resultMask |= subgroupBallot(passCountLocal == passIndex).x << i;
-  }
-
-  return findLSB(resultMask);
-}
 
 
 // Retrieves information for the current task shader informations from
@@ -71,7 +47,7 @@ TsInvocationInfo tsGetInvocationInfo(
   result.lodIndex = unpacked.y;
   result.lodMeshletIndex = gl_GlobalInvocationID.x;
   result.passIndex = passGroupGetPassIndex(passGroupVa,
-    tsComputePassIndex(draw.passMask, gl_GlobalInvocationID.z));
+    asFindIndexOfSetBitCooperative(draw.passMask, gl_GlobalInvocationID.z, PASS_COUNT_PER_GROUP));
   result.shadingDataOffset = draw.shadingDataOffset;
   return result;
 }
@@ -94,9 +70,11 @@ void tsPayloadInit(
 }
 
 
-// Adds meshlet info to the payload. Indices must be pre-allocated and valid.
-void tsPayloadAddMeshlet(uint32_t index, uint32_t offset, uint32_t payload) {
-  tsPayload.meshlets[index] = tsEncodeMeshlet(offset, payload);
+// Adds a meshlet to the payload. This must be called once per
+// thread in a workgroup, or the payload will be undefined.
+void tsPayloadAddMeshlet(uint32_t tid, uint32_t offset, uint32_t index, uint32_t viewMask) {
+  tsPayload.meshletOffsets[tid] = offset;
+  tsPayload.meshletPayloads[tid] = tsEncodeMeshletPayload(index, viewMask);
 }
 
 

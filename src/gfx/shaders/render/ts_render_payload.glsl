@@ -7,14 +7,6 @@
 layout(constant_id = SPEC_CONST_ID_TASK_SHADER_WORKGROUP_SIZE)
 const uint32_t TsWorkgroupSize = 128;
 
-// Assume one single meshlet per thread, unless the task shader
-// explicitly requests more, e.g. for shadow map rendering.
-// Must be consistent with the mesh shader reading the payload.
-#ifndef TS_MAX_MESHLET_COUNT
-#define TS_MAX_MESHLET_COUNT (1u)
-#endif // TS_MAX_MESHLET_COUNT
-
-
 // Task shader payload. Stores uniform information about the render
 // pass, instance, and meshlets to render.
 struct TsPayload {
@@ -42,7 +34,11 @@ struct TsPayload {
   uint64_t            meshletBuffer;
   // List of meshlets. This encodes a byte offset to the meshlet
   // header within the meshlet buffer, in addition to extra data.
-  uint32_t            meshlets[TS_MAX_MESHLET_COUNT * TsWorkgroupSize];
+  uint32_t            meshletOffsets[TsWorkgroupSize];
+  // Meshlet payloads. Encodes a 6-bit view mask in the lower bits,
+  // and a 10-bit workgroup index that denotes the first workgroup
+  // that can work on the meshlet at the given index.
+  uint16_t            meshletPayloads[TsWorkgroupSize];
 };
 
 taskPayloadSharedEXT TsPayload tsPayload;

@@ -102,8 +102,6 @@ struct MsVertexOut {
 
 
 MsContext msGetInstanceContext() {
-  uvec2 meshlet = msDecodeMeshlet(tsPayload.meshlets[gl_WorkGroupID.x]);
-
   MsContext context;
   context.invocation = msGetInvocationInfo(globals.instanceVa, globals.frameId);
   context.flags = MS_FLAG_CULL_FACE_CW;
@@ -194,7 +192,7 @@ FsInput msComputeFsInput(
 MsUniformOut msComputeUniformOut(
   in    MsContext                     context) {
   MsUniformOut result;
-  result.meshlet = tsPayload.meshlets[gl_WorkGroupID.x];
+  result.meshlet = uint32_t(context.invocation.meshletVa) >> 4;
   return result;
 }
 

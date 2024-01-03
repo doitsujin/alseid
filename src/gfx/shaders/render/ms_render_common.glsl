@@ -30,11 +30,41 @@ const uint MsWorkgroupSize = 128u;
 #define MS_FLAG_NO_MOTION_VECTORS       (1u << 3)
 
 
-// Decodes meshlet payload. Returns the offset of the meshlet header
-// relative to the meshlet buffer in the first component, and the
-// arbitrary payload in the second component.
-uvec2 msDecodeMeshlet(uint32_t meshlet) {
-  return meshlet & uvec2(0xfffffff0u, 0xfu);
+// Decodes meshlet payload stored in the task shader payload.
+uvec2 msDecodeMeshletPayload(uint32_t payload) {
+  return uvec2(
+    bitfieldExtract(payload, 0, 6),   // View mask
+    bitfieldExtract(payload, 6, 10)); // First workgroup
+}
+
+
+// Scans task shader payload for the meshlet offset and local
+// view index to process in the current workgroup.
+shared uint msWorkgroupPayloadIndexShared;
+
+uvec2 msGetMeshletInfoForWorkgroup() {
+  uint32_t workgroupIndex = gl_WorkGroupID.x;
+
+  // The shared payload index will always be written by exactly
+  // one invocation, there is no need to initialize it.
+  MS_LOOP_WORKGROUP(i, TsWorkgroupSize, TsWorkgroupSize) {
+    uvec2 payload = msDecodeMeshletPayload(tsPayload.meshletPayloads[i]);
+
+    if (workgroupIndex >= payload.y &&
+        workgroupIndex < payload.y + bitCount(payload.x))
+      msWorkgroupPayloadIndexShared = i;
+  }
+
+  barrier();
+
+  // Load meshlet offset and compute the local view index
+  uint32_t payloadIndex = msWorkgroupPayloadIndexShared;
+  uvec2 payload = msDecodeMeshletPayload(tsPayload.meshletPayloads[payloadIndex]);
+
+  uint32_t viewIndex = asFindIndexOfSetBitCooperative(
+    payload.x, workgroupIndex - payload.y, 6u);
+
+  return uvec2(tsPayload.meshletOffsets[payloadIndex], viewIndex);
 }
 
 
@@ -46,7 +76,7 @@ struct MsInvocationInfo {
   InstanceHeader  instanceInfo;
   uint32_t        frameId;
   uint32_t        passIndex;
-  uint32_t        meshletPayload;
+  uint32_t        viewIndex;
   uint64_t        meshletVa;
   uint64_t        skinningVa;
   uint64_t        materialParameterVa;
@@ -71,8 +101,8 @@ MsInvocationInfo msGetInvocationInfo(
   result.passIndex = tsPayload.passIndex;
 
   // Decode meshlet payload and compute the address of the meshlet header.
-  uvec2 meshletInfo = msDecodeMeshlet(tsPayload.meshlets[gl_WorkGroupID.x]);
-  result.meshletPayload = meshletInfo.y;
+  uvec2 meshletInfo = msGetMeshletInfoForWorkgroup();
+  result.viewIndex = meshletInfo.y;
   result.meshletVa = tsPayload.meshletBuffer + meshletInfo.x;
 
   // Compute address of joint indices used for skinning, if present.

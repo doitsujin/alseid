@@ -165,13 +165,7 @@ uint tsMain() {
   if (tid < 2u)
     tsPayloadSetTransform(tid, tsNodeTransformsShared[tid]);
 
-  while (visibilityMask != 0u) {
-    tsPayloadAddMeshlet(outputIndex, meshletOffset, findLSB(visibilityMask));
-
-    outputIndex += 1u;
-    visibilityMask &= visibilityMask - 1u;
-  }
-
+  tsPayloadAddMeshlet(tid, meshletOffset, outputIndex, visibilityMask);
   return tsGetOutputCount();
 }
 
