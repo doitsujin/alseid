@@ -756,23 +756,7 @@ MS_DEFINE_MORPH_FUNCTION(msMorphCombinedData, MsCombinedIn, msMorphCombined)
 // Shared motion vectors, as packed normalized signed integers. A value
 // of 1.0 indicates a motion from the very edge of the negative side of
 // the viewport to the very edge of the positive side.
-shared uint32_t msMotionVectorsShared[MAX_VERT_COUNT];
-
-void msStoreMotionVector(uint32_t index, vec2 vector) {
-  msMotionVectorsShared[index] = packSnorm2x16(vector);
-}
-
-vec2 msLoadMotionVector(uint32_t index) {
-  return unpackSnorm2x16(msMotionVectorsShared[index]);
-}
-
-// Convenience method to compute a motion vector
-vec2 msComputeMotionVector(vec4 oldPos, vec4 newPos) {
-  vec2 oldxy = oldPos.xy / oldPos.w;
-  vec2 newxy = newPos.xy / newPos.w;
-
-  return 0.5f * (newxy - oldxy);
-}
+shared vec3 msPrevFrameVertexPosShared[MAX_VERT_COUNT];
 
 // Checks whether motion vectors can be used for the current instance.
 // This is the case if the instance has been updated in the current
@@ -905,12 +889,12 @@ void msMain() {
       Transform jointTransform = msComputeJointTransform(context, meshlet, jointData, inputIndex);
 #endif // MS_NO_SKINNING
 
-      msVertexDataShared[index].position = msComputeVertexOutput(context
+      msPrevFrameVertexPosShared[index] = msComputeVertexOutput(context
         , index, vertexIn
 #ifndef MS_NO_SKINNING
         , jointTransform
 #endif // MS_NO_SKINNING
-        , false).position;
+        , false).position.xyw;
     }
   }
 
@@ -945,19 +929,6 @@ void msMain() {
       , jointTransform
 #endif // MS_NO_SKINNING
       , true);
-
-#ifndef MS_NO_MOTION_VECTORS
-    vec2 motionVector = vec2(0.0f);
-
-    if (useMotionVectors) {
-      vec4 oldPos = vec4(msVertexDataShared[index].position);
-      vec4 newPos = vec4(newVertex.position);
-
-      motionVector = msComputeMotionVector(oldPos, newPos);
-    }
-
-    msStoreMotionVector(index, motionVector);
-#endif
 
     msVertexDataShared[index] = newVertex;
   }
@@ -1057,6 +1028,13 @@ void msMain() {
 #endif // MS_NO_MORPH_DATA
 #endif // MS_COMBINED_DATA
 
+#ifndef MS_NO_MOTION_VECTORS
+    vec3 prevFrameVertexPos = vertexOut.position.xyw;
+
+    if (useMotionVectors)
+      prevFrameVertexPos = msPrevFrameVertexPosShared[outputIndex];
+#endif // MS_NO_MOTION_VECTORS
+
     FsInput fsInput = msComputeFsInput(context
       , outputIndex
 #ifndef MS_NO_VERTEX_DATA
@@ -1064,7 +1042,7 @@ void msMain() {
 #endif // MS_NO_VERTEX_DATA
       , vertexOut
 #ifndef MS_NO_MOTION_VECTORS
-      , msLoadMotionVector(outputIndex)
+      , prevFrameVertexPos
 #endif
 #ifndef MS_NO_SHADING_DATA
       , vertexIn.shading

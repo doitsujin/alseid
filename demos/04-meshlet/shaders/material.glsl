@@ -23,12 +23,13 @@ struct MsUniformOut {
 // Data structures shared between FS and VS/MS
 #define FS_INPUT                                  \
   FS_INPUT_VAR((location = 0), vec3, normal)      \
-  FS_INPUT_VAR((location = 1), vec2, motion)
+  FS_INPUT_VAR((location = 1), vec3, currFramePos)\
+  FS_INPUT_VAR((location = 2), vec3, prevFramePos)
 
 FS_DECLARE_INPUT(FS_INPUT);
 
 #define FS_UNIFORM                                \
-  FS_INPUT_VAR((location = 2), uint, meshlet)
+  FS_INPUT_VAR((location = 3), uint, meshlet)
 
 FS_DECLARE_UNIFORM(FS_UNIFORM);
 
@@ -55,7 +56,10 @@ layout(location = 0) out vec4 fsColor;
 void fsMain(in FsInput fsInput, in FsUniform fsUniform) {
   float factor = 0.5f + 0.5f * dot(normalize(fsInput.normal), vec3(0.0f, 1.0f, 0.0f));
 
-  vec2 motion = 0.5f + 0.5f * (100.0f * fsInput.motion);
+  vec2 currPos = fsInput.currFramePos.xy / fsInput.currFramePos.z;
+  vec2 prevPos = fsInput.prevFramePos.xy / fsInput.prevFramePos.z;
+
+  vec2 motion = 0.5f + 0.5f * (50.0f * (currPos - prevPos));
   vec3 color = vec3(motion, 1.0f - dot(motion, motion));
 
   fsColor = vec4(color * factor, 1.0f);
@@ -174,14 +178,15 @@ FsInput msComputeFsInput(
         uint                          vertexIndex,
   in    MsVertexIn                    vertexIn,
   in    MsVertexOut                   vertexOut,
-        vec2                          motionVector,
+        vec3                          vertexPosOld,
   in    MsShadingIn                   shadingIn,
   in    MsUniformOut                  uniformOut) {
   vec4 transform = vec4(rotations[vertexIndex]);
 
   FsInput result;
   result.normal = normalize(quatApplyNorm(transform, unpackSnorm3x10(shadingIn.normal)));
-  result.motion = motionVector;
+  result.prevFramePos = vertexPosOld;
+  result.currFramePos = vertexOut.position.xyw;
   return result;
 }
 
