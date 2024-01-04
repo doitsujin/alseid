@@ -13,9 +13,9 @@ layout(local_size_x = 1) in;
 
 #include "../as_include_head.glsl"
 
-#include "as_scene.glsl"
-#include "as_pass.glsl"
+#include "./group/as_group.glsl"
 
+#include "as_scene.glsl"
 
 // Buffer pointer and parameters.
 layout(push_constant)

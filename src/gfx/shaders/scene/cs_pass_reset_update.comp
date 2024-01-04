@@ -13,7 +13,7 @@ layout(local_size_x = CS_WORKGROUP_SIZE) in;
 
 #include "../as_include_head.glsl"
 
-#include "as_pass.glsl"
+#include "./group/as_group.glsl"
 
 layout(push_constant)
 uniform CsPushData {

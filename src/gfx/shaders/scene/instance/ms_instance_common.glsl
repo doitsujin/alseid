@@ -3,6 +3,8 @@
 
 #include "../draw/as_draw.glsl"
 
+#include "../group/as_group.glsl"
+
 #include "../as_pass.glsl"
 #include "../as_scene_instance.glsl"
 

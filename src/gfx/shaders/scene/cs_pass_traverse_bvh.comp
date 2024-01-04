@@ -18,6 +18,8 @@ layout(local_size_x = CS_WORKGROUP_SIZE) in;
 
 #include "../as_include_head.glsl"
 
+#include "./group/as_group.glsl"
+
 #include "as_scene.glsl"
 #include "as_pass.glsl"
 #include "as_scene_node_transform.glsl"

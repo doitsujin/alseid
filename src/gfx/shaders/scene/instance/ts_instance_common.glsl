@@ -3,6 +3,8 @@
 
 #include "../draw/as_draw.glsl"
 
+#include "../group/as_group.glsl"
+
 #include "../as_pass.glsl"
 #include "../as_scene_instance.glsl"
 
@@ -49,7 +51,7 @@ TsInvocationInfo tsGetInvocationInfo(
   result.lodIndex = unpacked.y;
   result.lodMeshletIndex = gl_GlobalInvocationID.x;
   result.passIndex = passGroupGetPassIndex(passGroupVa,
-    asFindIndexOfSetBitCooperative(draw.passMask, gl_GlobalInvocationID.z, PASS_COUNT_PER_GROUP));
+    asFindIndexOfSetBitCooperative(draw.passMask, gl_GlobalInvocationID.z, PASS_GROUP_PASS_COUNT));
   result.shadingDataOffset = draw.shadingDataOffset;
   return result;
 }
