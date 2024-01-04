@@ -1840,6 +1840,13 @@ void GltfMeshConverter::addPrimitive(
 
 void GltfMeshConverter::addInstance(
   const std::shared_ptr<GltfNode>&    node) {
+  // If meshes share the same material, it is possible that
+  // this gets called multiple times with the same node.
+  for (const auto& n : m_nodes) {
+    if (n == node)
+      return;
+  }
+
   m_nodes.push_back(std::move(node));
 }
 
