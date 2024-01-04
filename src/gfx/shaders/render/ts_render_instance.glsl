@@ -176,6 +176,7 @@ uint tsMain() {
       if ((meshlet.flags & MESHLET_CULL_SPHERE_BIT) != 0u && viewMask != 0u) {
         vec3 sphereCenter = vec3(meshlet.sphereCenter);
         float sphereRadius = float(meshlet.sphereRadius);
+        sphereRadius *= quatGetScale(meshletTransform.rot);
 
         if (mirrorMode != MESH_MIRROR_NONE)
           sphereCenter = asMirror(sphereCenter, mirrorMode);
@@ -190,6 +191,16 @@ uint tsMain() {
 
           // Apply mirroring after culling to not negate the plane test
           sphereCenter = planeMirror(pass.currMirrorPlane, sphereCenter);
+        }
+
+        // If the render pass has a limited view range, cull meshlets against
+        // it since the instance level culling isn't very accurate.
+        if (pass.viewDistanceLimit > 0.0f) {
+          float sphereRadiusSq = sphereRadius * sphereRadius;
+          float maxDistanceSq = pass.viewDistanceLimit * pass.viewDistanceLimit;
+
+          if (!testSphereDistance(sphereCenter, sphereRadiusSq, maxDistanceSq))
+            viewMask = 0u;
         }
 
         if (viewMask != 0u) {

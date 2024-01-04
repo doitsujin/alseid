@@ -352,7 +352,11 @@ void csGenerateDraws() {
 
           if (aabbRadiusSq > 0.0f) {
             // Compute final view transform. Used for both distance and frustum tests.
-            Transform viewTransform = transChain(passInfo.currTransform.transform, worldTransform);
+            Transform viewTransform = transChainNorm(passInfo.currTransform.transform, worldTransform);
+
+            // Adjust bounding box size by transform scaling factor
+            float aabbScale = quatGetScale(viewTransform.rot);
+            aabbRadiusSq *= aabbScale * aabbScale;
 
             // If the current render pass has a limited view distance, test the distance to
             // the bounding sphere around the transformed AABB. This is conservative, but
@@ -360,13 +364,8 @@ void csGenerateDraws() {
             float maxDistance = passInfo.viewDistanceLimit;
 
             if (maxDistance > 0.0f) {
-                vec3 aabbCenter = csTransformVertex(passInfo, viewTransform, aabbComputeCenter(aabb));
-
-                float maxDistanceSq = maxDistance * maxDistance;
-                float boxDistanceSq = dot(aabbCenter, aabbCenter);
-
-                if (boxDistanceSq > maxDistance)
-                  isVisible = sqrt(boxDistanceSq) - sqrt(aabbRadiusSq) <= maxDistance;
+              vec3 aabbCenter = csTransformVertex(passInfo, viewTransform, aabbComputeCenter(aabb));
+              isVisible = testSphereDistance(aabbCenter, aabbRadiusSq, maxDistance * maxDistance);
             }
 
             // Perform frustum culling. The idea is to test every transformed vertex of

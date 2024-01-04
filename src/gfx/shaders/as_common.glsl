@@ -184,6 +184,21 @@ bool testPlaneSphere(
 }
 
 
+// Tests whether any part of a sphere is further away from the origin than
+// a given maximum distance. Uses squared units to avoid square roots.
+bool testSphereDistance(
+        vec3                          sphereCenter,
+        float                         sphereRadiusSq,
+        float                         maxDistanceSq) {
+  float sphereDistanceSq = dot(sphereCenter, sphereCenter);
+
+  // Equivalent to sqrt(dist) <= sqrt(radius) + sqrt(maxDist)
+  float l = sphereDistanceSq - sphereRadiusSq - maxDistanceSq;
+  float r = 4.0f * sphereRadiusSq * maxDistanceSq;
+  return l * abs(l) <= r;
+}
+
+
 // Computes number of workgroups to dispatch for a desired thread
 // or item count. Takes the number of items to process, as well as
 // the number of items that can be processed in a single workgroup.
