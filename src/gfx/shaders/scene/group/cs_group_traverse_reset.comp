@@ -11,11 +11,11 @@
 // Trivial shader, only needs one thread
 layout(local_size_x = 1) in;
 
-#include "../as_include_head.glsl"
+#include "../../as_include_head.glsl"
 
-#include "./group/as_group.glsl"
+#include "../as_scene.glsl"
 
-#include "as_scene.glsl"
+#include "as_group.glsl"
 
 // Buffer pointer and parameters.
 layout(push_constant)
@@ -33,4 +33,4 @@ void csResetBvh() {
   bvhListResetArgs(bvhList, bvhLayer);
 }
 
-#include "../as_include_tail.glsl"
+#include "../../as_include_tail.glsl"

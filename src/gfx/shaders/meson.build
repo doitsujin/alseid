@@ -39,6 +39,11 @@ as_shader_builtins = [
   [ 'scene/draw/cs_draw_list_init.comp', 'cs' ],
   [ 'scene/draw/cs_draw_list_generate.comp', 'cs' ],
 
+  [ 'scene/group/cs_group_init.comp', 'cs' ],
+  [ 'scene/group/cs_group_reset_update.comp', 'cs' ],
+  [ 'scene/group/cs_group_traverse_bvh.comp', 'cs' ],
+  [ 'scene/group/cs_group_traverse_reset.comp', 'cs' ],
+
   [ 'scene/instance/cs_instance_update_execute.comp', 'cs' ],
   [ 'scene/instance/cs_instance_update_node.comp', 'cs' ],
   [ 'scene/instance/cs_instance_update_prepare.comp', 'cs' ],
@@ -47,11 +52,6 @@ as_shader_builtins = [
   [ 'scene/renderpass/cs_renderpass_update_init.comp', 'cs' ],
   [ 'scene/renderpass/cs_renderpass_update_prepare.comp', 'cs' ],
   [ 'scene/renderpass/cs_renderpass_upload.comp', 'cs' ],
-
-  [ 'scene/cs_pass_init.comp', 'cs' ],
-  [ 'scene/cs_pass_reset_update.comp', 'cs' ],
-  [ 'scene/cs_pass_traverse_bvh.comp', 'cs' ],
-  [ 'scene/cs_pass_traverse_reset.comp', 'cs' ],
 
   [ 'scene/cs_scene_update.comp', 'cs' ],
 ]

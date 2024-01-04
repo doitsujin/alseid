@@ -16,14 +16,14 @@
 
 layout(local_size_x = CS_WORKGROUP_SIZE) in;
 
-#include "../as_include_head.glsl"
+#include "../../as_include_head.glsl"
 
-#include "./group/as_group.glsl"
+#include "../renderpass/as_renderpass.glsl"
 
-#include "./renderpass/as_renderpass.glsl"
+#include "../as_scene.glsl"
+#include "../as_scene_node_transform.glsl"
 
-#include "as_scene.glsl"
-#include "as_scene_node_transform.glsl"
+#include "as_group.glsl"
 
 // Helper to enable more optimal subgroup-only code paths
 bool IsSingleSubgroup = (gl_NumSubgroups == 1u && gl_SubgroupSize == CS_WORKGROUP_SIZE);
@@ -161,4 +161,4 @@ void csTraverseBvh() {
     bvhListCommitArgs(bvhList, bvhLayer);
 }
 
-#include "../as_include_tail.glsl"
+#include "../../as_include_tail.glsl"

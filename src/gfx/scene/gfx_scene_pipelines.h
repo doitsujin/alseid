@@ -446,6 +446,11 @@ private:
   GfxComputePipeline  m_csDrawListInit;
   GfxComputePipeline  m_csDrawListGenerate;
 
+  GfxComputePipeline  m_csGroupInit;
+  GfxComputePipeline  m_csGroupResetUpdate;
+  GfxComputePipeline  m_csGroupTraverseBvh;
+  GfxComputePipeline  m_csGroupTraverseReset;
+
   GfxComputePipeline  m_csInstanceUpdateExecute;
   GfxComputePipeline  m_csInstanceUpdateNode;
   GfxComputePipeline  m_csInstanceUpdatePrepare;
@@ -454,11 +459,6 @@ private:
   GfxComputePipeline  m_csRenderPassUpdateInit;
   GfxComputePipeline  m_csRenderPassUpdatePrepare;
   GfxComputePipeline  m_csRenderPassUpload;
-
-  GfxComputePipeline  m_csPassInit;
-  GfxComputePipeline  m_csPassResetUpdate;
-  GfxComputePipeline  m_csPassTraverseBvh;
-  GfxComputePipeline  m_csPassTraverseReset;
 
   GfxComputePipeline  m_csSceneUpdate;
 

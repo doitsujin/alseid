@@ -8,6 +8,11 @@
 #include <cs_animation_prepare.h>
 #include <cs_animation_process.h>
 
+#include <cs_group_init.h>
+#include <cs_group_reset_update.h>
+#include <cs_group_traverse_bvh.h>
+#include <cs_group_traverse_reset.h>
+
 #include <cs_instance_update_execute.h>
 #include <cs_instance_update_node.h>
 #include <cs_instance_update_prepare.h>
@@ -16,11 +21,6 @@
 #include <cs_renderpass_update_init.h>
 #include <cs_renderpass_update_prepare.h>
 #include <cs_renderpass_upload.h>
-
-#include <cs_pass_init.h>
-#include <cs_pass_reset_update.h>
-#include <cs_pass_traverse_bvh.h>
-#include <cs_pass_traverse_reset.h>
 
 #include <cs_scene_update.h>
 
@@ -33,6 +33,10 @@ GfxScenePipelines::GfxScenePipelines(
 , m_csAnimationProcess      (createComputePipeline("cs_animation_process", cs_animation_process))
 , m_csDrawListInit          (createComputePipeline("cs_draw_list_init", cs_draw_list_init))
 , m_csDrawListGenerate      (createComputePipeline("cs_draw_list_generate", cs_draw_list_generate))
+, m_csGroupInit             (createComputePipeline("cs_group_init", cs_group_init))
+, m_csGroupResetUpdate      (createComputePipeline("cs_group_reset_update", cs_group_reset_update))
+, m_csGroupTraverseBvh      (createComputePipeline("cs_group_traverse_bvh", cs_group_traverse_bvh))
+, m_csGroupTraverseReset    (createComputePipeline("cs_group_traverse_reset", cs_group_traverse_reset))
 , m_csInstanceUpdateExecute (createComputePipeline("cs_instance_update_execute", cs_instance_update_execute))
 , m_csInstanceUpdateNode    (createComputePipeline("cs_instance_update_node", cs_instance_update_node))
 , m_csInstanceUpdatePrepare (createComputePipeline("cs_instance_update_prepare", cs_instance_update_prepare))
@@ -40,10 +44,6 @@ GfxScenePipelines::GfxScenePipelines(
 , m_csRenderPassUpdateInit  (createComputePipeline("cs_renderpass_update_init", cs_renderpass_update_init))
 , m_csRenderPassUpdatePrepare(createComputePipeline("cs_renderpass_update_prepare", cs_renderpass_update_prepare))
 , m_csRenderPassUpload      (createComputePipeline("cs_renderpass_upload", cs_renderpass_upload))
-, m_csPassInit              (createComputePipeline("cs_pass_init", cs_pass_init))
-, m_csPassResetUpdate       (createComputePipeline("cs_pass_reset_update", cs_pass_reset_update))
-, m_csPassTraverseBvh       (createComputePipeline("cs_pass_traverse_bvh", cs_pass_traverse_bvh))
-, m_csPassTraverseReset     (createComputePipeline("cs_pass_traverse_reset", cs_pass_traverse_reset))
 , m_csSceneUpdate           (createComputePipeline("cs_scene_update", cs_scene_update)) {
 
 }
@@ -61,10 +61,10 @@ void GfxScenePipelines::initPassGroupBuffer(
   auto scratch = context->writeScratch(GfxUsage::eShaderResource,
     sizeof(*rootNodes) * args.nodeCount, rootNodes);
 
-  context->bindPipeline(m_csPassInit);
+  context->bindPipeline(m_csGroupInit);
   context->bindDescriptor(0, 0, scratch.getDescriptor(GfxUsage::eShaderResource));
   context->setShaderConstants(0, args);
-  context->dispatch(m_csPassInit->computeWorkgroupCount(Extent3D(args.nodeCount, 1u, 1u)));
+  context->dispatch(m_csGroupInit->computeWorkgroupCount(Extent3D(args.nodeCount, 1u, 1u)));
 }
 
 
@@ -74,7 +74,7 @@ void GfxScenePipelines::processBvhLayer(
   const GfxDescriptor&                dispatchReset,
   const GfxSceneTraverseBvhArgs&      args) const {
   // Dispatch the shader to process relevant child nodes.
-  context->bindPipeline(m_csPassTraverseBvh);
+  context->bindPipeline(m_csGroupTraverseBvh);
   context->setShaderConstants(0, args);
   context->dispatchIndirect(dispatchTraverse);
 
@@ -85,7 +85,7 @@ void GfxScenePipelines::processBvhLayer(
   resetArgs.bvhLayer = args.bvhLayer;
   resetArgs.frameId = args.frameId;
 
-  context->bindPipeline(m_csPassTraverseReset);
+  context->bindPipeline(m_csGroupTraverseReset);
   context->setShaderConstants(0, resetArgs);
   context->dispatchIndirect(dispatchReset);
 }
@@ -164,9 +164,9 @@ void GfxScenePipelines::generateDrawList(
 void GfxScenePipelines::resetUpdateLists(
   const GfxContext&                   context,
         uint64_t                      groupBufferVa) const {
-  context->bindPipeline(m_csPassResetUpdate);
+  context->bindPipeline(m_csGroupResetUpdate);
   context->setShaderConstants(0, groupBufferVa);
-  context->dispatch(m_csPassResetUpdate->computeWorkgroupCount(
+  context->dispatch(m_csGroupResetUpdate->computeWorkgroupCount(
     Extent3D(uint32_t(GfxSceneNodeType::eCount) - uint32_t(GfxSceneNodeType::eBuiltInCount), 1u, 1u)));
 }
 
