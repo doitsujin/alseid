@@ -81,52 +81,6 @@ buffer PassInfoBuffer {
 };
 
 
-// Transforms a world space coordinate to a view space coordinate for the
-// given pass. Takes the pass info and cube map face index as arguments.
-vec3 passTransformToViewSpace(
-  in    PassInfo                      pass,
-        vec3                          vertex,
-        uint32_t                      face) {
-  vertex = transApply(pass.currTransform.transform, vertex);
-
-  // if (pass.type == PASS_TYPE_MIRROR)
-  //   vertex = mirrorVertex(pass.mirrorPlane, vertex);
-  // else if (pass.type == PASS_TYPE_CUBE && face < 6)
-  //   vertex = quatApply(pass.frustumOrFaceRotations[face], vertex);
-
-  return vertex;
-}
-
-
-// Tests whether a given world space point or sphere is contained within
-// the view frustum of the given pass. Sets the corresponding bit for each
-// frustum plane that the sphere is outside of.
-//
-// This can be used to perform frustum culling on a bounding box by treating
-// each vertex of the box as a point, and ANDing together the resulting bit
-// masks. If the end result is 0, the object is visible.
-uint32_t passTestViewFrustum(
-  in    PassInfo                      pass,
-        vec3                          center,
-        float                         radius) {
-  uint32_t result = 0;
-
-  // if (pass.type == PASS_TYPE_CUBE)
-  //   return result;
-
-  center = passTransformToViewSpace(pass, center, ~0u);
-
-  for (uint32_t i = 0; i < 6; i++) {
-    vec4 plane = pass.frustum.planes[i];
-
-    if (plane.w + dot(center, plane.xyz) < -radius)
-      result |= 1u << i;
-  }
-
-  return result;
-}
-
-
 // Pair of node list offsets within the pass group
 struct PassTypedNodeListOffsets {
   uint32_t  nodeList;

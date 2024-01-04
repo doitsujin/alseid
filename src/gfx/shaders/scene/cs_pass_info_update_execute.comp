@@ -148,7 +148,7 @@ void csExecutePassUpdates() {
 
     if (nodeIndices.x >= 0) {
       Transform nodeTransform = nodeTransforms.nodeTransforms[nodeOffset + nodeIndices.x].absoluteTransform;
-      viewTransform = transChain(viewTransform, transInverse(nodeTransform));
+      viewTransform = transChainNorm(viewTransform, transInverse(nodeTransform));
     }
 
     if ((oldPassFlags & PASS_FLAG_IGNORE_OCCLUSION_TEST) != 0u)
@@ -161,7 +161,7 @@ void csExecutePassUpdates() {
     if ((newPassFlags & PASS_FLAG_USES_MIRROR_PLANE) != 0u) {
       if (nodeIndices.y >= 0) {
         Transform nodeTransform = nodeTransforms.nodeTransforms[nodeOffset + nodeIndices.y].absoluteTransform;
-        viewTransform = transChain(viewTransform, nodeTransform);
+        viewTransform = transChainNorm(viewTransform, nodeTransform);
       }
 
       vec4 viewMirrorPlane = transApplyPlane(viewTransform, globals.passInfoBuffer.passes[passIndex].relativeMirrorPlane);

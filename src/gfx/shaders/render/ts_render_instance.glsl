@@ -141,7 +141,7 @@ uint tsMain() {
 
       // Apply transforms from model to view space
       meshletTransform = transChain(tsNodeTransformsShared[0], meshletTransform);
-      meshletTransform = transChain(pass.currTransform.transform, meshletTransform);
+      meshletTransform = transChainNorm(pass.currTransform.transform, meshletTransform);
 
       // Check mirror mode, which has to be applied in mesh instance space
       uint32_t mirrorMode = asGetMirrorMode(meshInstance.extra);

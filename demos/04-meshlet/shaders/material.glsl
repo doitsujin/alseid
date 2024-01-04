@@ -159,7 +159,7 @@ MsVertexOut msComputeVertexOutput(
 
   finalTransform = transChain(jointTransform, finalTransform);
   finalTransform = transChain(nodeTransform, finalTransform);
-  finalTransform = transChain(passTransform, finalTransform);
+  finalTransform = transChainNorm(passTransform, finalTransform);
   vec3 vertexPos = transApply(finalTransform, vec3(vertex.position.xyz));
 
   result.position = projApply(passInfoBuffer.passes[context.invocation.passIndex].projection, vertexPos);

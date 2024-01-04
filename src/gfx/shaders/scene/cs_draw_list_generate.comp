@@ -70,7 +70,8 @@ float csComputeLodDistance(uint64_t geometryBuffer, in Transform worldTransform)
   PassInfo passInfo = PassInfoBufferIn(globals.passInfoVa).passes[globals.lodSelectionPass];
   GeometryRef geometry = GeometryRef(geometryBuffer);
 
-  Transform viewTransform = transChain(passInfo.currTransform.transform, worldTransform);
+  Transform viewTransform = transChainNorm(
+    passInfo.currTransform.transform, worldTransform);
 
   vec3 staticCenter = mix(
     vec3(geometry.geometry.aabb.lo),
