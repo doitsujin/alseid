@@ -5,10 +5,9 @@
 
 #include "../as_quaternion.glsl"
 
-#define PASS_FLAG_IS_FIRST_UPDATE           (1u << 0)
-#define PASS_FLAG_IS_CUBE_MAP               (1u << 1)
-#define PASS_FLAG_USES_MIRROR_PLANE         (1u << 2)
-#define PASS_FLAG_USES_VIEWPORT_REGION      (1u << 3)
+#define PASS_FLAG_IS_CUBE_MAP               (1u << 0)
+#define PASS_FLAG_USES_MIRROR_PLANE         (1u << 1)
+#define PASS_FLAG_USES_VIEWPORT_REGION      (1u << 2)
 
 #define PASS_FLAG_PERFORM_OCCLUSION_TEST    (1u << 8)
 #define PASS_FLAG_IGNORE_OCCLUSION_TEST     (1u << 9)
