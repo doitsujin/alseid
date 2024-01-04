@@ -23,6 +23,7 @@
 //    struct TsContext {
 //      TsInvocationInfo  invocation;   /* mandatory */
 //      uint64_t          drawListVa;   /* mandatory; stores pointer to draw list */
+//      uint64_t          passInfoVa;   /* mandatory; stores pointer to pass infos */
 //      uint64_t          instanceVa;   /* mandatory; stores pointer to instance data */
 //      uint64_t          sceneVa;      /* mandatory; stores pointer to node data */
 //      uint32_t          frameId;      /* mandatory; stores current frame ID */
@@ -33,12 +34,6 @@
 //
 //    TsContext tsGetInstanceContext();
 //
-// Computes a sub-pass visibility mask for a given meshlet. For each bit set in
-// the resulting mask, a mesh shader workgroup will be dispatched.
-//
-//    uint32_t tsTestMeshletVisibility(
-//      in      TsContext             context,  /* Instance context */
-//      in      TsMeshletCullingInfo  meshlet); /* Meshlet metadata */
 #ifndef TS_RENDER_INSTANCE_H
 #define TS_RENDER_INSTANCE_H
 
@@ -64,11 +59,13 @@ void tsLoadNodeTransformsFromMemory(in TsContext context, uint32_t nodeIndex) {
     if (updateFrameId < invocationFrameId)
       invocationFrameId = context.frameId;
 
+    transformIndex = nodeComputeTransformIndices(nodeIndex, scene.nodeCount, invocationFrameId).x;
     tsNodeTransformsShared[tid] = nodeTransforms.nodeTransforms[transformIndex].absoluteTransform;
   }
 
   barrier();
 }
+
 
 uint tsMain() {
   uint32_t tid = gl_LocalInvocationIndex;
@@ -110,54 +107,121 @@ uint tsMain() {
   // multiple meshlets per invocation, e.g. when rendering cube maps or shadow maps,
   // each set bit corresponds to a sub-pass, and the bit index will be passed to the
   // mesh shader via the meshlet payload field.
-  uint32_t visibilityMask = 0u;
+  uint32_t viewMask = 0u;
   uint32_t meshletOffset = 0u;
 
   if (meshletIndex < meshletCount) {
     MeshletMetadata meshlet = dataBuffer.meshlets[meshletIndex];
     meshletOffset = meshlet.dataOffset;
 
+    // Load render pass info and default to rendering each view,
+    // since meshlets may have all culling options disabled.
+    PassInfoBufferIn passBuffer = PassInfoBufferIn(context.passInfoVa);
+    PassInfo pass = passBuffer.passes[context.invocation.passIndex];
+
+    uint32_t viewCount = (pass.flags & PASS_FLAG_IS_CUBE_MAP) != 0u ? 6u : 1u;
+    viewMask = (1u << viewCount) - 1u;
+
     // Resolve bounding sphere and cone
     vec2 coneAxis = meshlet.coneAxis;
     float coneCutoff = meshlet.coneCutoff;
 
-    TsMeshletCullingInfo meshletCullingInfo;
-    meshletCullingInfo.flags = meshlet.flags;
-    meshletCullingInfo.sphereCenter = meshlet.sphereCenter;
-    meshletCullingInfo.sphereRadius = meshlet.sphereRadius;
-    meshletCullingInfo.coneOrigin = meshlet.coneOrigin;
-    meshletCullingInfo.coneAxis.xy = coneAxis;
-    meshletCullingInfo.coneAxis.z = sqrt(max(0.0f, 1.0f - dot(coneAxis, coneAxis))) * sign(coneCutoff);
-    meshletCullingInfo.coneCutoff = abs(coneCutoff);
-    meshletCullingInfo.transform = Transform(meshInstance.transform, meshInstance.translate);
+    if (meshlet.flags != 0u) {
+      Transform meshletTransform = Transform(meshInstance.transform, meshInstance.translate);
 
-    // Apply per-instance mirror mode in local mesh space
-    uint32_t mirrorMode = asGetMirrorMode(meshInstance.extra);
+      // Apply joint transform as necessary
+      if (meshlet.jointIndex < mesh.skinJoints) {
+        uint32_t jointIndex = meshSkinning.joints[meshlet.jointIndex];
 
-    if (mirrorMode != MESH_MIRROR_NONE) {
-      meshletCullingInfo.sphereCenter = asMirror(meshletCullingInfo.sphereCenter, mirrorMode);
-      meshletCullingInfo.coneOrigin = asMirror(meshletCullingInfo.coneOrigin, mirrorMode);
-      meshletCullingInfo.coneAxis = asMirror(meshletCullingInfo.coneAxis, mirrorMode);
-    }
+        if (jointIndex < instanceData.header.jointCount) {
+          Transform jointTransform = instanceLoadJoint(instanceNode.propertyBuffer, 0, jointIndex);
+          meshletTransform = transChain(jointTransform, meshletTransform);
+        }
+      }
 
-    // Apply joint transform as necessary
-    if (meshlet.jointIndex < mesh.skinJoints) {
-      uint32_t jointIndex = meshSkinning.joints[meshlet.jointIndex];
+      // Apply transforms from model to view space
+      meshletTransform = transChain(tsNodeTransformsShared[0], meshletTransform);
+      meshletTransform = transChain(pass.currTransform.transform, meshletTransform);
 
-      if (jointIndex < instanceData.header.jointCount) {
-        Transform jointTransform = instanceLoadJoint(instanceNode.propertyBuffer, 0, jointIndex);
-        meshletCullingInfo.transform = transChain(jointTransform, meshletCullingInfo.transform);
+      // Check mirror mode, which has to be applied in mesh instance space
+      uint32_t mirrorMode = asGetMirrorMode(meshInstance.extra);
+
+      // Perform cone culling if that is enabled for the meshlet. Since the
+      // angles don't change with a view rotation, we only need to do this once.
+      if ((meshlet.flags & MESHLET_CULL_CONE_BIT) != 0u) {
+        float coneCutoff = float(meshlet.coneCutoff);
+        vec3 coneOrigin = vec3(meshlet.coneOrigin);
+        vec2 coneAxis2D = vec2(meshlet.coneAxis);
+        vec3 coneAxis = vec3(coneAxis2D, sqrt(max(0.0f, 1.0f - dot(coneAxis2D, coneAxis2D))) * sign(coneCutoff));
+        coneCutoff = abs(coneCutoff);
+
+        if (mirrorMode != MESH_MIRROR_NONE) {
+          coneOrigin = asMirror(coneOrigin, mirrorMode);
+          coneAxis = asMirror(coneAxis, mirrorMode);
+        }
+
+        coneOrigin = transApply(meshletTransform, coneOrigin);
+        coneAxis = quatApply(meshletTransform.rot, coneAxis);
+
+        if ((pass.flags & PASS_FLAG_USES_MIRROR_PLANE) != 0u) {
+          coneOrigin = planeMirror(pass.currMirrorPlane, coneOrigin);
+          coneAxis = planeMirror(pass.currMirrorPlane, coneAxis);
+        }
+
+        if (!testConeFacing(coneOrigin, coneAxis, coneCutoff))
+          viewMask = 0u;
+      }
+
+      // Cull against the mirror plane and frustum planes if necessary.
+      if ((meshlet.flags & MESHLET_CULL_SPHERE_BIT) != 0u && viewMask != 0u) {
+        vec3 sphereCenter = vec3(meshlet.sphereCenter);
+        float sphereRadius = float(meshlet.sphereRadius);
+
+        if (mirrorMode != MESH_MIRROR_NONE)
+          sphereCenter = asMirror(sphereCenter, mirrorMode);
+
+        sphereCenter = transApply(meshletTransform, sphereCenter);
+
+        if ((pass.flags & PASS_FLAG_USES_MIRROR_PLANE) != 0u) {
+          // We also only need to test against the mirror plane once since
+          // it is not dependent on the exact view orientation
+          if (!testPlaneSphere(pass.currMirrorPlane, sphereCenter, sphereRadius))
+            viewMask = 0u;
+
+          // Apply mirroring after culling to not negate the plane test
+          sphereCenter = planeMirror(pass.currMirrorPlane, sphereCenter);
+        }
+
+        if (viewMask != 0u) {
+          // Test bounding sphere against the view frustum for each view. Ensure
+          // that the view mask is uniform here so that memory loads and some
+          // of the operation can be made more efficient.
+          for (uint32_t i = 0; i < viewCount; i++) {
+            // If necessary, apply view rotation to the sphere center
+            // so that we can test it against the view frustum.
+            vec3 sphereCenterView = sphereCenter;
+
+            if ((pass.flags & PASS_FLAG_IS_CUBE_MAP) != 0u)
+              sphereCenterView = quatApply(passBuffer.cubeFaceRotations[i], sphereCenterView);
+
+            // Don't trust compilers to deal with local arrays here
+            bool frustumTest = testPlaneSphere(pass.frustum.planes[0], sphereCenterView, sphereRadius)
+                            && testPlaneSphere(pass.frustum.planes[1], sphereCenterView, sphereRadius)
+                            && testPlaneSphere(pass.frustum.planes[2], sphereCenterView, sphereRadius)
+                            && testPlaneSphere(pass.frustum.planes[3], sphereCenterView, sphereRadius)
+                            && testPlaneSphere(pass.frustum.planes[4], sphereCenterView, sphereRadius)
+                            && testPlaneSphere(pass.frustum.planes[5], sphereCenterView, sphereRadius);
+
+            if (!frustumTest)
+              viewMask &= ~(1u << i);
+          }
+        }
       }
     }
-
-    // Apply node transform to world space coordinates
-    meshletCullingInfo.transform = transChain(tsNodeTransformsShared[0], meshletCullingInfo.transform);
-
-    visibilityMask = tsTestMeshletVisibility(context, meshletCullingInfo);
   }
 
   // Emit task shader payload
-  uint32_t outputCount = bitCount(visibilityMask);
+  uint32_t outputCount = bitCount(viewMask);
   uint32_t outputIndex = tsAllocateOutputs(outputCount);
 
   tsPayloadInit(context.invocation, mesh, meshInstance, uint64_t(dataBuffer));
@@ -165,7 +229,7 @@ uint tsMain() {
   if (tid < 2u)
     tsPayloadSetTransform(tid, tsNodeTransformsShared[tid]);
 
-  tsPayloadAddMeshlet(tid, meshletOffset, outputIndex, visibilityMask);
+  tsPayloadAddMeshlet(tid, meshletOffset, outputIndex, viewMask);
   return tsGetOutputCount();
 }
 

@@ -9,6 +9,7 @@
 struct TsContext {
   TsInvocationInfo  invocation;
   uint64_t          drawListVa;
+  uint64_t          passInfoVa;
   uint64_t          instanceVa;
   uint64_t          sceneVa;
   uint32_t          frameId;
@@ -32,18 +33,13 @@ TsContext tsGetInstanceContext() {
   result.invocation = tsGetInvocationInfo(globals.drawListVa,
     globals.passGroupVa, globals.drawGroup);
   result.drawListVa = globals.drawListVa;
+  result.passInfoVa = globals.passInfoVa;
   result.instanceVa = globals.instanceVa;
   result.sceneVa = globals.sceneVa;
   result.frameId = globals.frameId;
   return result;
 }
 
-
-uint32_t tsTestMeshletVisibility(
-  in      TsContext                   context,
-  in      TsMeshletCullingInfo        meshlet) {
-  return 1u;
-}
 
 #include "render/ts_render_instance.glsl"
 

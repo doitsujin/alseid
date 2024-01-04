@@ -154,13 +154,13 @@ bool testConeSphere(
 // cos(angle / 2).
 bool testConeFacing(
         vec3                          coneOrigin,
-        float                         coneCutoff,
-        vec3                          direction) {
+        vec3                          coneAxis,
+        float                         coneCutoff) {
   // Input vectors may not be normalized. This is equivalent to:
-  // dot(normalize(coneOrigin), normalize(direction)) > abs(coneCutoff)
+  // dot(normalize(coneOrigin), normalize(coneAxis)) > abs(coneCutoff)
   float squareCutoff = coneCutoff * coneCutoff;
-  float squareScale  = dot(coneOrigin, coneOrigin) * dot(direction, direction);
-  float squareDot    = dot(coneOrigin, direction);
+  float squareScale  = dot(coneOrigin, coneOrigin) * dot(coneAxis, coneAxis);
+  float squareDot    = dot(coneOrigin, coneAxis);
         squareDot   *= abs(squareDot);
 
   return (squareDot < squareCutoff * squareScale);
