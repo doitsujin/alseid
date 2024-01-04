@@ -37,7 +37,7 @@ void csPreparePassUpdates() {
   
   if (gid < globals.passCount) {
     requiresUpdate = (globals.passInfoBuffer.passes[gid].dirtyFrameId >= globals.passInfoBuffer.passes[gid].updateFrameId) ||
-      (globals.passInfoBuffer.passes[gid].flags & PASS_FLAG_IGNORE_OCCLUSION_TEST) != 0 ||
+      (globals.passInfoBuffer.passes[gid].flags & PASS_IGNORE_OCCLUSION_TEST_BIT) != 0 ||
       (globals.passInfoBuffer.passes[gid].cameraNode >= 0) ||
       (globals.passInfoBuffer.passes[gid].mirrorNode >= 0);
   }

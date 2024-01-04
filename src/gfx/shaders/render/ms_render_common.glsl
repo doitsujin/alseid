@@ -17,17 +17,17 @@ const uint MsWorkgroupSize = 128u;
 
 // Flip face orientation. This is generally required for mirrored
 // mesh instances in order to maintain a consistent front face.
-#define MS_FLAG_FLIP_FACE               (1u << 0)
+#define MS_FLIP_FACE_BIT                (1u << 0)
 
 // Face culling flags. This does not take the front face into account,
 // and instead only looks at the final primitive winding order.
-#define MS_FLAG_CULL_FACE_CW            (1u << 1)
-#define MS_FLAG_CULL_FACE_CCW           (1u << 2)
-#define MS_FLAG_CULL_FACE_ANY           (MS_FLAG_CULL_FACE_CW | MS_FLAG_CULL_FACE_CW)
+#define MS_CULL_FACE_CW_BIT             (1u << 1)
+#define MS_CULL_FACE_CCW_BIT            (1u << 2)
+#define MS_CULL_FACE_ANY                (MS_CULL_FACE_CW_BIT | MS_CULL_FACE_CCW_BIT)
 
 // If set, motion vectors are set to 0. Generally depends on the
 // state of the current render pass.
-#define MS_FLAG_NO_MOTION_VECTORS       (1u << 3)
+#define MS_NO_MOTION_VECTORS_BIT        (1u << 3)
 
 
 // Decodes meshlet payload stored in the task shader payload.

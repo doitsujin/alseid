@@ -104,13 +104,13 @@ struct MsVertexOut {
 MsContext msGetInstanceContext() {
   MsContext context;
   context.invocation = msGetInvocationInfo(globals.instanceVa, globals.frameId);
-  context.flags = MS_FLAG_CULL_FACE_CW;
+  context.flags = MS_CULL_FACE_CW_BIT;
 
   if (asGetMirrorMode(context.invocation.meshInstance.extra) != MESH_MIRROR_NONE)
-    context.flags |= MS_FLAG_FLIP_FACE;
+    context.flags |= MS_FLIP_FACE_BIT;
 
-  if ((PassInfoBufferIn(globals.passInfoVa).passes[context.invocation.passIndex].flags & PASS_FLAG_IGNORE_OCCLUSION_TEST) != 0u)
-    context.flags |= MS_FLAG_NO_MOTION_VECTORS;
+  if ((PassInfoBufferIn(globals.passInfoVa).passes[context.invocation.passIndex].flags & PASS_IGNORE_OCCLUSION_TEST_BIT) != 0u)
+    context.flags |= MS_NO_MOTION_VECTORS_BIT;
 
   return context;
 }

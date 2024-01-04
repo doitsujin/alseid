@@ -54,7 +54,7 @@ void csUpdatePassInfos() {
   globals.dstPassInfoBuffer.passes[index].dirtyFrameId = globals.frameId;
   globals.dstPassInfoBuffer.passes[index].updateFrameId = 0u;
 
-  if ((passFlags & PASS_FLAG_KEEP_METADATA) == 0u) {
+  if ((passFlags & PASS_KEEP_METADATA_BIT) == 0u) {
     globals.dstPassInfoBuffer.passes[index].flags = passFlags;
     globals.dstPassInfoBuffer.passes[index].passTypeMask = globals.srcPassInfoBuffer.passes[gid].passTypeMask;
     globals.dstPassInfoBuffer.passes[index].cameraNode = globals.srcPassInfoBuffer.passes[gid].cameraNode;
@@ -66,26 +66,26 @@ void csUpdatePassInfos() {
   }
 
   // Copy actual render pass properties
-  if ((passFlags & PASS_FLAG_KEEP_PROJECTION) == 0u)
+  if ((passFlags & PASS_KEEP_PROJECTION_BIT) == 0u)
     globals.dstPassInfoBuffer.passes[index].projection = globals.srcPassInfoBuffer.passes[gid].projection;
 
-  if ((passFlags & PASS_FLAG_KEEP_VIEW_TRANSFORM) == 0u)
+  if ((passFlags & PASS_KEEP_VIEW_TRANSFORM_BIT) == 0u)
     globals.dstPassInfoBuffer.passes[index].relativeTransform = globals.srcPassInfoBuffer.passes[gid].relativeTransform;
 
-  if ((passFlags & PASS_FLAG_KEEP_MIRROR_PLANE) == 0u)
+  if ((passFlags & PASS_KEEP_MIRROR_PLANE_BIT) == 0u)
     globals.dstPassInfoBuffer.passes[index].relativeMirrorPlane = globals.srcPassInfoBuffer.passes[gid].relativeMirrorPlane;
 
-  if ((passFlags & PASS_FLAG_KEEP_VIEWPORT_LAYER_INDEX) == 0u) {
+  if ((passFlags & PASS_KEEP_VIEWPORT_LAYER_INDEX_BIT) == 0u) {
     globals.dstPassInfoBuffer.passes[index].layerIndex = globals.srcPassInfoBuffer.passes[gid].layerIndex;
     globals.dstPassInfoBuffer.passes[index].viewportIndex = globals.srcPassInfoBuffer.passes[gid].viewportIndex;
   }
 
-  if ((passFlags & PASS_FLAG_KEEP_VIEWPORT_REGION) == 0u) {
+  if ((passFlags & PASS_KEEP_VIEWPORT_REGION_BIT) == 0u) {
     globals.dstPassInfoBuffer.passes[index].viewportOffset = globals.srcPassInfoBuffer.passes[gid].viewportOffset;
     globals.dstPassInfoBuffer.passes[index].viewportExtent = globals.srcPassInfoBuffer.passes[gid].viewportExtent;
   }
 
-  if ((passFlags & PASS_FLAG_KEEP_VIEW_DISTANCE) == 0u) {
+  if ((passFlags & PASS_KEEP_VIEW_DISTANCE_BIT) == 0u) {
     globals.dstPassInfoBuffer.passes[index].viewDistanceLimit = globals.srcPassInfoBuffer.passes[gid].viewDistanceLimit;
     globals.dstPassInfoBuffer.passes[index].lodDistanceScale = globals.srcPassInfoBuffer.passes[gid].lodDistanceScale;
   }

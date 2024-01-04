@@ -1,10 +1,10 @@
 #ifndef AS_SCENE_INSTANCE_H
 #define AS_SCENE_INSTANCE_H
 
-#define INSTANCE_FLAG_STATIC            (1u << 0)
-#define INSTANCE_FLAG_DEFORM            (1u << 1)
-#define INSTANCE_FLAG_ANIMATION         (1u << 2)
-#define INSTANCE_FLAG_NO_MOTION_VECTORS (1u << 3)
+#define INSTANCE_STATIC_BIT             (1u << 0)
+#define INSTANCE_DEFORM_BIT             (1u << 1)
+#define INSTANCE_ANIMATION_BIT          (1u << 2)
+#define INSTANCE_NO_MOTION_VECTORS_BIT  (1u << 3)
 
 struct InstanceJoint {
   Transform       transform;

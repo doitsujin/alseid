@@ -119,7 +119,7 @@ uint tsMain() {
     PassInfoBufferIn passBuffer = PassInfoBufferIn(context.passInfoVa);
     PassInfo pass = passBuffer.passes[context.invocation.passIndex];
 
-    uint32_t viewCount = (pass.flags & PASS_FLAG_IS_CUBE_MAP) != 0u ? 6u : 1u;
+    uint32_t viewCount = (pass.flags & PASS_IS_CUBE_MAP_BIT) != 0u ? 6u : 1u;
     viewMask = (1u << viewCount) - 1u;
 
     // Resolve bounding sphere and cone
@@ -163,7 +163,7 @@ uint tsMain() {
         coneOrigin = transApply(meshletTransform, coneOrigin);
         coneAxis = quatApply(meshletTransform.rot, coneAxis);
 
-        if ((pass.flags & PASS_FLAG_USES_MIRROR_PLANE) != 0u) {
+        if ((pass.flags & PASS_USES_MIRROR_PLANE_BIT) != 0u) {
           coneOrigin = planeMirror(pass.currMirrorPlane, coneOrigin);
           coneAxis = planeMirror(pass.currMirrorPlane, coneAxis);
         }
@@ -183,7 +183,7 @@ uint tsMain() {
 
         sphereCenter = transApply(meshletTransform, sphereCenter);
 
-        if ((pass.flags & PASS_FLAG_USES_MIRROR_PLANE) != 0u) {
+        if ((pass.flags & PASS_USES_MIRROR_PLANE_BIT) != 0u) {
           // We also only need to test against the mirror plane once since
           // it is not dependent on the exact view orientation
           if (!testPlaneSphere(pass.currMirrorPlane, sphereCenter, sphereRadius))
@@ -212,7 +212,7 @@ uint tsMain() {
             // so that we can test it against the view frustum.
             vec3 sphereCenterView = sphereCenter;
 
-            if ((pass.flags & PASS_FLAG_IS_CUBE_MAP) != 0u)
+            if ((pass.flags & PASS_IS_CUBE_MAP_BIT) != 0u)
               sphereCenterView = quatApply(passBuffer.cubeFaceRotations[i], sphereCenterView);
 
             // Don't trust compilers to deal with local arrays here

@@ -300,7 +300,7 @@ uvec3 msLoadPrimitive(in MsContext context, in Meshlet meshlet, uint index) {
   uint64_t address = meshletComputeAddress(context.invocation.meshletVa, meshlet.primitiveOffset);
 
   uvec3 result = uvec3(MeshletPrimitiveDataRef(address).primitives[index]);
-  return ((context.flags & MS_FLAG_FLIP_FACE) != 0u) ? result.xzy : result.xyz;
+  return ((context.flags & MS_FLIP_FACE_BIT) != 0u) ? result.xzy : result.xyz;
 }
 
 
@@ -550,7 +550,7 @@ bool msCullPrimitive(in MsContext context, uvec3 indices) {
   // Perform back-face culling first. Doing this may be useful when
   // rendering heavily-animated objects for which cone culling is
   // not an option.
-  uint cullMode = context.flags & MS_FLAG_CULL_FACE_ANY;
+  uint cullMode = context.flags & MS_CULL_FACE_ANY;
 
   if (cullMode != 0u) {
     vec2 ab = b.xy - a.xy;
@@ -560,7 +560,7 @@ bool msCullPrimitive(in MsContext context, uvec3 indices) {
 
     float face = z.x - z.y;
 
-    if (cullMode == MS_FLAG_CULL_FACE_CCW)
+    if (cullMode == MS_CULL_FACE_CCW_BIT)
       face = -face;
 
     if (face <= 0.0f)
@@ -762,8 +762,8 @@ shared vec3 msPrevFrameVertexPosShared[MAX_VERT_COUNT];
 // This is the case if the instance has been updated in the current
 // frame and does not have the flag to explicitly disable them.
 bool msInstanceUsesMotionVectors(in MsContext context) {
-  return (context.flags & MS_FLAG_NO_MOTION_VECTORS) == 0u
-      && (context.invocation.instanceNode.flags & INSTANCE_FLAG_NO_MOTION_VECTORS) == 0u;
+  return (context.flags & MS_NO_MOTION_VECTORS_BIT) == 0u
+      && (context.invocation.instanceNode.flags & INSTANCE_NO_MOTION_VECTORS_BIT) == 0u;
 }
 #endif // MS_NO_MOTION_VECTORS
 

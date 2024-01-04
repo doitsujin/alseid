@@ -61,7 +61,7 @@ uint32_t csGetInstanceNodeRef() {
 
   // Exit early if the instance does not have animations, or if the
   // animation buffer is not resident.
-  if ((instance.flags & INSTANCE_FLAG_ANIMATION) == 0u ||
+  if ((instance.flags & INSTANCE_ANIMATION_BIT) == 0u ||
       uint64_t(instance.propertyBuffer) == uint64_t(0u) ||
       uint64_t(instance.animationBuffer) == uint64_t(0u))
     return 0u;

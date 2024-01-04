@@ -56,7 +56,7 @@ vec3 csTransformVertex(
         vec3                          vertex) {
   vertex = transApply(transform, vertex);
 
-  if ((passInfo.flags & PASS_FLAG_USES_MIRROR_PLANE) != 0u)
+  if ((passInfo.flags & PASS_USES_MIRROR_PLANE_BIT) != 0u)
     vertex = planeMirror(passInfo.currMirrorPlane, vertex);
 
   return vertex;
@@ -373,7 +373,7 @@ void csGenerateDraws() {
             // the bounding box against the view frustum for non-cube map passes. Control
             // flow is expected to be relatively uniform up until this point; do not try
             // to parallelize instance-level culling any further.
-            if ((passInfo.flags & PASS_FLAG_IS_CUBE_MAP) == 0u && isVisible) {
+            if ((passInfo.flags & PASS_IS_CUBE_MAP_BIT) == 0u && isVisible) {
               vec3 v0 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(aabb, 0));
               vec3 v1 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(aabb, 1));
               vec3 v2 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(aabb, 2));

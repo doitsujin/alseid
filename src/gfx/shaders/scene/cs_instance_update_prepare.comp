@@ -47,10 +47,10 @@ void csPrepareUpdate() {
 
   // Disable motion vectors for the instance if the instance node itself has
   // been updated, since this indicates that it has been made resident.
-  instance.flags &= ~INSTANCE_FLAG_NO_MOTION_VECTORS;
+  instance.flags &= ~INSTANCE_NO_MOTION_VECTORS_BIT;
 
   if (instance.updateFrameId == 0u)
-    instance.flags |= INSTANCE_FLAG_NO_MOTION_VECTORS;
+    instance.flags |= INSTANCE_NO_MOTION_VECTORS_BIT;
 
   // Also disable motion vectors if the previous frame's node transform is not
   // up to date. This can happen if the containing BVH node got culled.
@@ -61,12 +61,12 @@ void csPrepareUpdate() {
   uint nodeTransformUpdate = nodeTransforms.nodeTransforms[nodeTransformIndices.y].updateFrameId;
 
   if (nodeTransformUpdate + 1u < frameId)
-    instance.flags |= INSTANCE_FLAG_NO_MOTION_VECTORS;
+    instance.flags |= INSTANCE_NO_MOTION_VECTORS_BIT;
 
   // Dispatch an update for transforms and morph target weights if necessary.
   bool requiresUpdate = false;
 
-  if ((instance.flags & INSTANCE_FLAG_DEFORM) != 0) {
+  if ((instance.flags & INSTANCE_DEFORM_BIT) != 0) {
     // Always dispatch one extra update after the instance has last been
     // changed, so that the previous frame's animation data is valid.
     requiresUpdate = instance.updateFrameId <= instance.dirtyFrameId;
@@ -78,7 +78,7 @@ void csPrepareUpdate() {
       // If the instance hasn't been rendered since the last change to its
       // animation data more than one frame ago, motion vectors are invalid.
       if (instance.updateFrameId + 1u < frameId)
-        instance.flags |= INSTANCE_FLAG_NO_MOTION_VECTORS;
+        instance.flags |= INSTANCE_NO_MOTION_VECTORS_BIT;
     }
   }
 
@@ -86,7 +86,7 @@ void csPrepareUpdate() {
   if (requiresUpdate)
     nodeListAddUpdate(groupBuffer, instanceNodeRef, 0, 1);
 
-  if ((instance.flags & INSTANCE_FLAG_STATIC) != 0) {
+  if ((instance.flags & INSTANCE_STATIC_BIT) != 0) {
     // Data from the previous frame is irrelevant for rendering shadow maps
     requiresUpdate = instance.updateFrameId < instance.dirtyFrameId;
 

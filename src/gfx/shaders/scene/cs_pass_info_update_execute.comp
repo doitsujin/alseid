@@ -134,7 +134,7 @@ void csExecutePassUpdates() {
     // Clear occlusion test ignore flag if this is the second consecutive update,
     // since the current frame transforms will generally be valid at this point.
     if (globals.passInfoBuffer.passes[passIndex].dirtyFrameId < globals.frameId)
-      newPassFlags &= ~PASS_FLAG_IGNORE_OCCLUSION_TEST;
+      newPassFlags &= ~PASS_IGNORE_OCCLUSION_TEST_BIT;
 
     // Only write pass flags if they have actually changed
     if (newPassFlags != oldPassFlags)
@@ -151,14 +151,14 @@ void csExecutePassUpdates() {
       viewTransform = transChainNorm(viewTransform, transInverse(nodeTransform));
     }
 
-    if ((oldPassFlags & PASS_FLAG_IGNORE_OCCLUSION_TEST) != 0u)
+    if ((oldPassFlags & PASS_IGNORE_OCCLUSION_TEST_BIT) != 0u)
       currTransform = viewTransform;
 
     globals.passInfoBuffer.passes[passIndex].currTransform = PassTransform(viewTransform, 0u);
     globals.passInfoBuffer.passes[passIndex].prevTransform = PassTransform(currTransform, 0u);
 
     // If necessary, compute the view space mirror plane.
-    if ((newPassFlags & PASS_FLAG_USES_MIRROR_PLANE) != 0u) {
+    if ((newPassFlags & PASS_USES_MIRROR_PLANE_BIT) != 0u) {
       if (nodeIndices.y >= 0) {
         Transform nodeTransform = nodeTransforms.nodeTransforms[nodeOffset + nodeIndices.y].absoluteTransform;
         viewTransform = transChainNorm(viewTransform, nodeTransform);
@@ -167,7 +167,7 @@ void csExecutePassUpdates() {
       vec4 viewMirrorPlane = transApplyPlane(viewTransform, globals.passInfoBuffer.passes[passIndex].relativeMirrorPlane);
       vec4 currMirrorPlane = globals.passInfoBuffer.passes[passIndex].currMirrorPlane;
 
-      if ((oldPassFlags & PASS_FLAG_IGNORE_OCCLUSION_TEST) != 0u)
+      if ((oldPassFlags & PASS_IGNORE_OCCLUSION_TEST_BIT) != 0u)
         currMirrorPlane = viewMirrorPlane;
 
       globals.passInfoBuffer.passes[passIndex].currMirrorPlane = viewMirrorPlane;

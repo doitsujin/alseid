@@ -5,24 +5,24 @@
 
 #include "../as_quaternion.glsl"
 
-#define PASS_FLAG_IS_CUBE_MAP               (1u << 0)
-#define PASS_FLAG_USES_MIRROR_PLANE         (1u << 1)
-#define PASS_FLAG_USES_VIEWPORT_REGION      (1u << 2)
+#define PASS_IS_CUBE_MAP_BIT                (1u << 0)
+#define PASS_USES_MIRROR_PLANE_BIT          (1u << 1)
+#define PASS_USES_VIEWPORT_REGION_BIT       (1u << 2)
 
-#define PASS_FLAG_PERFORM_OCCLUSION_TEST    (1u << 8)
-#define PASS_FLAG_IGNORE_OCCLUSION_TEST     (1u << 9)
+#define PASS_PERFORM_OCCLUSION_TEST_BIT     (1u << 8)
+#define PASS_IGNORE_OCCLUSION_TEST_BIT      (1u << 9)
 
-#define PASS_FLAG_KEEP_METADATA             (1u << 16)
-#define PASS_FLAG_KEEP_PROJECTION           (1u << 17)
-#define PASS_FLAG_KEEP_VIEW_TRANSFORM       (1u << 18)
-#define PASS_FLAG_KEEP_MIRROR_PLANE         (1u << 19)
-#define PASS_FLAG_KEEP_VIEWPORT_LAYER_INDEX (1u << 20)
-#define PASS_FLAG_KEEP_VIEWPORT_REGION      (1u << 21)
-#define PASS_FLAG_KEEP_VIEW_DISTANCE        (1u << 22)
+#define PASS_KEEP_METADATA_BIT              (1u << 16)
+#define PASS_KEEP_PROJECTION_BIT            (1u << 17)
+#define PASS_KEEP_VIEW_TRANSFORM_BIT        (1u << 18)
+#define PASS_KEEP_MIRROR_PLANE_BIT          (1u << 19)
+#define PASS_KEEP_VIEWPORT_LAYER_INDEX_BIT  (1u << 20)
+#define PASS_KEEP_VIEWPORT_REGION_BIT       (1u << 21)
+#define PASS_KEEP_VIEW_DISTANCE_BIT         (1u << 22)
 
-#define PASS_FLAG_ENABLE_LIGHTING           (1u << 24)
+#define PASS_ENABLE_LIGHTING_BIT            (1u << 24)
 
-#define PASS_SPECIAL_FLAG_MASK              (PASS_FLAG_IGNORE_OCCLUSION_TEST)
+#define PASS_SPECIAL_FLAG_MASK              (PASS_IGNORE_OCCLUSION_TEST_BIT)
 
 #define PASS_COUNT_PER_GROUP (32u)
 
