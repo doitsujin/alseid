@@ -18,6 +18,7 @@ as_shader_includes = files(
 
   'scene/group/as_group.glsl',
 
+  'scene/instance/as_instance.glsl',
   'scene/instance/as_instance_payload.glsl',
   'scene/instance/ms_instance_common.glsl',
   'scene/instance/ms_instance_render.glsl',
@@ -27,7 +28,6 @@ as_shader_includes = files(
   'scene/renderpass/as_renderpass.glsl',
 
   'scene/as_scene.glsl',
-  'scene/as_scene_instance.glsl',
   'scene/as_scene_node_transform.glsl',
   'scene/as_scene_stream.glsl',
 )
@@ -39,14 +39,14 @@ as_shader_builtins = [
   [ 'scene/draw/cs_draw_list_init.comp', 'cs' ],
   [ 'scene/draw/cs_draw_list_generate.comp', 'cs' ],
 
+  [ 'scene/instance/cs_instance_update_execute.comp', 'cs' ],
+  [ 'scene/instance/cs_instance_update_node.comp', 'cs' ],
+  [ 'scene/instance/cs_instance_update_prepare.comp', 'cs' ],
+
   [ 'scene/renderpass/cs_renderpass_update_execute.comp', 'cs' ],
   [ 'scene/renderpass/cs_renderpass_update_init.comp', 'cs' ],
   [ 'scene/renderpass/cs_renderpass_update_prepare.comp', 'cs' ],
   [ 'scene/renderpass/cs_renderpass_upload.comp', 'cs' ],
-
-  [ 'scene/cs_instance_update_execute.comp', 'cs' ],
-  [ 'scene/cs_instance_update_node.comp', 'cs' ],
-  [ 'scene/cs_instance_update_prepare.comp', 'cs' ],
 
   [ 'scene/cs_pass_init.comp', 'cs' ],
   [ 'scene/cs_pass_reset_update.comp', 'cs' ],

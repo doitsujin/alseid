@@ -1,8 +1,9 @@
 #ifndef AS_INSTANCE_PAYLOAD_H
 #define AS_INSTANCE_PAYLOAD_H
 
+#include "../instance/as_instance.glsl"
+
 #include "../as_scene.glsl"
-#include "../as_scene_instance.glsl"
 
 layout(constant_id = SPEC_CONST_ID_TASK_SHADER_WORKGROUP_SIZE)
 const uint32_t TsWorkgroupSize = 128;

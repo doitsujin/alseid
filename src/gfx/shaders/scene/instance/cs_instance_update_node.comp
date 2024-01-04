@@ -9,9 +9,9 @@
 
 #define CS_MAIN csUpdateInstanceNodes
 
-#include "../as_include_head.glsl"
+#include "../../as_include_head.glsl"
 
-#include "as_scene_instance.glsl"
+#include "as_instance.glsl"
 
 layout(local_size_x = 128) in;
 
@@ -53,4 +53,4 @@ void csUpdateInstanceNodes() {
   }
 }
 
-#include "../as_include_tail.glsl"
+#include "../../as_include_tail.glsl"

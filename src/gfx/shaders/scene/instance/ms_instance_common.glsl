@@ -5,9 +5,9 @@
 
 #include "../group/as_group.glsl"
 
-#include "../renderpass/as_renderpass.glsl"
+#include "../instance/as_instance.glsl"
 
-#include "../as_scene_instance.glsl"
+#include "../renderpass/as_renderpass.glsl"
 
 #include "as_instance_payload.glsl"
 

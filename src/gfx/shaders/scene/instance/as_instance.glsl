@@ -1,5 +1,5 @@
-#ifndef AS_SCENE_INSTANCE_H
-#define AS_SCENE_INSTANCE_H
+#ifndef AS_INSTANCE_H
+#define AS_INSTANCE_H
 
 #define INSTANCE_STATIC_BIT             (1u << 0)
 #define INSTANCE_DEFORM_BIT             (1u << 1)
@@ -211,4 +211,4 @@ InstanceAnimationBufferIn instanceGetAnimationProperties(
   return InstanceAnimationBufferIn(instanceVa + instanceData.header.animationOffset);
 }
 
-#endif /* AS_SCENE_INSTANCE_H */
+#endif /* AS_INSTANCE_H */

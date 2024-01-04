@@ -179,7 +179,7 @@
 #ifndef MS_INSTANCE_RENDER_H
 #define MS_INSTANCE_RENDER_H
 
-#include "../as_scene_instance.glsl"
+#include "as_instance.glsl"
 
 #define MS_MAIN msMain
 
