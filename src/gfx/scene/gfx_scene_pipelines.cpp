@@ -5,8 +5,9 @@
 #include <cs_draw_list_generate.h>
 #include <cs_draw_list_init.h>
 
-#include <cs_instance_animate.h>
-#include <cs_instance_animate_prepare.h>
+#include <cs_animation_prepare.h>
+#include <cs_animation_process.h>
+
 #include <cs_instance_update_execute.h>
 #include <cs_instance_update_node.h>
 #include <cs_instance_update_prepare.h>
@@ -28,10 +29,10 @@ namespace as {
 GfxScenePipelines::GfxScenePipelines(
         GfxDevice                     device)
 : m_device                  (std::move(device))
+, m_csAnimationPrepare      (createComputePipeline("cs_animation_prepare", cs_animation_prepare))
+, m_csAnimationProcess      (createComputePipeline("cs_animation_process", cs_animation_process))
 , m_csDrawListInit          (createComputePipeline("cs_draw_list_init", cs_draw_list_init))
 , m_csDrawListGenerate      (createComputePipeline("cs_draw_list_generate", cs_draw_list_generate))
-, m_csInstanceAnimate       (createComputePipeline("cs_instance_animate", cs_instance_animate))
-, m_csInstanceAnimatePrepare(createComputePipeline("cs_instance_animate_prepare", cs_instance_animate_prepare))
 , m_csInstanceUpdateExecute (createComputePipeline("cs_instance_update_execute", cs_instance_update_execute))
 , m_csInstanceUpdateNode    (createComputePipeline("cs_instance_update_node", cs_instance_update_node))
 , m_csInstanceUpdatePrepare (createComputePipeline("cs_instance_update_prepare", cs_instance_update_prepare))
@@ -94,7 +95,7 @@ void GfxScenePipelines::prepareInstanceAnimations(
   const GfxContext&                   context,
   const GfxDescriptor&                dispatch,
   const GfxSceneInstanceAnimateArgs&  args) const {
-  context->bindPipeline(m_csInstanceAnimatePrepare);
+  context->bindPipeline(m_csAnimationPrepare);
   context->setShaderConstants(0, args);
   context->dispatchIndirect(dispatch);
 }
@@ -104,7 +105,7 @@ void GfxScenePipelines::processInstanceAnimations(
   const GfxContext&                   context,
   const GfxDescriptor&                dispatch,
   const GfxSceneInstanceAnimateArgs&  args) const {
-  context->bindPipeline(m_csInstanceAnimate);
+  context->bindPipeline(m_csAnimationProcess);
   context->setShaderConstants(0, args);
   context->dispatchIndirect(dispatch);
 }

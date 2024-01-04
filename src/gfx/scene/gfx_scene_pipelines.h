@@ -440,11 +440,12 @@ private:
 
   GfxDevice           m_device;
 
+  GfxComputePipeline  m_csAnimationPrepare;
+  GfxComputePipeline  m_csAnimationProcess;
+
   GfxComputePipeline  m_csDrawListInit;
   GfxComputePipeline  m_csDrawListGenerate;
 
-  GfxComputePipeline  m_csInstanceAnimate;
-  GfxComputePipeline  m_csInstanceAnimatePrepare;
   GfxComputePipeline  m_csInstanceUpdateExecute;
   GfxComputePipeline  m_csInstanceUpdateNode;
   GfxComputePipeline  m_csInstanceUpdatePrepare;

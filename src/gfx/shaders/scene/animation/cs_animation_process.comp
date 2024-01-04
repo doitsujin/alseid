@@ -10,14 +10,15 @@
 
 #extension GL_GOOGLE_include_directive : enable
 
-#define CS_MAIN csAnimateInstanceMain
+#define CS_MAIN csProcessAnimation
 
-#include "../as_include_head.glsl"
+#include "../../as_include_head.glsl"
 
-#include "as_pass.glsl"
-#include "as_scene.glsl"
-#include "as_scene_instance.glsl"
+#include "../as_pass.glsl"
+#include "../as_scene.glsl"
+#include "../as_scene_instance.glsl"
 
+#include "as_animation.glsl"
 
 // Use a fixed workgroup size of 32 threads since the animation
 // group data structures are built around that.
@@ -30,7 +31,7 @@ layout(local_size_x = CS_WORKGROUP_SIZE) in;
 layout(push_constant)
 uniform CsPushData {
   InstanceNodeBuffer    instanceNodeBuffer;
-  uint64_t              groupBufferVa;
+  uint64_t              groupVa;
   uint32_t              frameId;
 } globals;
 
@@ -351,8 +352,8 @@ bool csWorkgroupAny(uint32_t tid, bool cond) {
 }
 
 
-void csAnimateInstanceMain() {
-  PassGroupUpdateListIn instanceList = getNodeTypeUpdateList(globals.groupBufferVa, NODE_TYPE_INSTANCE);
+void csProcessAnimation() {
+  PassGroupUpdateListIn instanceList = getNodeTypeUpdateList(globals.groupVa, NODE_TYPE_INSTANCE);
 
   uint32_t workgroupId = asFlattenWorkgroupIndex();
 
@@ -468,4 +469,4 @@ void csAnimateInstanceMain() {
 }
 
 
-#include "../as_include_tail.glsl"
+#include "../../as_include_tail.glsl"

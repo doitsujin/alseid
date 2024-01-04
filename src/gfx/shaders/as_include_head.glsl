@@ -36,7 +36,6 @@
 #include "as_matrix.glsl"
 #include "as_quaternion.glsl"
 #include "as_geometry.glsl"
-#include "as_animation.glsl"
 
 // Task shader includes
 #ifdef STAGE_TASK

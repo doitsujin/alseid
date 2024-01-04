@@ -1,5 +1,4 @@
 as_shader_includes = files(
-  'as_animation.glsl',
   'as_common.glsl',
   'as_geometry.glsl',
   'as_include_head.glsl',
@@ -19,6 +18,8 @@ as_shader_includes = files(
   'render/ts_render_instance.glsl',
   'render/ts_render_payload.glsl',
 
+  'scene/animation/as_animation.glsl',
+
   'scene/as_pass.glsl',
   'scene/as_scene.glsl',
   'scene/as_scene_draw.glsl',
@@ -28,11 +29,12 @@ as_shader_includes = files(
 )
 
 as_shader_builtins = [
+  [ 'scene/animation/cs_animation_prepare.comp', 'cs' ],
+  [ 'scene/animation/cs_animation_process.comp', 'cs' ],
+
   [ 'scene/cs_draw_list_init.comp', 'cs' ],
   [ 'scene/cs_draw_list_generate.comp', 'cs' ],
 
-  [ 'scene/cs_instance_animate.comp', 'cs' ],
-  [ 'scene/cs_instance_animate_prepare.comp', 'cs' ],
   [ 'scene/cs_instance_update_execute.comp', 'cs' ],
   [ 'scene/cs_instance_update_node.comp', 'cs' ],
   [ 'scene/cs_instance_update_prepare.comp', 'cs' ],

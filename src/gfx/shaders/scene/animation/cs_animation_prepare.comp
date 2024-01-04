@@ -6,13 +6,15 @@
 
 #extension GL_GOOGLE_include_directive : enable
 
-#define CS_MAIN csPrepareAnimationsMain
+#define CS_MAIN csPrepareAnimations
 
-#include "../as_include_head.glsl"
+#include "../../as_include_head.glsl"
 
-#include "as_pass.glsl"
-#include "as_scene.glsl"
-#include "as_scene_instance.glsl"
+#include "../as_pass.glsl"
+#include "../as_scene.glsl"
+#include "../as_scene_instance.glsl"
+
+#include "as_animation.glsl"
 
 // Match the instance update preparation workgroup size so that
 // we can use the same parameter buffer
@@ -23,7 +25,7 @@ layout(local_size_x = PASS_GROUP_WORKGROUP_SIZE) in;
 layout(push_constant)
 uniform CsPushData {
   InstanceNodeBuffer    instanceNodeBuffer;
-  uint64_t              groupBuffer;
+  uint64_t              groupVa;
   uint32_t              frameId;
 } globals;
 
@@ -40,9 +42,9 @@ uint32_t csGetInstanceNodeRef() {
   uint32_t gid = gl_GlobalInvocationID.x;
 
   // Exit early if the thread ID is out of bounds
-  PassGroupBuffer group = PassGroupBuffer(globals.groupBuffer);
+  PassGroupBuffer group = PassGroupBuffer(globals.groupVa);
 
-  PassGroupNodeListIn nodeList = PassGroupNodeListIn(globals.groupBuffer +
+  PassGroupNodeListIn nodeList = PassGroupNodeListIn(globals.groupVa +
     group.nodeListOffsets[NODE_TYPE_INSTANCE - NODE_TYPE_BUILTIN_COUNT].nodeList);
 
   if (gid >= nodeList.header.entryCount)
@@ -77,12 +79,12 @@ uint32_t csGetInstanceNodeRef() {
 }
 
 
-void csPrepareAnimationsMain() {
+void csPrepareAnimations() {
   uint32_t instanceNodeRef = csGetInstanceNodeRef();
 
   if (instanceNodeRef != 0u)
-    nodeListAddUpdate(globals.groupBuffer, instanceNodeRef, 0, 1);
+    nodeListAddUpdate(globals.groupVa, instanceNodeRef, 0, 1);
 }
 
 
-#include "../as_include_tail.glsl"
+#include "../../as_include_tail.glsl"
