@@ -1,11 +1,11 @@
-#ifndef MS_RENDER_COMMON_H
-#define MS_RENDER_COMMON_H
+#ifndef MS_INSTANCE_COMMON_H
+#define MS_INSTANCE_COMMON_H
 
-#include "ts_render_payload.glsl"
+#include "../as_pass.glsl"
+#include "../as_scene_draw.glsl"
+#include "../as_scene_instance.glsl"
 
-#include "../scene/as_pass.glsl"
-#include "../scene/as_scene_draw.glsl"
-#include "../scene/as_scene_instance.glsl"
+#include "as_instance_payload.glsl"
 
 // Let the backend decide the optimal workgroup
 // size for us, depending on driver preferences.
@@ -129,4 +129,4 @@ Transform msLoadNodeTransform(bool currFrame) {
   return tsPayload.transforms[currFrame ? 0u : 1u].absoluteTransform;
 }
 
-#endif // MS_COMMON_H
+#endif // MS_INSTANCE_COMMON_H

@@ -1,10 +1,10 @@
-#ifndef TS_RENDER_COMMON_H
-#define TS_RENDER_COMMON_H
+#ifndef TS_INSTANCE_COMMON_H
+#define TS_INSTANCE_COMMON_H
 
-#include "../scene/as_scene_draw.glsl"
-#include "../scene/as_scene_instance.glsl"
+#include "../as_scene_draw.glsl"
+#include "../as_scene_instance.glsl"
 
-#include "ts_render_payload.glsl"
+#include "as_instance_payload.glsl"
 
 // Encodes meshlet payload to store in the task shader payload.
 uint16_t tsEncodeMeshletPayload(uint32_t index, uint32_t viewMask) {
@@ -111,4 +111,4 @@ MeshInstance tsLoadMeshInstance(
   return instances.instances[instanceIndex];
 }
 
-#endif // TS_PAYLOAD_H
+#endif // TS_INSTANCE_COMMON_H

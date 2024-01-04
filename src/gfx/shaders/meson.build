@@ -12,13 +12,13 @@ as_shader_includes = files(
   'ts_common.glsl',
   'ts_template.glsl',
 
-  'render/ms_render_common.glsl',
-  'render/ms_render_instance.glsl',
-  'render/ts_render_common.glsl',
-  'render/ts_render_instance.glsl',
-  'render/ts_render_payload.glsl',
-
   'scene/animation/as_animation.glsl',
+
+  'scene/instance/as_instance_payload.glsl',
+  'scene/instance/ms_instance_common.glsl',
+  'scene/instance/ms_instance_render.glsl',
+  'scene/instance/ts_instance_common.glsl',
+  'scene/instance/ts_instance_render.glsl',
 
   'scene/as_pass.glsl',
   'scene/as_scene.glsl',

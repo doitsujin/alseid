@@ -34,8 +34,8 @@
 //
 //    TsContext tsGetInstanceContext();
 //
-#ifndef TS_RENDER_INSTANCE_H
-#define TS_RENDER_INSTANCE_H
+#ifndef TS_INSTANCE_RENDER_H
+#define TS_INSTANCE_RENDER_H
 
 #define TS_MAIN tsMain
 
@@ -244,4 +244,4 @@ uint tsMain() {
   return tsGetOutputCount();
 }
 
-#endif // TS_RENDER_INSTANCE_H
+#endif // TS_INSTANCE_RENDER_H

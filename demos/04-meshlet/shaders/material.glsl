@@ -5,7 +5,7 @@
 #include "as_include_head.glsl"
 
 #ifdef STAGE_MESH
-#include "render/ms_render_common.glsl"
+#include "scene/instance/ms_instance_common.glsl"
 #endif
 
 // Use existing template for mesh/vertex shader
@@ -196,7 +196,7 @@ MsUniformOut msComputeUniformOut(
   return result;
 }
 
-#include "render/ms_render_instance.glsl"
+#include "scene/instance/ms_instance_render.glsl"
 
 #endif
 

@@ -4,7 +4,7 @@
 
 #include "as_include_head.glsl"
 
-#include "render/ts_render_common.glsl"
+#include "scene/instance/ts_instance_common.glsl"
 
 struct TsContext {
   TsInvocationInfo  invocation;
@@ -41,6 +41,6 @@ TsContext tsGetInstanceContext() {
 }
 
 
-#include "render/ts_render_instance.glsl"
+#include "scene/instance/ts_instance_render.glsl"
 
 #include "as_include_tail.glsl"

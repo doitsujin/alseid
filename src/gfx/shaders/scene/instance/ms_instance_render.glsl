@@ -176,10 +176,10 @@
 //              vec2        motionVector, /* if MS_NO_MOTION_VECTORS is not set */
 //      in      MsShadingIn shadingIn,  /* if MS_NO_SHADING_DATA is not set */
 //      in      MsUniformOut uniformOut); /* if MS_NO_UNIFORM_OUTPUT is not set */
-#ifndef MS_RENDER_INSTANCE
-#define MS_RENDER_INSTANCE
+#ifndef MS_INSTANCE_RENDER_H
+#define MS_INSTANCE_RENDER_H
 
-#include "../scene/as_scene_instance.glsl"
+#include "../as_scene_instance.glsl"
 
 #define MS_MAIN msMain
 
@@ -1067,4 +1067,4 @@ void msMain() {
   }
 }
 
-#endif // MS_RENDER_INSTANCE
+#endif // MS_INSTANCE_RENDER_H

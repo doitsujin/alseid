@@ -1,8 +1,8 @@
-#ifndef TS_RENDER_PAYLOAD_H
-#define TS_RENDER_PAYLOAD_H
+#ifndef AS_INSTANCE_PAYLOAD_H
+#define AS_INSTANCE_PAYLOAD_H
 
-#include "../scene/as_scene.glsl"
-#include "../scene/as_scene_instance.glsl"
+#include "../as_scene.glsl"
+#include "../as_scene_instance.glsl"
 
 layout(constant_id = SPEC_CONST_ID_TASK_SHADER_WORKGROUP_SIZE)
 const uint32_t TsWorkgroupSize = 128;
@@ -43,4 +43,4 @@ struct TsPayload {
 
 taskPayloadSharedEXT TsPayload tsPayload;
 
-#endif // TS_PAYLOAD_H
+#endif // AS_INSTANCE_PAYLOAD_H
