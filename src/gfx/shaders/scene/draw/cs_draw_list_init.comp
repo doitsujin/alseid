@@ -6,9 +6,9 @@
 
 #define CS_MAIN csInitDrawList
 
-#include "../as_include_head.glsl"
+#include "../../as_include_head.glsl"
 
-#include "as_scene_draw.glsl"
+#include "as_draw.glsl"
 
 layout(local_size_x = 64) in;
 
@@ -25,4 +25,4 @@ void csInitDrawList() {
     drawListInit(drawList, drawGroup);
 }
 
-#include "../as_include_tail.glsl"
+#include "../../as_include_tail.glsl"

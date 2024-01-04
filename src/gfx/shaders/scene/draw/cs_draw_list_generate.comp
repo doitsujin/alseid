@@ -7,12 +7,13 @@
 
 #define CS_MAIN csGenerateDraws
 
-#include "../as_include_head.glsl"
+#include "../../as_include_head.glsl"
 
-#include "as_scene.glsl"
-#include "as_scene_draw.glsl"
-#include "as_scene_instance.glsl"
-#include "as_pass.glsl"
+#include "../as_scene.glsl"
+#include "../as_scene_instance.glsl"
+#include "../as_pass.glsl"
+
+#include "as_draw.glsl"
 
 layout(local_size_x = PASS_GROUP_WORKGROUP_SIZE) in;
 
@@ -429,4 +430,4 @@ void csGenerateDraws() {
   }
 }
 
-#include "../as_include_tail.glsl"
+#include "../../as_include_tail.glsl"

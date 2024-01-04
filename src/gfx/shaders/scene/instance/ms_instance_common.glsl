@@ -1,8 +1,9 @@
 #ifndef MS_INSTANCE_COMMON_H
 #define MS_INSTANCE_COMMON_H
 
+#include "../draw/as_draw.glsl"
+
 #include "../as_pass.glsl"
-#include "../as_scene_draw.glsl"
 #include "../as_scene_instance.glsl"
 
 #include "as_instance_payload.glsl"

@@ -1,9 +1,6 @@
 #ifndef TS_COMMON_H
 #define TS_COMMON_H
 
-#include "./scene/as_pass.glsl"
-#include "./scene/as_scene_draw.glsl"
-
 // Let the backend decide on a task shader workgroup size. We
 // need to declare the workgroup size early, or otherwise the
 // gl_WorkGroupSize built-in will not return the correct value.

@@ -1,5 +1,5 @@
-#ifndef AS_SCENE_DRAW_H
-#define AS_SCENE_DRAW_H
+#ifndef AS_DRAW_H
+#define AS_DRAW_H
 
 // Draw list header. Stores the layout of the draw buffer.
 struct DrawListHeader {
@@ -103,4 +103,4 @@ void drawListAdd(
   drawArgs.draws[index] = drawArg;
 }
 
-#endif /* AS_SCENE_DRAW_H */
+#endif /* AS_DRAW_H */

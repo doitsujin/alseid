@@ -1,7 +1,9 @@
 #ifndef TS_INSTANCE_COMMON_H
 #define TS_INSTANCE_COMMON_H
 
-#include "../as_scene_draw.glsl"
+#include "../draw/as_draw.glsl"
+
+#include "../as_pass.glsl"
 #include "../as_scene_instance.glsl"
 
 #include "as_instance_payload.glsl"
