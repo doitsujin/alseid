@@ -33,6 +33,7 @@ GfxSceneInstanceDataBuffer::GfxSceneInstanceDataBuffer(
   header.animationOffset = allocateStorage(
     dataAllocator, sizeof(GfxSceneAnimationHeader) +
     sizeof(GfxSceneAnimationParameters) * desc.animationCount);
+  header.aabb = desc.aabb;
 
   for (uint32_t i = 0; i < desc.drawCount; i++) {
     shadingParameterOffset[i] = allocateStorage(

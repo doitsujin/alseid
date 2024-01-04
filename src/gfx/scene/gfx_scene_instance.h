@@ -448,6 +448,10 @@ struct GfxSceneInstanceDesc {
   /** Pointer to draw parameters, including the size of per-draw
    *  material parameters. */
   const GfxSceneInstanceDraw* draws = nullptr;
+  /** Axis-aligned bounding box in model space. Should be identical
+   *  to the geometry's AABB, and will be recomputed on the fly if
+   *  the instance is animated. */
+  GfxAabb<float16_t> aabb = { };
 };
 
 

@@ -430,6 +430,7 @@ private:
     instanceDesc.jointCount = m_geometry->info.jointCount;
     instanceDesc.weightCount = m_geometry->info.morphTargetCount;
     instanceDesc.nodeIndex = instanceNode;
+    instanceDesc.aabb = m_geometry->info.aabb;
 
     if (m_animationBuffer) {
       instanceDesc.flags |= GfxSceneInstanceFlag::eAnimation;
