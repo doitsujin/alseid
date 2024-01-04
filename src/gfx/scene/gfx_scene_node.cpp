@@ -75,7 +75,10 @@ GfxBuffer GfxSceneNodeBuffer::resizeBuffer(
   // to reason about than just clearing the parts that require it.
   context->beginDebugLabel("Copy scene buffer", 0xffffc096u);
   context->clearBuffer(newBuffer, 0, allocator);
-  context->memoryBarrier(GfxUsage::eTransferDst, 0, GfxUsage::eTransferDst, 0);
+
+  context->memoryBarrier(
+    GfxUsage::eTransferDst, 0,
+    GfxUsage::eTransferDst, 0);
 
   // Write new buffer header to the buffer
   auto scratch = context->writeScratch(GfxUsage::eTransferSrc, newHeader);
@@ -105,6 +108,11 @@ GfxBuffer GfxSceneNodeBuffer::resizeBuffer(
       oldBuffer, oldHeader.bvhOffset,
       sizeof(GfxSceneBvhInfo) * oldDesc.bvhCount);
   }
+
+  context->memoryBarrier(
+    GfxUsage::eTransferDst, 0,
+    GfxUsage::eTransferDst | GfxUsage::eShaderStorage | GfxUsage::eShaderResource,
+    GfxShaderStage::eCompute);
 
   context->endDebugLabel();
 
