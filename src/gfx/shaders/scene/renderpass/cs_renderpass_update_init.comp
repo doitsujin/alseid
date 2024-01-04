@@ -7,11 +7,11 @@
 
 #define CS_MAIN csInitPassUpdateList
 
-#include "../as_include_head.glsl"
+#include "../../as_include_head.glsl"
 
-#include "./group/as_group.glsl"
+#include "../group/as_group.glsl"
 
-#include "as_pass.glsl"
+#include "../renderpass/as_renderpass.glsl"
 
 layout(local_size_x = 1) in;
 
@@ -27,4 +27,4 @@ void csInitPassUpdateList() {
   globals.passListBuffer.header.entryCount = 0u;
 }
 
-#include "../as_include_tail.glsl"
+#include "../../as_include_tail.glsl"

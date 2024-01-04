@@ -11,9 +11,10 @@
 
 #include "./group/as_group.glsl"
 
+#include "./renderpass/as_renderpass.glsl"
+
 #include "as_scene.glsl"
 #include "as_scene_instance.glsl"
-#include "as_pass.glsl"
 
 layout(local_size_x = PASS_GROUP_WORKGROUP_SIZE) in;
 

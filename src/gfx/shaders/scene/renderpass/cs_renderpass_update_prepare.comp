@@ -7,11 +7,11 @@
 
 #define CS_MAIN csPreparePassUpdates
 
-#include "../as_include_head.glsl"
+#include "../../as_include_head.glsl"
 
-#include "./group/as_group.glsl"
+#include "../group/as_group.glsl"
 
-#include "as_pass.glsl"
+#include "../renderpass/as_renderpass.glsl"
 
 // Prefer larger workgroups here since the shader will run
 // one thread for every single render pass each frame.
@@ -70,4 +70,4 @@ void csPreparePassUpdates() {
   }
 }
 
-#include "../as_include_tail.glsl"
+#include "../../as_include_tail.glsl"

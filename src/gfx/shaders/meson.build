@@ -24,7 +24,8 @@ as_shader_includes = files(
   'scene/instance/ts_instance_common.glsl',
   'scene/instance/ts_instance_render.glsl',
 
-  'scene/as_pass.glsl',
+  'scene/renderpass/as_renderpass.glsl',
+
   'scene/as_scene.glsl',
   'scene/as_scene_instance.glsl',
   'scene/as_scene_node_transform.glsl',
@@ -38,14 +39,14 @@ as_shader_builtins = [
   [ 'scene/draw/cs_draw_list_init.comp', 'cs' ],
   [ 'scene/draw/cs_draw_list_generate.comp', 'cs' ],
 
+  [ 'scene/renderpass/cs_renderpass_update_execute.comp', 'cs' ],
+  [ 'scene/renderpass/cs_renderpass_update_init.comp', 'cs' ],
+  [ 'scene/renderpass/cs_renderpass_update_prepare.comp', 'cs' ],
+  [ 'scene/renderpass/cs_renderpass_upload.comp', 'cs' ],
+
   [ 'scene/cs_instance_update_execute.comp', 'cs' ],
   [ 'scene/cs_instance_update_node.comp', 'cs' ],
   [ 'scene/cs_instance_update_prepare.comp', 'cs' ],
-
-  [ 'scene/cs_pass_info_update_execute.comp', 'cs' ],
-  [ 'scene/cs_pass_info_update_copy.comp', 'cs' ],
-  [ 'scene/cs_pass_info_update_init.comp', 'cs' ],
-  [ 'scene/cs_pass_info_update_prepare.comp', 'cs' ],
 
   [ 'scene/cs_pass_init.comp', 'cs' ],
   [ 'scene/cs_pass_reset_update.comp', 'cs' ],

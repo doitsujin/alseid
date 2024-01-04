@@ -8,10 +8,9 @@
 
 #define CS_MAIN csUpdatePassInfos
 
-#include "../as_include_head.glsl"
+#include "../../as_include_head.glsl"
 
-#include "as_pass.glsl"
-
+#include "../renderpass/as_renderpass.glsl"
 
 // Try to run only a small number of threads for this
 layout(local_size_x_id = SPEC_CONST_ID_MAX_SUBGROUP_SIZE) in;
@@ -91,4 +90,4 @@ void csUpdatePassInfos() {
   }
 }
 
-#include "../as_include_tail.glsl"
+#include "../../as_include_tail.glsl"

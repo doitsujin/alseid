@@ -406,7 +406,7 @@ public:
    * \param [in] context Context object
    * \param [in] args Arguments to pass to the shader
    */
-  void copyRenderPassInfos(
+  void uploadRenderPassInfos(
     const GfxContext&                   context,
     const GfxPassInfoUpdateCopyArgs&    args) const;
 
@@ -450,10 +450,10 @@ private:
   GfxComputePipeline  m_csInstanceUpdateNode;
   GfxComputePipeline  m_csInstanceUpdatePrepare;
 
-  GfxComputePipeline  m_csPassInfoUpdateCopy;
-  GfxComputePipeline  m_csPassInfoUpdateExecute;
-  GfxComputePipeline  m_csPassInfoUpdateInit;
-  GfxComputePipeline  m_csPassInfoUpdatePrepare;
+  GfxComputePipeline  m_csRenderPassUpdateExecute;
+  GfxComputePipeline  m_csRenderPassUpdateInit;
+  GfxComputePipeline  m_csRenderPassUpdatePrepare;
+  GfxComputePipeline  m_csRenderPassUpload;
 
   GfxComputePipeline  m_csPassInit;
   GfxComputePipeline  m_csPassResetUpdate;

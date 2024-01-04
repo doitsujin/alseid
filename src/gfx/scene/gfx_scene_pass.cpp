@@ -536,7 +536,7 @@ void GfxScenePassManager::dispatchHostCopy(
   args.frameId = currFrameId;
   args.passUpdateCount = uint32_t(m_dirtyList.size());
 
-  pipelines.copyRenderPassInfos(context, args);
+  pipelines.uploadRenderPassInfos(context, args);
 
   m_dirtyList.clear();
 }

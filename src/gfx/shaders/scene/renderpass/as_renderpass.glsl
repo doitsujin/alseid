@@ -1,9 +1,9 @@
 #ifndef AS_PASS_H
 #define AS_PASS_H
 
-#include "as_scene.glsl"
+#include "../../as_quaternion.glsl"
 
-#include "../as_quaternion.glsl"
+#include "../as_scene.glsl"
 
 #define RENDER_PASS_IS_CUBE_MAP_BIT               (1u << 0)
 #define RENDER_PASS_USES_MIRROR_PLANE_BIT         (1u << 1)

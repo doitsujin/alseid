@@ -20,8 +20,9 @@ layout(local_size_x = CS_WORKGROUP_SIZE) in;
 
 #include "./group/as_group.glsl"
 
+#include "./renderpass/as_renderpass.glsl"
+
 #include "as_scene.glsl"
-#include "as_pass.glsl"
 #include "as_scene_node_transform.glsl"
 
 // Helper to enable more optimal subgroup-only code paths
