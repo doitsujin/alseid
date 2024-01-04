@@ -101,6 +101,13 @@ float tanForCos(float c) {
 }
 
 
+// Normalizes a plane
+vec4 planeNormalize(vec4 plane) {
+  float len = dot(plane.xyz, plane.xyz);
+  return plane * inversesqrt(len);
+}
+
+
 // Computes the distance from a vertex to a plane. If the result is
 // positive, the vertex is on the side of the plane that the normal
 // vector points to.

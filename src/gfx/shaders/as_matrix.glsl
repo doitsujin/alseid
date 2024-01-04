@@ -59,13 +59,11 @@ ViewFrustum projComputeViewFrustum(in Projection p) {
   }
 
   ViewFrustum f;
-  f.planes[0] = vec4(-p.xScale, 0.0f, zw);
-  f.planes[1] = vec4( p.xScale, 0.0f, zw);
-  f.planes[2] = vec4(0.0f, -p.yScale, zw);
-  f.planes[3] = vec4(0.0f,  p.yScale, zw);
+  f.planes[0] = planeNormalize(vec4(-p.xScale, 0.0f, zw));
+  f.planes[1] = planeNormalize(vec4( p.xScale, 0.0f, zw));
+  f.planes[2] = planeNormalize(vec4(0.0f, -p.yScale, zw));
+  f.planes[3] = planeNormalize(vec4(0.0f,  p.yScale, zw));
   f.planes[4] = vec4(0.0f, 0.0f, -1.0f, -zNear);
-  f.planes[5] = isPerspective
-    ? vec4(0.0f)
-    : vec4(0.0f, 0.0f, 1.0f, zFar);
+  f.planes[5] = isPerspective ? vec4(0.0f) : vec4(0.0f, 0.0f, 1.0f, zFar);
   return f;
 }
