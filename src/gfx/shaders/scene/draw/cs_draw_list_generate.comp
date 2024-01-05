@@ -125,20 +125,26 @@ int32_t csGetDataIndexForThread(uint32_t drawCount, uint32_t drawCountAccum) {
 
   // Initialize with an invalid index
   csThreadIndexForOffsetShared[ofs + sid] = -1;
-  barrier();
+
+  controlBarrier(gl_ScopeSubgroup, gl_ScopeSubgroup,
+    gl_StorageSemanticsShared, gl_SemanticsAcquireRelease);
 
   // Push source data thread index to the shared array if the draw
   // count is non-zero, and if its draws can actually be processed
   // in the current iteration
   if (drawCount > 0u && drawCountAccum < gl_SubgroupSize)
     csThreadIndexForOffsetShared[ofs + drawCountAccum] = int32_t(sid);
-  barrier();
+
+  controlBarrier(gl_ScopeSubgroup, gl_ScopeSubgroup,
+    gl_StorageSemanticsShared, gl_SemanticsAcquireRelease);
 
   // Fetch the index for the current thread. This will be negative
   // for most threads, so extra steps are needed to find the actual
   // thread and draw index.
   int32_t result = csThreadIndexForOffsetShared[ofs + sid];
-  barrier();
+
+  controlBarrier(gl_ScopeSubgroup, gl_ScopeSubgroup,
+    gl_StorageSemanticsShared, gl_SemanticsAcquireRelease);
 
   return result;
 }
@@ -174,7 +180,7 @@ bool csPrepareNextIteration(out InstanceDrawInfo info) {
     uint32_t validIndexBit = subgroupBallotFindMSB(
       subgroupBallot(dataIndex >= 0) & gl_SubgroupLeMask);
 
-    dataIndex = subgroupShuffle(dataIndex, validIndexBit);
+    dataIndex = subgroupBroadcast(dataIndex, validIndexBit);
 
     // Adjust current iteration parameters based on invocation IDs
     InstanceDrawInfo result = csGetDrawInfoForThread(uint32_t(dataIndex));
@@ -192,31 +198,6 @@ bool csPrepareNextIteration(out InstanceDrawInfo info) {
     instanceDrawInfo.drawIndex += drawsProcessed;
     return drawIndex < drawCount;
   }
-}
-
-
-// Helper function to or a boolean value across the entire workgroup.
-// This is necessary to ensure uniform control flow even if there are
-// multiple subgroups per workgroup.
-shared uint32_t csAtomicBoolShared;
-
-bool csWorkgroupAny(bool value) {
-  bool result = subgroupAny(value);
-
-  if (gl_NumSubgroups > 1u) {
-    if (gl_LocalInvocationIndex == 0u)
-      csAtomicBoolShared = 0u;
-    barrier();
-
-    if (gl_SubgroupInvocationID == 0u && result)
-      atomicOr(csAtomicBoolShared, 1u);
-    barrier();
-
-    result = csAtomicBoolShared != 0u;
-    barrier();
-  }
-
-  return result;
 }
 
 
@@ -330,11 +311,14 @@ void csGenerateDraws() {
       SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(globals.sceneVa + scene.nodeTransformOffset);
       Transform worldTransform = nodeTransforms.nodeTransforms[transformIndex].absoluteTransform;
 
-      // Compute bit mask of passes to test, then scalarize the pass mask
-      // across all invocations. This is generally efficient since the pass
-      // masks are not expected to diverge heavily.
-      instanceDrawInfo.passMask = globals.passMask & nodeItem.partialVisibilityMask;
-      uint32_t passMaskUniform = subgroupOr(instanceDrawInfo.passMask);
+      // Start with passes where the instance is known to be fully visible already.
+      instanceDrawInfo.passMask = globals.passMask & nodeItem.fullVisibilityMask;
+
+      // Compute mask of passes for which we need to test visibility, and scalarize
+      // it for greater efficiency. Pass masks are not expected to diverge heavily
+      // within a workgroup due to the way BVH traversal is implemented.
+      uint32_t passMaskUniform = globals.passMask &
+        subgroupOr(nodeItem.partialVisibilityMask & ~nodeItem.fullVisibilityMask);
 
       while (passMaskUniform != 0u) {
         uint32_t passIndex = findLSB(passMaskUniform);
@@ -345,9 +329,9 @@ void csGenerateDraws() {
         PassInfo passInfo = PassInfoBufferIn(globals.passInfoVa).passes[passIndex];
 
         // Ignore the instance if BVH-level visibility tests already failed for the current pass.
-        bool isVisible = (instanceDrawInfo.passMask & passBit) != 0;
+        bool isVisible = (nodeItem.partialVisibilityMask & passBit) != 0u;
 
-        if (isVisible) {
+        if (isVisible && (instanceDrawInfo.passMask & passBit) == 0u) {
           // If the bounding box is empty, ignore it and always render the instance.
           // This essentially assumes that the instance is infinitely large.
           Aabb aabb = Aabb(
@@ -408,8 +392,8 @@ void csGenerateDraws() {
             }
           }
 
-          if (!isVisible)
-            instanceDrawInfo.passMask -= passBit;
+          if (isVisible)
+            instanceDrawInfo.passMask |= passBit;
         }
 
         passMaskUniform -= passBit;
@@ -428,7 +412,7 @@ void csGenerateDraws() {
   // a given mesh within the current pass.
   InstanceDrawInfo drawInfo;
 
-  while (csWorkgroupAny(csPrepareNextIteration(drawInfo))) {
+  while (subgroupAny(csPrepareNextIteration(drawInfo))) {
     if (drawInfo.drawCount > 0u)
       csEmitDraw(drawInfo);
   }
