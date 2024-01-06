@@ -6,6 +6,7 @@
 
 #include "../../src/gfx/scene/gfx_scene_draw.h"
 #include "../../src/gfx/scene/gfx_scene_instance.h"
+#include "../../src/gfx/scene/gfx_scene_material.h"
 #include "../../src/gfx/scene/gfx_scene_node.h"
 #include "../../src/gfx/scene/gfx_scene_pass.h"
 #include "../../src/gfx/scene/gfx_scene_pipelines.h"
@@ -53,22 +54,6 @@ public:
     IoRequest request = loadResources();
     request->wait();
 
-    // Create mesh shader pipeline
-    GfxDeviceFeatures features = m_device->getFeatures();
-
-    GfxMeshPipelineDesc msPipelineDesc;
-    msPipelineDesc.debugName = "MS pipeline";
-    msPipelineDesc.task = findShader("ts_render");
-    msPipelineDesc.mesh = findShader("ms_material");
-    msPipelineDesc.fragment = findShader("fs_material");
-
-    if ((features.shaderStages & GfxShaderStage::eMesh)
-     && (features.shaderStages & GfxShaderStage::eTask)) {
-      m_msPipeline = m_device->createGraphicsPipeline(msPipelineDesc);
-    } else {
-      Log::err("Mesh and task shaders not supported, skipping rendering.");
-    }
-
     // Initialize transfer manager
     m_transfer = GfxTransferManager(m_io, m_device, 16ull << 20);
 
@@ -87,6 +72,9 @@ public:
     m_scenePassGroup = std::make_unique<GfxScenePassGroupBuffer>(m_device);
     m_scenePipelines = std::make_unique<GfxScenePipelines>(m_device);
     m_sceneDrawBuffer = std::make_unique<GfxSceneDrawBuffer>(m_device);
+
+    GfxSceneMaterialManagerDesc materialManagerDesc = { };
+    m_sceneMaterialManager = std::make_unique<GfxSceneMaterialManager>(m_device, materialManagerDesc);
 
     initScene();
     initContexts();
@@ -162,13 +150,7 @@ public:
       m_scenePassManager->updateRenderPassTransform(m_scenePassIndex,
         computeViewTransform(m_eye, normalize(m_dir), up), false);
 
-      uint32_t drawCount = 1024;
-
-      GfxSceneDrawBufferDesc drawBufferDesc = { };
-      drawBufferDesc.drawGroupCount = 1;
-      drawBufferDesc.drawCounts = &drawCount;
-
-      m_sceneDrawBuffer->updateLayout(context, drawBufferDesc);
+      m_sceneMaterialManager->updateDrawBuffer(context, *m_sceneDrawBuffer);
 
       // Update scene buffers appropriately
       m_sceneNodeManager->commitUpdates(context,
@@ -246,26 +228,12 @@ public:
         context->beginRendering(renderInfo, 0);
         context->setViewport(GfxViewport(Offset2D(0, 0), extent));
 
-        if (m_msPipeline) {
-          context->bindPipeline(m_msPipeline);
-          context->setRenderState(m_renderState);
+        context->setRenderState(m_renderState);
 
-          PushConstants pushConstants = { };
-          pushConstants.drawListVa = m_sceneDrawBuffer->getGpuAddress();
-          pushConstants.passInfoVa = m_scenePassManager->getGpuAddress();
-          pushConstants.passGroupVa = m_scenePassGroup->getGpuAddress();
-          pushConstants.instanceVa = m_sceneInstanceManager->getGpuAddress();
-          pushConstants.sceneVa = m_sceneNodeManager->getGpuAddress();
-          pushConstants.drawGroup = 0;
-          pushConstants.frameId = m_frameId;
-
-          context->setShaderConstants(0, pushConstants);
-
-          context->drawMeshIndirect(
-            m_sceneDrawBuffer->getDrawParameterDescriptor(0),
-            m_sceneDrawBuffer->getDrawCountDescriptor(0),
-            1024u);
-        }
+        m_sceneMaterialManager->dispatchDraws(context,
+          *m_scenePassManager, *m_sceneInstanceManager, *m_sceneNodeManager,
+          *m_scenePassGroup, *m_sceneDrawBuffer, GfxScenePassType::eMainOpaque,
+          m_frameId);
 
         context->endRendering();
 
@@ -291,7 +259,6 @@ private:
   GfxPresenter          m_presenter;
   GfxTransferManager    m_transfer;
 
-  GfxGraphicsPipeline   m_msPipeline;
   GfxRenderState        m_renderState;
 
   GfxBuffer             m_geometryBuffer;
@@ -341,6 +308,7 @@ private:
   std::unique_ptr<GfxScenePassGroupBuffer>    m_scenePassGroup;
   std::unique_ptr<GfxScenePipelines>          m_scenePipelines;
   std::unique_ptr<GfxSceneDrawBuffer>         m_sceneDrawBuffer;
+  std::unique_ptr<GfxSceneMaterialManager>    m_sceneMaterialManager;
 
   uint32_t              m_sceneInstanceNode   = 0u;
   GfxSceneNodeRef       m_sceneInstanceRef    = { };
@@ -401,6 +369,26 @@ private:
   }
 
   void initScene() {
+    GfxDeviceFeatures features = m_device->getFeatures();
+
+    GfxSceneMaterialShaders materialShaders;
+    materialShaders.passTypes = GfxScenePassType::eMainOpaque;
+    materialShaders.task = findShader("ts_render");
+    materialShaders.mesh = findShader("ms_material");
+    materialShaders.fragment = findShader("fs_material");
+
+    GfxSceneMaterialDesc materialDesc;
+    materialDesc.debugName = "Shader pipeline";
+    materialDesc.shaderCount = 1u;
+    materialDesc.shaders = &materialShaders;
+
+    if (!(features.shaderStages & GfxShaderStage::eTask)) {
+      Log::err("Mesh and task shaders not supported, skipping rendering.");
+      materialDesc.shaderCount = 0u;
+    }
+
+    uint32_t material = m_sceneMaterialManager->createMaterial(materialDesc);
+
     uint32_t rootNode = m_sceneNodeManager->createNode();
 
     GfxSceneBvhDesc bvhDesc = { };
@@ -413,7 +401,7 @@ private:
 
     for (uint32_t i = 0; i < m_geometry->meshes.size(); i++) {
       auto& draw = draws.emplace_back();
-      draw.materialIndex = 0;
+      draw.materialIndex = material;
       draw.meshIndex = i;
       draw.meshInstanceCount = std::max(1u,
         uint32_t(m_geometry->meshes[i].info.instanceCount));
@@ -447,6 +435,8 @@ private:
 
     if (m_animationBuffer)
       m_sceneInstanceManager->updateAnimationBuffer(instanceRef, m_animationBuffer->getGpuAddress());
+
+    m_sceneMaterialManager->addInstanceDraws(*m_sceneInstanceManager, instanceRef);
 
     GfxScenePassGroupBufferDesc groupDesc = { };
     groupDesc.setNodeCount(GfxSceneNodeType::eBvh, 1u);
