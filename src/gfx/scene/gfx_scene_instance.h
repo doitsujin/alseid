@@ -572,7 +572,7 @@ private:
  * normal node manager, which manages transforms and node residency.
  */
 class GfxSceneInstanceManager {
-
+  friend class GfxSceneMaterialManager;
 public:
 
   explicit GfxSceneInstanceManager(
@@ -852,6 +852,11 @@ private:
     const GfxSceneInstanceHostInfo&     hostData,
           uint32_t                      offset,
           uint32_t                      size);
+
+  const GfxSceneInstanceDataBuffer& getInstanceData(
+          GfxSceneNodeRef               instance) const {
+    return m_instanceHostData[uint32_t(instance.index)].dataBuffer;
+  }
 
 };
 

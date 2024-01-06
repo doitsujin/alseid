@@ -14,6 +14,43 @@ constexpr uint32_t GfxMaxPassesPerGroup = 32u;
 
 
 /**
+ * \brief Render pass type flags
+ *
+ * Used to look up material pipelines during rendering. If a material
+ * does not have a pipeline set for a given pass type, rendering will
+ * be skipped.
+ */
+enum class GfxScenePassType : uint32_t {
+  /** Depth pre-pass for the main render pass. Generally expected
+   *  to have no fragment shader, unless alpha testing is required. */
+  eMainDepth              = (1u << 0),
+  /** Main opaque color pass. Should write all render targets. The
+   *  fragment shader should not discard to enable early Z. */
+  eMainOpaque             = (1u << 1),
+  /** Main transparency pass. This will be run after the opaque pass, and
+   *  the fragment shader must handle layered transparency manually. */
+  eMainTransparency       = (1u << 2),
+  /** Depth pre-pass for secondary render targets, such as reflection
+   *  probes, planar reflections, or just secondary passes in general. */
+  eOtherDepth             = (1u << 3),
+  /** Opaque color pass for secondary render targets. This should use a
+   *  simplified lighting model for performance reasons. */
+  eOtherOpaque            = (1u << 4),
+  /** Transparency pass for secondary render passes. Uses alpha blending
+   *  to resolve transparency, and does not support refraction. */
+  eOtherTransparency      = (1u << 5),
+  /** Render pass for shadow map rendering of all kinds. Again expected
+   *  to have no fragment shader unless alpha testing is required, but
+   *  the alpha testing logic itself may be different. */
+  eShadow                 = (1u << 6),
+
+  eFlagEnum               = 0u
+};
+
+using GfxScenePassTypeFlags = Flags<GfxScenePassType>;
+
+
+/**
  * \brief Render pass flags
  */
 enum class GfxScenePassFlag : uint32_t {
@@ -439,7 +476,7 @@ public:
    * Used for culling as well as rendering.
    * \returns GPU address of render pass buffer.
    */
-  uint64_t getGpuAddress() {
+  uint64_t getGpuAddress() const {
     return m_buffer ? m_buffer->getGpuAddress() : uint64_t(0u);
   }
 

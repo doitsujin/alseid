@@ -17,6 +17,7 @@ as_files = files([
 
   'gfx/scene/gfx_scene_draw.cpp',
   'gfx/scene/gfx_scene_instance.cpp',
+  'gfx/scene/gfx_scene_material.cpp',
   'gfx/scene/gfx_scene_node.cpp',
   'gfx/scene/gfx_scene_pass.cpp',
   'gfx/scene/gfx_scene_pipelines.cpp',

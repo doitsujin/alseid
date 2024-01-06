@@ -90,9 +90,9 @@ static_assert(sizeof(GfxSceneDrawInstanceInfo) == 16);
  */
 struct GfxSceneDrawBufferDesc {
   /** Number of draw groups. */
-  uint32_t drawGroupCount;
+  uint32_t drawGroupCount = 0;
   /** Maximum number of draws in each draw group. */
-  const uint32_t* drawCounts;
+  const uint32_t* drawCounts = nullptr;
 };
 
 
