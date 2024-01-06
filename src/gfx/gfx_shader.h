@@ -101,6 +101,9 @@ struct GfxShaderIoMask {
   uint32_t inputMask = 0u;
   /** Mask of defined output variables */
   uint32_t outputMask = 0u;
+
+  bool operator == (const GfxShaderIoMask&) const = default;
+  bool operator != (const GfxShaderIoMask&) const = default;
 };
 
 

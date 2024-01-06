@@ -614,9 +614,11 @@ GfxVulkanFragmentOutputPipeline::GfxVulkanFragmentOutputPipeline(
   auto& vk = m_mgr.device().vk();
   auto& features = m_mgr.device().getVkFeatures();
 
+  std::array<VkPipelineColorBlendAttachmentState, GfxMaxColorAttachments> cbAttachments;
+
   auto rtState = key.targetState->getRtState();
   auto msState = key.renderState->getMsState(*key.targetState, key.sampleShading);
-  auto cbState = key.renderState->getCbState(rtState.colorAttachmentCount);
+  auto cbState = key.renderState->getCbState(cbAttachments.data(), rtState.colorAttachmentCount, key.shaderIoMasks.outputMask);
   auto dyState = key.renderState->getDyState();
 
   small_vector<VkDynamicState, 8> dyStates;
@@ -765,8 +767,10 @@ GfxVulkanGraphicsPipeline::GfxVulkanGraphicsPipeline(
 , m_sampleRateShading (hasSampleRateShading(desc.fragment))
 , m_canLink           (canFastLink())
 , m_isAvailable       (!m_canLink) {
-
-
+  if (desc.vertex)
+    m_shaderIoMask.inputMask = desc.vertex->getIoMask().outputMask;
+  if (desc.fragment)
+    m_shaderIoMask.outputMask = desc.fragment->getIoMask().outputMask;
 }
 
 
@@ -782,6 +786,9 @@ GfxVulkanGraphicsPipeline::GfxVulkanGraphicsPipeline(
 , m_sampleRateShading (hasSampleRateShading(desc.fragment))
 , m_canLink           (canFastLink())
 , m_isAvailable       (!m_canLink) {
+  if (desc.fragment)
+    m_shaderIoMask.outputMask = desc.fragment->getIoMask().outputMask;
+
   // If the mesh shader emits significantly fewer vertices and
   // primitives than it has invocations, lower the workgroup size.
   GfxShaderMeshOutputInfo meshOutputs = desc.mesh->getMeshOutputInfo();
@@ -1064,6 +1071,8 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
   dyStates.push_back(VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT);
   dyStates.push_back(VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT);
 
+  std::array<VkPipelineColorBlendAttachmentState, GfxMaxColorAttachments> cbAttachments;
+
   VkPipelineRenderingCreateInfo rtState = key.targetState->getRtState();
   VkPipelineVertexInputStateCreateInfo viState = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
   VkPipelineInputAssemblyStateCreateInfo iaState = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
@@ -1073,7 +1082,7 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
   VkPipelineFragmentShadingRateStateCreateInfoKHR srState = key.renderState->getSrState();
   VkPipelineDepthStencilStateCreateInfo dsState = key.renderState->getDsState();
   VkPipelineMultisampleStateCreateInfo msState = key.renderState->getMsState(*key.targetState, m_sampleRateShading);
-  VkPipelineColorBlendStateCreateInfo cbState = key.renderState->getCbState(rtState.colorAttachmentCount);
+  VkPipelineColorBlendStateCreateInfo cbState = key.renderState->getCbState(cbAttachments.data(), rtState.colorAttachmentCount, m_shaderIoMask.outputMask);
   VkPipelineDynamicStateCreateInfo dyState = key.renderState->getDyState();
 
   if (m_stages & GfxShaderStage::eVertex) {
@@ -1183,7 +1192,7 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::linkVariant(
 
   // Look up fragment output state library
   auto& foLibrary = m_mgr.createFragmentOutputPipeline(
-    *key.targetState, *key.renderState, m_sampleRateShading);
+    *key.targetState, *key.renderState, m_sampleRateShading, m_shaderIoMask);
 
   libraries.push_back(foLibrary.getHandle());
   variant.dynamicStates |= foLibrary.getDynamicStateFlags();
@@ -1594,7 +1603,8 @@ GfxVulkanVertexInputPipeline& GfxVulkanPipelineManager::createVertexInputPipelin
 GfxVulkanFragmentOutputPipeline& GfxVulkanPipelineManager::createFragmentOutputPipeline(
   const GfxVulkanRenderTargetState&   targetState,
   const GfxVulkanRenderState&         renderState,
-        VkBool32                      sampleShading) {
+        VkBool32                      sampleShading,
+  const GfxShaderIoMask&              shaderIoMasks) {
   GfxRenderStateData normalizedData = renderState.getState();
   normalizedData.flags = GfxRenderStateFlag::eMultisampling
                        | GfxRenderStateFlag::eBlending;
@@ -1607,6 +1617,7 @@ GfxVulkanFragmentOutputPipeline& GfxVulkanPipelineManager::createFragmentOutputP
   key.targetState = &targetState;
   key.renderState = &normalizedState;
   key.sampleShading = sampleShading;
+  key.shaderIoMasks = shaderIoMasks;
 
   auto entry = m_fragmentOutputPipelines.find(key);
 

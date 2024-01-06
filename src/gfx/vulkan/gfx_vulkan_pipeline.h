@@ -357,10 +357,19 @@ public:
    * \param [in] rtCount Number of render targets
    * \returns Vulkan color blend info
    */
-  VkPipelineColorBlendStateCreateInfo getCbState(uint32_t rtCount) const {
+  VkPipelineColorBlendStateCreateInfo getCbState(
+          VkPipelineColorBlendAttachmentState* attachments,
+          uint32_t                      rtCount,
+          uint32_t                      fsOutputMask) const {
+    for (uint32_t i = 0; i < rtCount; i++) {
+      attachments[i] = (fsOutputMask & (1u << i))
+        ? m_cbAttachments[i]
+        : VkPipelineColorBlendAttachmentState();
+    }
+
     VkPipelineColorBlendStateCreateInfo result = m_cbState;
     result.attachmentCount = rtCount;
-    result.pAttachments = rtCount ? m_cbAttachments.data() : nullptr;
+    result.pAttachments = rtCount ? attachments : nullptr;
     return result;
   }
 
@@ -550,6 +559,8 @@ struct GfxVulkanFragmentOutputKey {
   const GfxVulkanRenderTargetState* targetState = nullptr;
   /** Whether to enable sample rate shading */
   VkBool32 sampleShading = VK_FALSE;
+  /** Fragment shader output mask */
+  GfxShaderIoMask shaderIoMasks;
 
   bool operator == (const GfxVulkanFragmentOutputKey&) const = default;
   bool operator != (const GfxVulkanFragmentOutputKey&) const = default;
@@ -559,6 +570,8 @@ struct GfxVulkanFragmentOutputKey {
     result.add(reinterpret_cast<uintptr_t>(renderState));
     result.add(reinterpret_cast<uintptr_t>(targetState));
     result.add(uint32_t(sampleShading));
+    result.add(uint32_t(shaderIoMasks.inputMask));
+    result.add(uint32_t(shaderIoMasks.outputMask));
     return result;
   }
 };
@@ -842,6 +855,7 @@ private:
   GfxVulkanSpecConstantData         m_specConstants;
 
   Extent3D                          m_workgroupSize = Extent3D(0, 0, 0);
+  GfxShaderIoMask                   m_shaderIoMask;
 
   GfxVulkanGraphicsPipelineVariant  m_library;
   VkBool32                          m_sampleRateShading = VK_FALSE;
@@ -1080,13 +1094,15 @@ public:
    * \param [in] renderState Render state object. Must
    *    contain valid blend and multisample states.
    * \param [in] sampleShading Whether to enable sample shading.
+   * \param [in] shaderIoMasks Shader input and output masks
    * \returns Vertex input pipeline for the given
    *    render state object.
    */
   GfxVulkanFragmentOutputPipeline& createFragmentOutputPipeline(
     const GfxVulkanRenderTargetState&   targetState,
     const GfxVulkanRenderState&         renderState,
-          VkBool32                      sampleShading);
+          VkBool32                      sampleShading,
+    const GfxShaderIoMask&              shaderIoMasks);
 
   /**
    * \brief Creates render state
