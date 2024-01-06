@@ -116,8 +116,26 @@ public:
     // Mark object as unused and destroy it
     auto layer = m_layers[layerIndex].load();
 
-    if (layer && layer->objectMask[maskIndex].fetch_and(~maskBit) & maskBit)
+    if (layer && (layer->objectMask[maskIndex].fetch_and(~maskBit) & maskBit))
       reinterpret_cast<T*>(layer->objects[arrayIndex].data)->~T();
+  }
+
+  /**
+   * \brief Checks whether an object exists at the given index
+   *
+   * \param [in] index Index to check
+   * \returns \c true if the given index is valid
+   */
+  bool hasObjectAt(uint32_t index) const {
+    uint32_t layerIndex = index >> BottomLevelBits;
+    uint32_t arrayIndex = index & ((1u << BottomLevelBits) - 1u);
+
+    uint32_t maskIndex = arrayIndex >> 6u;
+    uint32_t maskShift = arrayIndex & 0x3fu;
+    uint64_t maskBit = 1ull << maskShift;
+
+    auto layer = m_layers[layerIndex].load();
+    return layer && (layer->objectMask[maskIndex].load() & maskBit);
   }
 
   /**
