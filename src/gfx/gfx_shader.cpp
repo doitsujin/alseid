@@ -36,6 +36,13 @@ bool GfxShaderDesc::serialize(
     }
   }
 
+  // Write out shader I/O masks as necessary
+  if (gfxShaderStageHasInputVariables(stage))
+    stream.write(inputLocationMask);
+
+  if (gfxShaderStageHasOutputVariables(stage))
+    stream.write(outputLocationMask);
+
   // Write out mesh shader output info as necessary
   if (stage == GfxShaderStage::eMesh) {
     success &= stream.write(uint16_t(maxOutputVertices))
@@ -94,6 +101,13 @@ bool GfxShaderDesc::deserialize(
       workgroupSpecIds = Extent3D(x, y, z);
     }
   }
+
+  // Read shader i/o masks
+  if (gfxShaderStageHasInputVariables(stage))
+    stream.read(inputLocationMask);
+
+  if (gfxShaderStageHasOutputVariables(stage))
+    stream.read(outputLocationMask);
 
   // Decode mesh output info
   if (stage == GfxShaderStage::eMesh) {

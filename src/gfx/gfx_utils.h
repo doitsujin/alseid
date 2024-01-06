@@ -96,9 +96,45 @@ inline Extent2D gfxComputeShadingRateImageSize(
  */
 inline bool gfxShaderStageHasWorkgroupSize(
         GfxShaderStage                  stage) {
-  return stage == GfxShaderStage::eCompute
-      || stage == GfxShaderStage::eTask
-      || stage == GfxShaderStage::eMesh;
+  return stage & (
+    GfxShaderStage::eCompute |
+    GfxShaderStage::eTask |
+    GfxShaderStage::eMesh);
+}
+
+
+/**
+ * \brief Checks whether the given shader stage has input variables
+ *
+ * \param [in] stage Shader stage to check
+ * \returns \c true if the stage uses input variables
+ */
+inline bool gfxShaderStageHasInputVariables(
+        GfxShaderStage                  stage) {
+  return stage & (
+    GfxShaderStage::eVertex |
+    GfxShaderStage::eTessControl |
+    GfxShaderStage::eTessEval |
+    GfxShaderStage::eGeometry |
+    GfxShaderStage::eFragment);
+}
+
+
+/**
+ * \brief Checks whether the given shader stage has output variables
+ *
+ * \param [in] stage Shader stage to check
+ * \returns \c true if the stage uses output variables
+ */
+inline bool gfxShaderStageHasOutputVariables(
+        GfxShaderStage                  stage) {
+  return stage & (
+    GfxShaderStage::eVertex |
+    GfxShaderStage::eTessControl |
+    GfxShaderStage::eTessEval |
+    GfxShaderStage::eGeometry |
+    GfxShaderStage::eMesh |
+    GfxShaderStage::eFragment);
 }
 
 }

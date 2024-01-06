@@ -94,6 +94,17 @@ using GfxShaderFlags = Flags<GfxShaderFlag>;
 
 
 /**
+ * \brief Shader I/O masks
+ */
+struct GfxShaderIoMask {
+  /** Mask of defined input variables */
+  uint32_t inputMask = 0u;
+  /** Mask of defined output variables */
+  uint32_t outputMask = 0u;
+};
+
+
+/**
  * \brief Shader description
  *
  * Stores metadata about the shader, including
@@ -113,6 +124,10 @@ struct GfxShaderDesc {
   Extent3D workgroupSize = Extent3D(0, 0, 0);
   /** Workgroup size specialization constant IDs. */
   Extent3D workgroupSpecIds = Extent3D(0, 0, 0);
+  /** Mask of defined input locations */
+  uint32_t inputLocationMask = 0u;
+  /** Mask of defined output locations */
+  uint32_t outputLocationMask = 0u;
   /** Maximum number of vertices written by mesh shader */
   uint32_t maxOutputVertices = 0;
   /** Maximum number of primitives written by mesh shader */
@@ -310,6 +325,17 @@ public:
     GfxShaderMeshOutputInfo result;
     result.maxVertexCount = m_desc.maxOutputVertices;
     result.maxPrimitiveCount = m_desc.maxOutputPrimitives;
+    return result;
+  }
+
+  /**
+   * \brief Queries I/O mask
+   * \returns Shader I/O mask
+   */
+  GfxShaderIoMask getIoMask() const {
+    GfxShaderIoMask result;
+    result.inputMask = m_desc.inputLocationMask;
+    result.outputMask = m_desc.outputLocationMask;
     return result;
   }
 

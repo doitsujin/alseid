@@ -259,8 +259,25 @@ public:
     // Retrieve shader resources for the given entry point
     std::unordered_set<spirv_cross::VariableID> vars;
 
-    for (auto id : entryPoint->interface_variables)
+    for (auto id : entryPoint->interface_variables) {
       vars.insert(id);
+
+      if (has_decoration(id, spv::DecorationLocation)) {
+        const auto& variable = get<spirv_cross::SPIRVariable>(id);
+
+        uint32_t location = get_decoration(id, spv::DecorationLocation);
+        uint32_t locationCount = getTypeLocationCount(get_variable_data_type(variable));
+
+        if (locationCount) {
+          uint32_t locationMask = ((2u << (locationCount - 1u)) - 1u) << location;
+
+          if (variable.storage == spv::StorageClassInput)
+            result.inputLocationMask |= locationMask;
+          else if (variable.storage == spv::StorageClassOutput)
+            result.outputLocationMask |= locationMask;
+        }
+      }
+    }
 
     auto resources = get_shader_resources(vars);
     std::vector<BindingEntry> bindings;
@@ -396,6 +413,51 @@ private:
     GfxShaderBinding binding;
     bool isDescriptorArray = false;
   };
+
+  uint32_t getTypeLocationCount(
+    const spirv_cross::SPIRType&        type) const {
+    uint32_t baseCount = 0u;
+
+    switch (type.basetype) {
+      case spirv_cross::SPIRType::SByte:
+      case spirv_cross::SPIRType::UByte:
+      case spirv_cross::SPIRType::Short:
+      case spirv_cross::SPIRType::UShort:
+      case spirv_cross::SPIRType::Half:
+      case spirv_cross::SPIRType::Boolean:
+      case spirv_cross::SPIRType::Int:
+      case spirv_cross::SPIRType::UInt:
+      case spirv_cross::SPIRType::Float:
+        baseCount = 1u;
+        break;
+
+      case spirv_cross::SPIRType::Int64:
+      case spirv_cross::SPIRType::UInt64:
+      case spirv_cross::SPIRType::Double:
+        baseCount = type.vecsize > 2u ? 2u : 0u;
+        break;
+
+      case spirv_cross::SPIRType::Struct: {
+        if (type.storage == spv::StorageClassPhysicalStorageBuffer)
+          return 8;
+
+        for (auto member : type.member_types)
+          baseCount += getTypeLocationCount(get<spirv_cross::SPIRType>(member));
+      } break;
+
+      default:
+        return 0;
+    }
+
+    if (type.columns > 1u)
+      baseCount *= type.columns;
+
+    for (uint32_t size : type.array)
+      baseCount *= size;
+
+    return baseCount;
+  }
+
 
   uint32_t getTypeSize(
           uint32_t                      typeId,
