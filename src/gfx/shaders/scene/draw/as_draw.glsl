@@ -40,7 +40,7 @@ struct DrawInstanceInfo {
   uint32_t  instanceAndLod;
   uint16_t  meshIndex;
   uint16_t  meshInstance;
-  uint32_t  shadingDataOffset;
+  uint32_t  materialDataOffset;
   uint32_t  passMask;
 };
 

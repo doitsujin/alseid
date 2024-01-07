@@ -20,7 +20,7 @@ struct TsPayload {
   uint32_t            skinningDataOffset;
   // Offset of this draw's shading data relative to the the
   // instance property buffer.
-  uint32_t            shadingDataOffset;
+  uint32_t            materialDataOffset;
 
   // Mesh instance properties, read from the geometry buffer
   // based on the task shader workgroup ID.

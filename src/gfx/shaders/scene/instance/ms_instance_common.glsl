@@ -115,8 +115,8 @@ MsInvocationInfo msGetInvocationInfo(
     : uint64_t(0u);
 
   // Compute address of per-draw material properties, if present.
-  result.materialParameterVa = tsPayload.shadingDataOffset != 0u
-    ? result.instanceNode.propertyBuffer + tsPayload.shadingDataOffset
+  result.materialParameterVa = tsPayload.materialDataOffset != 0u
+    ? result.instanceNode.propertyBuffer + tsPayload.materialDataOffset
     : uint64_t(0u);
 
   // Compute address of common instance properties, if present.

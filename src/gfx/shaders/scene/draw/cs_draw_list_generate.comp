@@ -270,7 +270,7 @@ void csEmitDraw(in InstanceDrawInfo drawInfo) {
   drawInstanceInfo.instanceAndLod = drawPackInstanceAndLod(drawInfo.instanceIndex, lodIndex);
   drawInstanceInfo.meshIndex = draw.meshIndex;
   drawInstanceInfo.meshInstance = draw.meshInstanceIndex;
-  drawInstanceInfo.shadingDataOffset = draw.shadingParameterOffset;
+  drawInstanceInfo.materialDataOffset = draw.materialParameterOffset;
   drawInstanceInfo.passMask = drawInfo.passMask;
 
   u32vec3 drawParameters = u32vec3(0u);

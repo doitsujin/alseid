@@ -26,7 +26,7 @@ struct TsInvocationInfo {
   uint32_t    lodIndex;
   uint32_t    lodMeshletIndex;
   uint32_t    passIndex;
-  uint32_t    shadingDataOffset;
+  uint32_t    materialDataOffset;
 };
 
 
@@ -52,7 +52,7 @@ TsInvocationInfo tsGetInvocationInfo(
   result.lodMeshletIndex = gl_GlobalInvocationID.x;
   result.passIndex = passGroupGetPassIndex(passGroupVa,
     asFindIndexOfSetBitCooperative(draw.passMask, gl_GlobalInvocationID.z, PASS_GROUP_PASS_COUNT));
-  result.shadingDataOffset = draw.shadingDataOffset;
+  result.materialDataOffset = draw.materialDataOffset;
   return result;
 }
 
@@ -67,7 +67,7 @@ void tsPayloadInit(
     tsPayload.instanceIndex = invocationInfo.instanceIndex;
     tsPayload.passIndex = invocationInfo.passIndex;
     tsPayload.skinningDataOffset = mesh.skinDataOffset;
-    tsPayload.shadingDataOffset = invocationInfo.shadingDataOffset;
+    tsPayload.materialDataOffset = invocationInfo.materialDataOffset;
     tsPayload.meshInstance = meshInstance;
     tsPayload.meshletBuffer = meshletBuffer;
   }

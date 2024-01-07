@@ -93,14 +93,14 @@ struct GfxSceneInstanceDraw {
    *  be processed in a single draw, unless individual instances
    *  use unique sets of parameters or are skipped entirely. */
   uint16_t meshInstanceCount;
-  /** Offset of shading parameter data for this particular draw
+  /** Offset of material parameter data for this particular draw
    *  within the instance data buffer. Shaders assigned to the
    *  given material must interpret this data consistently. */
-  uint32_t shadingParameterOffset;
-  /** Total shading data size, in bytes. Used during allocation.
+  uint32_t materialParameterOffset;
+  /** Total material data size, in bytes. Used during allocation.
    *  The intention is to use the same set of parameters for all
    *  mesh instances, unless the data is arrayed internally. */
-  uint32_t shadingParameterSize;
+  uint32_t materialParameterSize;
 };
 
 static_assert(sizeof(GfxSceneInstanceDraw) == 16);
@@ -327,8 +327,8 @@ public:
   void* getMaterialParameters(uint32_t draw) const {
     auto draws = getDraws();
 
-    return draws[draw].shadingParameterSize
-      ? m_buffer.getAt(draws[draw].shadingParameterOffset)
+    return draws[draw].materialParameterSize
+      ? m_buffer.getAt(draws[draw].materialParameterOffset)
       : nullptr;
   }
 
@@ -421,6 +421,32 @@ struct GfxSceneInstanceHostInfo {
 
 
 /**
+ * \brief Instance draw description
+ *
+ * Defines the mesh and mesh instances to draw, as well as
+ * the absolute index of the material to use. Also assigns
+ * resources to use for the draw and the shader parameter
+ * data layout.
+ */
+struct GfxSceneInstanceDrawDesc {
+  /** Absolute material index. Used to determine which draw
+   *  list to add this particular draw to. */
+  uint16_t materialIndex = 0;
+  /** Local mesh index within the geometry. */
+  uint16_t meshIndex = 0;
+  /** Local mesh instance index. */
+  uint16_t meshInstanceIndex = 0;
+  /** Local mesh instance count. Ideally, all mesh instances should
+   *  be processed in a single draw, unless individual instances
+   *  use unique sets of parameters or are skipped entirely. */
+  uint16_t meshInstanceCount = 0;
+  /** Material parameter size, in bytes. This data is uniform
+   *  within the draw. */
+  uint32_t materialParameterSize = 0;
+};
+
+
+/**
  * \brief Instance description
  *
  * Stores properties needed to allocate instance storage, as
@@ -447,7 +473,7 @@ struct GfxSceneInstanceDesc {
   uint32_t drawCount = 0;
   /** Pointer to draw parameters, including the size of per-draw
    *  material parameters. */
-  const GfxSceneInstanceDraw* draws = nullptr;
+  const GfxSceneInstanceDrawDesc* draws = nullptr;
   /** Axis-aligned bounding box in model space. Should be identical
    *  to the geometry's AABB, and will be recomputed on the fly if
    *  the instance is animated. */

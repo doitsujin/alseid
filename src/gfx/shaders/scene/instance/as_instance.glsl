@@ -43,8 +43,8 @@ struct InstanceDraw {
   uint16_t        meshIndex;
   uint16_t        meshInstanceIndex;
   uint16_t        meshInstanceCount;
-  uint32_t        shadingParameterOffset;
-  uint32_t        shadingParameterSize;
+  uint32_t        materialParameterOffset;
+  uint32_t        materialParameterSize;
 };
 
 #define AS_INSTANCE_MAX_ANIMATION_CHANNELS    (2u)

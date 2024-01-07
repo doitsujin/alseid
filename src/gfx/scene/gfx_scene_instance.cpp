@@ -5,7 +5,7 @@ namespace as {
 
 GfxSceneInstanceDataBuffer::GfxSceneInstanceDataBuffer(
   const GfxSceneInstanceDesc&         desc) {
-  std::vector<uint32_t> shadingParameterOffset(desc.drawCount);
+  std::vector<uint32_t> materialParameterOffset(desc.drawCount);
 
   // Compute size and layout of the instance data buffer
   GfxSceneInstanceDataHeader header = { };
@@ -36,8 +36,8 @@ GfxSceneInstanceDataBuffer::GfxSceneInstanceDataBuffer(
   header.aabb = desc.aabb;
 
   for (uint32_t i = 0; i < desc.drawCount; i++) {
-    shadingParameterOffset[i] = allocateStorage(
-      dataAllocator, desc.draws[i].shadingParameterSize);
+    materialParameterOffset[i] = allocateStorage(
+      dataAllocator, desc.draws[i].materialParameterSize);
   }
 
   // Initialize actual host data
@@ -55,8 +55,12 @@ GfxSceneInstanceDataBuffer::GfxSceneInstanceDataBuffer(
   auto draws = m_buffer.template getAs<GfxSceneInstanceDraw>(header.drawOffset);
 
   for (uint32_t i = 0; i < desc.drawCount; i++) {
-    draws[i] = desc.draws[i];
-    draws[i].shadingParameterOffset = shadingParameterOffset[i];
+    draws[i].materialIndex = desc.draws[i].materialIndex;
+    draws[i].meshIndex = desc.draws[i].meshIndex;
+    draws[i].meshInstanceIndex = desc.draws[i].meshInstanceIndex;
+    draws[i].meshInstanceCount = desc.draws[i].meshInstanceCount;
+    draws[i].materialParameterOffset = materialParameterOffset[i];
+    draws[i].materialParameterSize = desc.draws[i].materialParameterSize;
   }
 }
 
@@ -290,7 +294,7 @@ void GfxSceneInstanceManager::updateMaterialParameters(
   auto dstDraws = hostData.dataBuffer.getDraws();
   auto dstData = hostData.dataBuffer.getMaterialParameters(draw);
 
-  size = std::min(size, size_t(dstDraws[draw].shadingParameterSize));
+  size = std::min(size, size_t(dstDraws[draw].materialParameterSize));
   std::memcpy(dstData, data, size);
 
   markDirty(index, GfxSceneInstanceDirtyFlag::eDirtyMaterialParameters);
@@ -551,16 +555,16 @@ void GfxSceneInstanceManager::updateBufferData(
         uint32_t updateSize = 0;
 
         for (uint32_t i = 0; i < header->drawCount; i++) {
-          if (!draws[i].shadingParameterSize)
+          if (!draws[i].materialParameterSize)
             continue;
 
-          if (draws[i].shadingParameterOffset == updateOffset + updateSize) {
-            updateSize += draws[i].shadingParameterSize;
+          if (draws[i].materialParameterOffset == updateOffset + updateSize) {
+            updateSize += draws[i].materialParameterSize;
           } else {
             uploadInstanceData(context, hostData, updateOffset, updateSize);
 
-            updateOffset = draws[i].shadingParameterOffset;
-            updateSize = draws[i].shadingParameterSize;
+            updateOffset = draws[i].materialParameterOffset;
+            updateSize = draws[i].materialParameterSize;
           }
         }
 

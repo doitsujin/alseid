@@ -397,7 +397,7 @@ private:
     GfxSceneNodeRef rootRef = m_sceneNodeManager->createBvhNode(bvhDesc);
     m_sceneNodeManager->updateNodeReference(rootNode, rootRef);
 
-    std::vector<GfxSceneInstanceDraw> draws;
+    std::vector<GfxSceneInstanceDrawDesc> draws;
 
     for (uint32_t i = 0; i < m_geometry->meshes.size(); i++) {
       auto& draw = draws.emplace_back();
@@ -406,7 +406,6 @@ private:
       draw.meshInstanceCount = std::max(1u,
         uint32_t(m_geometry->meshes[i].info.instanceCount));
       draw.meshInstanceIndex = 0u;
-      draw.shadingParameterSize = 0u;
     }
 
     uint32_t instanceNode = m_sceneNodeManager->createNode();
