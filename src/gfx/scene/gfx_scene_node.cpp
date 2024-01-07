@@ -44,9 +44,6 @@ GfxBuffer GfxSceneNodeBuffer::resizeBuffer(
   newHeader.nodeTransformOffset = allocStorage(allocator,
     sizeof(GfxSceneNodeTransform) * m_desc.nodeCount * 2u);
 
-  newHeader.nodeResidencyOffset = allocStorage(allocator,
-    sizeof(GfxSceneNodeResidencyFlags) * m_desc.nodeCount);
-
   newHeader.nodeCount = m_desc.nodeCount;
 
   newHeader.bvhOffset = allocStorage(allocator,
@@ -95,11 +92,6 @@ GfxBuffer GfxSceneNodeBuffer::resizeBuffer(
       newBuffer, newHeader.nodeTransformOffset,
       oldBuffer, oldHeader.nodeTransformOffset,
       sizeof(GfxSceneNodeTransform) * oldDesc.nodeCount * 2u);
-
-    context->copyBuffer(
-      newBuffer, newHeader.nodeResidencyOffset,
-      oldBuffer, oldHeader.nodeResidencyOffset,
-      sizeof(GfxSceneNodeResidencyFlags) * oldDesc.nodeCount);
   }
 
   if (oldDesc.bvhCount) {

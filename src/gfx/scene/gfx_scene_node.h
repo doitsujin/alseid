@@ -260,27 +260,6 @@ struct GfxSceneBvhDesc {
 
 
 /**
- * \brief Node residency flags
- */
-enum class GfxSceneNodeResidencyFlag : uint8_t {
-  /** Node is partially resident. This means that all required resources for the
-   *  node are available, but not necessarily at the highest level of detail. */
-  eStatusPartial  = (1u << 0),
-  /** Node is fully resident. This means that all resources used by the
-   *  node are available with the highest possible level of detail. */
-  eStatusFull     = (1u << 1),
-  /** A stream request has been submitted for this node. */
-  eRequestStream  = (1u << 2),
-  /** An eviction request has been submitted for this node. */
-  eRequestEvict   = (1u << 3),
-
-  eFlagEnum       = 0u
-};
-
-using GfxSceneNodeResidencyFlags = Flags<GfxSceneNodeResidencyFlag>;
-
-
-/**
  * \brief Scene buffer header
  *
  * Stores the data layout of the scene buffer.
@@ -294,9 +273,6 @@ struct GfxSceneNodeHeader {
    *  with two transform entires per node. This is double-buffered in order
    *  to support motion vectors for dynamic instances. */
   uint32_t nodeTransformOffset;
-  /** Offset of the node residency status array. Points to an array of bytes
-   *  that store each node's current residency and stream request status. */
-  uint32_t nodeResidencyOffset;
   /** Maximum number of nodes in the buffer. Can be applied as an offset
    *  when indexing into double-buffered node transform arrays. */
   uint32_t nodeCount;
@@ -307,7 +283,7 @@ struct GfxSceneNodeHeader {
   uint32_t bvhCount;
 };
 
-static_assert(sizeof(GfxSceneNodeHeader) == 24);
+static_assert(sizeof(GfxSceneNodeHeader) == 20);
 
 
 /**
@@ -473,10 +449,10 @@ public:
   /**
    * \brief Destroys a node
    *
-   * Marks the node as non-resident and frees it, so that the same
-   * node index will become available again to node allocations
-   * later. Must be called in tandem with the typed node destruction
-   * method, or there will be stale node pointers.
+   * Frees a node, so that the same node index will become available
+   * again to node allocations later. Must be called in tandem with
+   * the typed node destruction method, or there will be stale node
+   * pointers.
    *
    * This will also implicitly remove the node from any BVH
    * node's child node list.

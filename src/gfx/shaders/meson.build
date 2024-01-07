@@ -29,7 +29,6 @@ as_shader_includes = files(
 
   'scene/as_scene.glsl',
   'scene/as_scene_node_transform.glsl',
-  'scene/as_scene_stream.glsl',
 )
 
 as_shader_builtins = [

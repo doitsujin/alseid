@@ -1,17 +1,6 @@
 #ifndef AS_SCENE_H
 #define AS_SCENE_H
 
-// Residency status of assets and BVH nodes
-#define RESIDENCY_STATUS_NONE           (0u)
-#define RESIDENCY_STATUS_PARTIAL        (1u)
-#define RESIDENCY_STATUS_FULL           (2u)
-
-#define RESIDENCY_FLAG_REQUEST_STREAM   (1u << 2)
-#define RESIDENCY_FLAG_REQUEST_EVICT    (1u << 3)
-
-#define RESIDENCY_FLAG_MASK             (0xc)
-
-
 // Node types as encoded in node references
 #define NODE_TYPE_ABSTRACT              (0u)
 #define NODE_TYPE_BVH                   (1u)
@@ -64,47 +53,6 @@ uvec2 nodeComputeTransformIndices(
   return uvec2(curr, prev) + nodeIndex;
 }
 
-// Node residency buffer. Stores one byte for each node. The frame
-// ID of when the node was last used should be taken from the node
-// transform array.
-layout(buffer_reference, buffer_reference_align = 4, scalar)
-writeonly buffer SceneNodeResidencyBufferOut {
-  uint8_t nodeResidency[];
-};
-
-layout(buffer_reference, buffer_reference_align = 4, scalar)
-buffer SceneNodeResidencyBuffer {
-  uint32_t nodeResidency[];
-};
-
-
-// Atomically sets streaming or eviction flag for a given node, and
-// returns the previous residency status from before the operation.
-// This is useful to only submit stream requests once per node.
-uint32_t setNodeResidencyFlags(SceneNodeResidencyBuffer nodes, uint32_t nodeIndex, uint32_t flags) {
-  uint32_t dword = nodeIndex / 4;
-  uint32_t byte  = nodeIndex % 4;
-
-  uint32_t prev = atomicOr(nodes.nodeResidency[dword], flags << (8 * byte));
-  return bitfieldExtract(prev, 8 * int32_t(byte), 8);
-}
-
-
-// Reads node residency status for a given node.
-uint32_t getNodeResidency(SceneNodeResidencyBuffer nodes, uint32_t nodeIndex) {
-  uint32_t dword = nodeIndex / 4;
-  uint32_t byte  = nodeIndex % 4;
-
-  return bitfieldExtract(nodes.nodeResidency[dword], 8 * int32_t(byte), 8);
-}
-
-
-// Sets residency status, including flags, for a given node. Must
-// not be used in conjunction with atomically setting status flags.
-void setNodeResidency(SceneNodeResidencyBufferOut nodes, uint32_t nodeIndex, uint32_t residency) {
-  nodes.nodeResidency[nodeIndex] = uint8_t(residency);
-}
-
 
 // Extracts node type from a node reference.
 uint32_t getNodeTypeFromRef(uint32_t nodeRef) {
@@ -148,7 +96,6 @@ layout(buffer_reference, buffer_reference_align = 16, scalar)
 readonly buffer SceneHeader {
   uint32_t  nodeParameterOffset;
   uint32_t  nodeTransformOffset;
-  uint32_t  nodeResidencyOffset;
   uint32_t  nodeCount;
   uint32_t  bvhOffset;
   uint32_t  bvhCount;

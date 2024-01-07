@@ -62,10 +62,6 @@ void csTraverseBvh() {
   SceneNodeInfoBuffer nodeInfos = SceneNodeInfoBuffer(sceneBuffer + scene.nodeParameterOffset);
   SceneNodeTransformBufferOut nodeTransforms = SceneNodeTransformBufferOut(sceneBuffer + scene.nodeTransformOffset);
 
-  // Node residency array. This shader will submit stream requests for the
-  // BVH node itself if it passes the distance test but is not resident.
-  SceneNodeResidencyBuffer nodeResidency = SceneNodeResidencyBuffer(sceneBuffer + scene.nodeResidencyOffset);
-
   // BVH node infos, including chained nodes.
   SceneBvhNodeBuffer bvhNodes = SceneBvhNodeBuffer(sceneBuffer + scene.bvhOffset);
 
