@@ -38,9 +38,7 @@ readonly buffer DrawListBufferIn {
 // is visible in when rendering multiple passes at once.
 struct DrawInstanceInfo {
   uint32_t  instanceAndLod;
-  uint16_t  meshIndex;
-  uint16_t  meshInstance;
-  uint32_t  materialDataOffset;
+  uint32_t  drawIndex;
   uint32_t  passMask;
 };
 

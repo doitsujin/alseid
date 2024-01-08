@@ -244,10 +244,7 @@ uvec2 csSelectLod(uint64_t geometryBuffer, uint32_t meshIndex, float viewDistanc
 void csEmitDraw(in InstanceDrawInfo drawInfo) {
   // Load draw properties from memory
   InstanceNode instanceNode = csLoadInstanceNode(drawInfo.instanceIndex);
-
-  InstanceDataBufferIn instanceData = InstanceDataBufferIn(instanceNode.propertyBuffer);
-  InstanceDrawBuffer instanceDraws = InstanceDrawBuffer(instanceNode.propertyBuffer + instanceData.header.drawOffset);
-  InstanceDraw draw = instanceDraws.draws[drawInfo.drawIndex];
+  InstanceDraw draw = instanceLoadDraw(instanceNode.propertyBuffer, drawInfo.drawIndex);
 
   // Select mesh LOD based on the precomputed view distance, and skip
   // the draw if there is no suitable LOD for the current mesh.
@@ -268,9 +265,7 @@ void csEmitDraw(in InstanceDrawInfo drawInfo) {
   // Emit actual draw parameters
   DrawInstanceInfo drawInstanceInfo;
   drawInstanceInfo.instanceAndLod = drawPackInstanceAndLod(drawInfo.instanceIndex, lodIndex);
-  drawInstanceInfo.meshIndex = draw.meshIndex;
-  drawInstanceInfo.meshInstance = draw.meshInstanceIndex;
-  drawInstanceInfo.materialDataOffset = draw.materialParameterOffset;
+  drawInstanceInfo.drawIndex = drawInfo.drawIndex;
   drawInstanceInfo.passMask = drawInfo.passMask;
 
   u32vec3 drawParameters = u32vec3(0u);

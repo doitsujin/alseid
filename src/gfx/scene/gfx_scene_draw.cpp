@@ -179,7 +179,7 @@ uint32_t GfxSceneDrawBuffer::allocateStorage(
     return 0u;
 
   uint32_t result = uint32_t(allocator);
-  allocator += size;
+  allocator += align(uint32_t(size), 16u);
   return result;
 }
 

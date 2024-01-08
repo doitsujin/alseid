@@ -81,10 +81,9 @@ struct MsInvocationInfo {
   uint32_t        frameId;
   uint32_t        passIndex;
   uint32_t        viewIndex;
+  uint32_t        drawIndex;
   uint64_t        meshletVa;
   uint64_t        skinningVa;
-  uint64_t        materialParameterVa;
-  uint64_t        instanceParameterVa;
 };
 
 
@@ -103,6 +102,7 @@ MsInvocationInfo msGetInvocationInfo(
   // Copy some basic parameters
   result.frameId = frameId;
   result.passIndex = tsPayload.passIndex;
+  result.drawIndex = tsPayload.drawIndex;
 
   // Decode meshlet payload and compute the address of the meshlet header.
   uvec2 meshletInfo = msGetMeshletInfoForWorkgroup();
@@ -114,16 +114,6 @@ MsInvocationInfo msGetInvocationInfo(
     ? result.instanceNode.geometryBuffer + tsPayload.skinningDataOffset
     : uint64_t(0u);
 
-  // Compute address of per-draw material properties, if present.
-  result.materialParameterVa = tsPayload.materialDataOffset != 0u
-    ? result.instanceNode.propertyBuffer + tsPayload.materialDataOffset
-    : uint64_t(0u);
-
-  // Compute address of common instance properties, if present.
-  result.instanceParameterVa = result.instanceInfo.parameterOffset != 0u
-    ? result.instanceNode.propertyBuffer + result.instanceInfo.parameterOffset
-    : uint64_t(0u);
-
   return result;
 }
 
@@ -131,6 +121,29 @@ MsInvocationInfo msGetInvocationInfo(
 // Convenience method to load node transforms from the task shader payload.
 Transform msLoadNodeTransform(bool currFrame) {
   return tsPayload.transforms[currFrame ? 0u : 1u].absoluteTransform;
+}
+
+
+// Draw parameters. Contains offsets to relevant parameter
+// structures, relative to the instance property buffer.
+struct MsDrawParameters {
+  uint32_t shadingDataOffset;
+  uint32_t materialDataOffset;
+};
+
+
+// Convenience method to load relevant local draw parameters
+MsDrawParameters msGetDrawParameters(in MsInvocationInfo invocationInfo) {
+  InstanceDrawBuffer drawBuffer = InstanceDrawBuffer(
+    invocationInfo.instanceNode.propertyBuffer +
+    invocationInfo.instanceInfo.drawOffset);
+
+  InstanceDraw draw = drawBuffer.draws[tsPayload.drawIndex];
+
+  MsDrawParameters result;
+  result.shadingDataOffset = invocationInfo.instanceInfo.parameterOffset;
+  result.materialDataOffset = draw.materialParameterOffset;
+  return result;
 }
 
 #endif // MS_INSTANCE_COMMON_H

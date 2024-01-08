@@ -21,12 +21,11 @@ uint16_t tsEncodeMeshletPayload(uint32_t index, uint32_t viewMask) {
 // the meshlet index, all these values are uniform.
 struct TsInvocationInfo {
   uint32_t    instanceIndex;
-  uint32_t    meshIndex;
-  uint32_t    meshInstance;
+  uint32_t    localMeshInstance;
   uint32_t    lodIndex;
   uint32_t    lodMeshletIndex;
   uint32_t    passIndex;
-  uint32_t    materialDataOffset;
+  uint32_t    drawIndex;
 };
 
 
@@ -46,13 +45,12 @@ TsInvocationInfo tsGetInvocationInfo(
 
   TsInvocationInfo result;
   result.instanceIndex = unpacked.x;
-  result.meshIndex = draw.meshIndex;
-  result.meshInstance = draw.meshInstance + gl_GlobalInvocationID.y;
+  result.localMeshInstance = gl_GlobalInvocationID.y;
   result.lodIndex = unpacked.y;
   result.lodMeshletIndex = gl_GlobalInvocationID.x;
   result.passIndex = passGroupGetPassIndex(passGroupVa,
     asFindIndexOfSetBitCooperative(draw.passMask, gl_GlobalInvocationID.z, PASS_GROUP_PASS_COUNT));
-  result.materialDataOffset = draw.materialDataOffset;
+  result.drawIndex = draw.drawIndex;
   return result;
 }
 
@@ -66,8 +64,8 @@ void tsPayloadInit(
   if (gl_LocalInvocationIndex == 0u) {
     tsPayload.instanceIndex = invocationInfo.instanceIndex;
     tsPayload.passIndex = invocationInfo.passIndex;
+    tsPayload.drawIndex = invocationInfo.drawIndex;
     tsPayload.skinningDataOffset = mesh.skinDataOffset;
-    tsPayload.materialDataOffset = invocationInfo.materialDataOffset;
     tsPayload.meshInstance = meshInstance;
     tsPayload.meshletBuffer = meshletBuffer;
   }

@@ -119,6 +119,16 @@ readonly buffer InstanceWeightBufferIn {
 };
 
 
+// Loads draw parameters
+InstanceDraw instanceLoadDraw(
+        uint64_t                      instanceVa,
+        uint32_t                      drawIndex) {
+  InstanceDataBufferIn instanceData = InstanceDataBufferIn(instanceVa);
+  InstanceDrawBuffer drawBuffer = InstanceDrawBuffer(instanceVa + instanceData.header.drawOffset);
+  return drawBuffer.draws[drawIndex];
+}
+
+
 // Loads an input joint from the instance buffer.
 Transform instanceLoadRelativeJoint(
         uint64_t                      instanceVa,

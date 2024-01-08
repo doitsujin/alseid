@@ -78,11 +78,14 @@ uint tsMain() {
 
   tsLoadNodeTransformsFromMemory(context, instanceNode.nodeIndex);
 
+  // Load draw parameters
+  InstanceDraw draw = instanceLoadDraw(instanceNode.propertyBuffer, context.invocation.drawIndex);
+
   // Load mesh properties
   GeometryRef geometry = GeometryRef(instanceNode.geometryBuffer);
   Geometry geometryMetadata = geometry.geometry;
 
-  Mesh mesh = geometry.meshes[context.invocation.meshIndex];
+  Mesh mesh = geometry.meshes[uint32_t(draw.meshIndex)];
 
   // Compute absolute meshlet index for the current invocation
   MeshLod lod = meshGetLodData(geometry, mesh).lods[context.invocation.lodIndex];
@@ -98,7 +101,8 @@ uint tsMain() {
     dataBuffer = geometryBuffers.buffers[lod.bufferIndex - 1u];
 
   // Load mesh instance and skinning-related properties
-  MeshInstance meshInstance = tsLoadMeshInstance(geometry, mesh, context.invocation.meshInstance);
+  MeshInstance meshInstance = tsLoadMeshInstance(geometry, mesh,
+    uint32_t(draw.meshInstanceIndex) + context.invocation.localMeshInstance);
 
   InstanceDataBufferIn instanceData = InstanceDataBufferIn(instanceNode.propertyBuffer);
   MeshSkinningRef meshSkinning = meshGetSkinningData(geometry, mesh);

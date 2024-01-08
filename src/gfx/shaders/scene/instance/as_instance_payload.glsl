@@ -16,11 +16,11 @@ struct TsPayload {
   // Absolute render pass index, taken from the workgroup ID
   // in combination with the render pass mask and pass group.
   uint32_t            passIndex;
+  // Draw index within the instance. Used to pull some data
+  // such as the material parameter offset within the buffer.
+  uint32_t            drawIndex;
   // Offset of joint indices relative to the geometry buffer.
   uint32_t            skinningDataOffset;
-  // Offset of this draw's shading data relative to the the
-  // instance property buffer.
-  uint32_t            materialDataOffset;
 
   // Mesh instance properties, read from the geometry buffer
   // based on the task shader workgroup ID.

@@ -68,21 +68,16 @@ struct GfxSceneDrawInstanceInfo {
   uint24_t instanceIndex;
   /** Mesh LOD to use for rendering. */
   uint8_t lodIndex;
-  /** Mesh index within the geometry asset. */
-  uint16_t meshIndex;
-  /** First mesh instance index for this draw. */
-  uint16_t meshInstance;
-  /** Offet to shading parameters within the instance data buffer, in bytes.
-   *  Taken directly from the draw parameters, since this cannot be otherwise
-   *  inferred at draw time. */
-  uint32_t shadingDataOffset;
+  /** Local draw index of the instance. Used to pull in data such as
+   *  the mesh to draw, or material parameters for shading. */
+  uint32_t drawIndex;
   /** Mask of passes where this instance is visible. This is useful when
    *  rendering multiple passes at once, e.g. for shadow maps. Task shaders
    *  will have to work out the pass index based on the workgroup ID. */
   uint32_t passMask;
 };
 
-static_assert(sizeof(GfxSceneDrawInstanceInfo) == 16);
+static_assert(sizeof(GfxSceneDrawInstanceInfo) == 12);
 
 
 /**
