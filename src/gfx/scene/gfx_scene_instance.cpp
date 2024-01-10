@@ -510,6 +510,7 @@ void GfxSceneInstanceManager::updateBufferData(
 
     // Check dirty flags and dispatch the necessary buffer updates
     GfxSceneInstanceDirtyFlags dirtyFlags = hostData.dirtyFlags.exchange(0);
+    GfxSceneInstanceFlags nodeFlags = 0u;
 
     if (hostData.dataSlice.buffer) {
       if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyHeader) {
@@ -534,6 +535,7 @@ void GfxSceneInstanceManager::updateBufferData(
         uint32_t jointOffset = header->animationCount ? jointSize : 0u;
 
         uploadInstanceData(context, hostData, header->jointRelativeOffset + jointOffset, jointSize);
+        nodeFlags |= GfxSceneInstanceFlag::eDirtyDeform;
       }
 
       if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyMorphTargetWeights) {
@@ -541,6 +543,7 @@ void GfxSceneInstanceManager::updateBufferData(
         uint32_t weightOffset = (header->animationCount ? 3u : 2u) * weightSize;
 
         uploadInstanceData(context, hostData, header->weightOffset + weightOffset, weightSize);
+        nodeFlags |= GfxSceneInstanceFlag::eDirtyDeform;
       }
 
       if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyShadingParameters)
@@ -575,12 +578,24 @@ void GfxSceneInstanceManager::updateBufferData(
           sizeof(GfxSceneAnimationParameters) * header->animationCount;
 
         uploadInstanceData(context, hostData, header->animationOffset, animationSize);
+        nodeFlags |= GfxSceneInstanceFlag::eDirtyDeform;
+      }
+
+      if ((dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyAssets) && header->resourceCount) {
+        uploadInstanceData(context, hostData,
+          header->resourceOffset + sizeof(*resourceHeader),
+          header->resourceCount * sizeof(GfxSceneInstanceAssetEntry));
+        uploadInstanceData(context, hostData,
+          resourceHeader->localDataOffset,
+          resourceHeader->localDataSize);
+        nodeFlags |= GfxSceneInstanceFlag::eDirtyAssets;
       }
     }
 
     // If the node itself is dirty, allocate an update entry
     auto& updateEntry = m_updateEntries.emplace_back();
-    updateEntry.dstIndex = index;
+    updateEntry.dirtyFlags = uint8_t(uint32_t(nodeFlags) >> uint32_t(GfxSceneInstanceFlag::eDirtyShift));
+    updateEntry.dstIndex = uint24_t(index);
     updateEntry.srcIndex = GfxSceneInstanceNodeUpdateEntry::cSrcIndexNone;
 
     if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyNode)
@@ -603,7 +618,7 @@ void GfxSceneInstanceManager::updateBufferData(
 
     for (const auto& e : m_updateEntries) {
       if (e.srcIndex != GfxSceneInstanceNodeUpdateEntry::cSrcIndexNone)
-        updateData[e.srcIndex] = m_instanceNodeData[e.dstIndex];
+        updateData[e.srcIndex] = m_instanceNodeData[uint32_t(e.dstIndex)];
     }
   }
 

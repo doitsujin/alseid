@@ -468,8 +468,10 @@ void csProcessAnimation() {
 
   // Update node for further processing. This only needs to be
   // performed by one single thread per instance.
-  if (tid == 0u)
+  if (tid == 0u) {
+    globals.instanceNodeBuffer.nodes[instanceIndex].flags |= INSTANCE_DIRTY_DEFORM_BIT;
     globals.instanceNodeBuffer.nodes[instanceIndex].dirtyFrameId = globals.frameId;
+  }
 }
 
 

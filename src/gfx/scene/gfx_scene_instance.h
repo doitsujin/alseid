@@ -38,6 +38,19 @@ enum class GfxSceneInstanceFlag : uint32_t {
    *  set externally if instance parameters have changed significantly. */
   eNoMotionVectors  = (1u << 3),
 
+  /** Indicates that joints and morph target weights are dirty and need
+   *  to be updated. This flag is primarily managed by GPU shaders. */
+  eDirtyDeform      = (1u << 24),
+  /** Indicates that per-draw instance data needs to be updated, e.g.
+   *  after an update to either of the asset lists. Primarily managed
+   *  by GPU shaders, but may be updated manually if needed. */
+  eDirtyAssets      = (1u << 25),
+
+  /** Set of all dirty flags */
+  eDirtyFlags       = eDirtyDeform | eDirtyAssets,
+  /** First dirty flag bit */
+  eDirtyShift       = 24u,
+
   eFlagEnum         = 0
 };
 
@@ -489,8 +502,10 @@ struct GfxSceneInstanceDesc {
  */
 struct GfxSceneInstanceNodeUpdateEntry {
   static constexpr uint32_t cSrcIndexNone = ~0u;
+  /** Dirty flags to set for the node. */
+  uint8_t dirtyFlags;
   /** Instance node index to update */
-  uint32_t dstIndex;
+  uint24_t dstIndex;
   /** Index into the host data buffer. When set to \c cSrcIndexNone,
    *  only the dirty frame ID for the given node will be updated. */
   uint32_t srcIndex;

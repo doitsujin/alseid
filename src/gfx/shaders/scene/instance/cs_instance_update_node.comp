@@ -16,7 +16,7 @@
 layout(local_size_x = 128) in;
 
 struct InstanceNodeUpdate {
-  uint32_t  dstIndex;
+  uint32_t  dstIndexAndFlags;
   uint32_t  srcIndex;
 };
 
@@ -42,14 +42,19 @@ void csUpdateInstanceNodes() {
 
   InstanceNodeUpdate update = globals.updateBuffer.updates[gid];
 
+  uint32_t dstFlags = bitfieldExtract(update.dstIndexAndFlags, 0, 8) << INSTANCE_DIRTY_SHIFT;
+  uint32_t dstIndex = bitfieldExtract(update.dstIndexAndFlags, 8, 24);
+
   if (update.srcIndex < globals.updateCount) {
     InstanceNode node = globals.srcInstanceBuffer.nodes[update.srcIndex];
+    node.flags |= dstFlags;
     node.dirtyFrameId = globals.frameId;
     node.updateFrameId = 0u;
 
-    globals.dstInstanceBuffer.nodes[update.dstIndex] = node;
+    globals.dstInstanceBuffer.nodes[dstIndex] = node;
   } else {
-    globals.dstInstanceBuffer.nodes[update.dstIndex].dirtyFrameId = globals.frameId;
+    globals.dstInstanceBuffer.nodes[dstIndex].flags |= dstFlags;
+    globals.dstInstanceBuffer.nodes[dstIndex].dirtyFrameId = globals.frameId;
   }
 }
 

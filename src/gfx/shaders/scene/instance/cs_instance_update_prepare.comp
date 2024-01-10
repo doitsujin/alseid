@@ -67,13 +67,11 @@ void csPrepareUpdate() {
   if (nodeTransformUpdate + 1u < frameId)
     instance.flags |= INSTANCE_NO_MOTION_VECTORS_BIT;
 
-  // Dispatch an update for transforms and morph target weights if necessary.
-  bool requiresUpdate = false;
-
   if ((instance.flags & INSTANCE_DEFORM_BIT) != 0) {
     // Always dispatch one extra update after the instance has last been
     // changed, so that the previous frame's animation data is valid.
-    requiresUpdate = instance.updateFrameId <= instance.dirtyFrameId;
+    if (instance.updateFrameId <= instance.dirtyFrameId)
+      instance.flags |= INSTANCE_DIRTY_DEFORM_BIT;
 
     if (instance.updateFrameId < instance.dirtyFrameId) {
       // Ensure that we do actually dispatch another update next frame.
@@ -87,12 +85,14 @@ void csPrepareUpdate() {
   }
 
   // Dispatch the node update if necessary.
-  if (requiresUpdate)
-    nodeListAddUpdate(groupBuffer, instanceNodeRef, 0, 1);
+  if ((instance.flags & INSTANCE_DIRTY_FLAGS) != 0u) {
+    uint32_t payload = instance.flags >> INSTANCE_DIRTY_SHIFT;
+    nodeListAddUpdate(groupBuffer, instanceNodeRef, payload, 1);
+  }
 
   if ((instance.flags & INSTANCE_STATIC_BIT) != 0) {
     // Data from the previous frame is irrelevant for rendering shadow maps
-    requiresUpdate = instance.updateFrameId < instance.dirtyFrameId;
+    bool requiresUpdate = instance.updateFrameId < instance.dirtyFrameId;
 
     // Also check whether the absolute transform has changed between frames
     if (!requiresUpdate) {
@@ -108,7 +108,7 @@ void csPrepareUpdate() {
   }
 
   // Write back any updated node properties, as well as the frame ID.
-  instanceBuffer.nodes[instanceIndex].flags = instance.flags;
+  instanceBuffer.nodes[instanceIndex].flags = instance.flags & ~INSTANCE_DIRTY_FLAGS;
   instanceBuffer.nodes[instanceIndex].dirtyFrameId = instance.dirtyFrameId;
   instanceBuffer.nodes[instanceIndex].updateFrameId = frameId;
 }

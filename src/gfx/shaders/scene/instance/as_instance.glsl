@@ -6,6 +6,12 @@
 #define INSTANCE_ANIMATION_BIT          (1u << 2)
 #define INSTANCE_NO_MOTION_VECTORS_BIT  (1u << 3)
 
+#define INSTANCE_DIRTY_DEFORM_BIT       (1u << 24)
+#define INSTANCE_DIRTY_ASSETS_BIT       (1u << 25)
+
+#define INSTANCE_DIRTY_FLAGS            (INSTANCE_DIRTY_DEFORM_BIT | INSTANCE_DIRTY_ASSETS_BIT)
+#define INSTANCE_DIRTY_SHIFT            (24)
+
 struct InstanceJoint {
   Transform       transform;
   uint32_t        reserved;
