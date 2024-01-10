@@ -25,7 +25,7 @@ struct InstanceNode {
   uint64_t        geometryBuffer;
   uint64_t        animationBuffer;
   uint64_t        propertyBuffer;
-  uint64_t        reserved;
+  uint64_t        assetListBuffer;
 };
 
 struct InstanceHeader {
@@ -40,7 +40,8 @@ struct InstanceHeader {
   uint32_t        weightOffset;
   uint32_t        animationCount;
   uint32_t        animationOffset;
-  u32vec2         reserved;
+  uint32_t        resourceCountAndIndirectionCount;
+  uint32_t        resourceOffset;
   Aabb16          aabb;
 };
 
@@ -51,6 +52,8 @@ struct InstanceDraw {
   uint16_t        meshInstanceCount;
   uint32_t        materialParameterOffset;
   uint32_t        materialParameterSize;
+  uint32_t        resourceParameterOffset;
+  uint32_t        resourceParameterSize;
 };
 
 #define AS_INSTANCE_MAX_ANIMATION_CHANNELS    (2u)
@@ -226,5 +229,65 @@ InstanceAnimationBufferIn instanceGetAnimationProperties(
   InstanceDataBuffer instanceData = InstanceDataBuffer(instanceVa);
   return InstanceAnimationBufferIn(instanceVa + instanceData.header.animationOffset);
 }
+
+
+// Extracts the resource count and indirection count
+// from the packed 32-bit integer field.
+uvec2 instanceGetResourceCount(uint32_t packed) {
+  return uvec2(
+    bitfieldExtract(packed,  0, 16),
+    bitfieldExtract(packed, 16, 16));
+}
+
+
+// Resource entry buffer reference type. The least significant bit
+// in the x component of each entry signifies whether the entry is
+// an asset list index or a plain descriptor index / address.
+#define INSTANCE_RESOURCE_ENTRY_SIZE (8u)
+
+layout(buffer_reference, buffer_reference_align = 8, scalar)
+readonly buffer InstanceResourceBufferIn {
+  uvec2 entries[];
+};
+
+
+// Resource indirection type. Stores information on where to
+// copy a descriptor index or buffer address.
+#define INSTANCE_RESOURCE_TYPE_DESCRIPTOR_INDEX   (0u)
+#define INSTANCE_RESOURCE_TYPE_BUFFER_ADDRESS     (1u)
+
+struct InstanceResourceIndirection {
+  uint16_t type;
+  uint16_t srcEntry;
+  uint32_t dstOffset;
+};
+
+
+layout(buffer_reference, buffer_reference_align = 8, scalar)
+readonly buffer InstanceResourceIndirectionBufferIn {
+  InstanceResourceIndirection entries[];
+};
+
+
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+writeonly buffer InstanceRawBufferOut32 {
+  uint32_t data[];
+};
+
+
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+writeonly buffer InstanceRawBufferOut64 {
+  u32vec2 data[];
+};
+
+
+// Asset list buffer reference type. Stores a frame ID of when
+// the list has last changed to allow for dirty tracking, and
+// an array of descriptor indices and buffer references.
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+readonly buffer AssetListBufferIn {
+  uint32_t updateFrameId;
+  uint32_t dwords[];
+};
 
 #endif /* AS_INSTANCE_H */

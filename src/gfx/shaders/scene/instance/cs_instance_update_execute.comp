@@ -212,17 +212,7 @@ void csTransformJoints(in GeometryRef geometryBuffer, uint64_t instanceBuffer, u
   }
 }
 
-void csExecuteUpdate() {
-  PassGroupUpdateListIn instanceList = getNodeTypeUpdateList(groupBuffer, NODE_TYPE_INSTANCE);
-
-  uint32_t workgroupId = asFlattenWorkgroupIndex();
-
-  if (workgroupId >= instanceList.header.entryCount)
-    return;
-
-  uint32_t instanceIndex = getNodeIndexFromRef(instanceList.nodeRefs[workgroupId]);
-
-  InstanceNode instanceNode = instanceBuffer.nodes[instanceIndex];
+void csUpdateDeform(in InstanceNode instanceNode) {
   InstanceDataBuffer instanceInfo = InstanceDataBuffer(instanceNode.propertyBuffer);
 
   // If animations are enabled for the instance but none are currently
@@ -260,6 +250,92 @@ void csExecuteUpdate() {
       instanceStoreMorphTargetWeight(instanceNode.propertyBuffer, 1, index, prev);
     }
   }
+}
+
+
+void csUpdateAssets(in InstanceNode instanceNode) {
+  InstanceHeader instanceInfo = InstanceDataBuffer(instanceNode.propertyBuffer).header;
+  AssetListBufferIn assetList = AssetListBufferIn(instanceNode.assetListBuffer);
+
+  // Use two different buffer types to write resource parameters. This
+  // may enable a fast path when writing buffer addresses on some drivers.
+  InstanceRawBufferOut32 instanceData32 = InstanceRawBufferOut32(instanceNode.propertyBuffer);
+  InstanceRawBufferOut64 instanceData64 = InstanceRawBufferOut64(instanceNode.propertyBuffer);
+
+  uvec2 counts = instanceGetResourceCount(instanceInfo.resourceCountAndIndirectionCount);
+  uint32_t resourceCount = counts.x;
+  uint32_t indirectionCount = counts.y;
+
+  InstanceResourceBufferIn resourceBuffer = InstanceResourceBufferIn(instanceNode.propertyBuffer + instanceInfo.resourceOffset);
+  InstanceResourceIndirectionBufferIn indirectionBuffer = InstanceResourceIndirectionBufferIn(instanceNode.propertyBuffer +
+    instanceInfo.resourceOffset + resourceCount * INSTANCE_RESOURCE_ENTRY_SIZE);
+
+  // Ensure that it is safe to dereference the asset list pointer. If not,
+  // default to null pointers and invalid descriptor indices when needed.
+  bool hasAssetList = instanceNode.assetListBuffer != uint64_t(0u);
+
+  for (uint32_t i = 0; i < indirectionCount; i += gl_WorkGroupSize.x) {
+    uint32_t index = i + gl_LocalInvocationIndex;
+
+    if (index < indirectionCount) {
+      InstanceResourceIndirection indirection = indirectionBuffer.entries[index];
+
+      // Interpret the 64-bit encoded entry. If the least significant bit is
+      // set, the upper 32 bits store an index into the asset list.
+      uvec2 srcData = resourceBuffer.entries[uint32_t(indirection.srcEntry)];
+      bool useAssetList = (srcData.x & 1) != 0;
+
+      // Control flow is not expected to diverge much here since buffers are rare.
+      if (uint32_t(indirection.type) == INSTANCE_RESOURCE_TYPE_BUFFER_ADDRESS) {
+        uvec2 dstData = srcData;
+
+        if (useAssetList) {
+          dstData = uvec2(0u, 0u);
+
+          if (hasAssetList) {
+            dstData = uvec2(
+              assetList.dwords[srcData.y + 0u],
+              assetList.dwords[srcData.y + 1u]);
+          }
+        }
+
+        instanceData64.data[indirection.dstOffset / 8u] = dstData;
+      } else {
+        uint32_t dstData = srcData.y;
+
+        if (useAssetList) {
+          dstData = ~0u;
+
+          if (hasAssetList)
+            dstData = assetList.dwords[srcData.y + 0u];
+        }
+
+        instanceData32.data[indirection.dstOffset / 4u] = dstData;
+      }
+    }
+  }
+}
+
+
+void csExecuteUpdate() {
+  PassGroupUpdateListIn instanceList = getNodeTypeUpdateList(globals.groupBuffer, NODE_TYPE_INSTANCE);
+
+  uint32_t workgroupId = asFlattenWorkgroupIndex();
+
+  if (workgroupId >= instanceList.header.entryCount)
+    return;
+
+  uint32_t nodeRef = instanceList.nodeRefs[workgroupId];
+  uint32_t dirtyFlags = getNodeTypeFromRef(nodeRef) << INSTANCE_DIRTY_SHIFT;
+  uint32_t instanceIndex = getNodeIndexFromRef(nodeRef);
+
+  InstanceNode instanceNode = globals.instanceBuffer.nodes[instanceIndex];
+
+  if ((dirtyFlags & INSTANCE_DIRTY_DEFORM_BIT) != 0)
+    csUpdateDeform(instanceNode);
+
+  if ((dirtyFlags & INSTANCE_DIRTY_ASSETS_BIT) != 0)
+    csUpdateAssets(instanceNode);
 }
 
 #include "../../as_include_tail.glsl"

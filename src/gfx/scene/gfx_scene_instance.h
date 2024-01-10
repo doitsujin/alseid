@@ -84,8 +84,9 @@ struct GfxSceneInstanceNodeInfo {
   /** GPU address of the instance property buffer. This stores all sorts
    *  of per-instance data, including joint transforms. */
   uint64_t propertyBuffer;
-  /** Reserved for future use */
-  uint64_t reserved;
+  /** GPU address of asset list to use for this instance. If set,
+   *  all non-local asset data will be pulled from this buffer. */
+  uint64_t assetListBuffer;
 };
 
 static_assert(sizeof(GfxSceneInstanceNodeInfo) == 48);
@@ -114,9 +115,15 @@ struct GfxSceneInstanceDraw {
    *  The intention is to use the same set of parameters for all
    *  mesh instances, unless the data is arrayed internally. */
   uint32_t materialParameterSize;
+  /** Offset of resource parameter data, in bytes. This section
+   *  will only be written by the GPU and contains descriptor
+   *  indices and buffer addresses to be used by this instance. */
+  uint32_t resourceParameterOffset;
+  /** Size of resource parameter data, in bytes. */
+  uint32_t resourceParameterSize;
 };
 
-static_assert(sizeof(GfxSceneInstanceDraw) == 16);
+static_assert(sizeof(GfxSceneInstanceDraw) == 24);
 
 
 /**
@@ -182,6 +189,71 @@ static_assert(sizeof(GfxSceneAnimationParameters) == 12);
 
 
 /**
+ * \brief Resource type for an instance
+ */
+enum class GfxSceneInstanceResourceType : uint16_t {
+  /** Descriptor index. May index into an arbitrary descriptor array
+   *  that the application must bind before performing draws. Indices
+   *  are represented as signed 32-bit integers, with negative values
+   *  indicating that the resource is not valid or not resident. */
+  eDescriptorIndex  = 0,
+  /** Buffer address. Points directly to a buffer of an arbitrary type
+   *  that the shader can interpret. Addresses are 64-bit unsigned
+   *  integers, and must be aligned to 16 bytes. */
+  eBufferAddress    = 1,
+};
+
+
+/**
+ * \brief Resource indirection entry
+ *
+ * Stores information about where to read a descriptor index or buffer
+ * address from, and an byte offset relative to the instance data buffer
+ * that points into a draw's resource buffer to write to.
+ */
+struct GfxSceneInstanceResourceIndirectionEntry {
+  /** Resource type. Determines the parameter data type. */
+  GfxSceneInstanceResourceType type;
+  /** Resource entry within the instance. */
+  uint16_t srcEntry;
+  /** Byte offset of where to write the parameter. */
+  uint32_t dstOffset;
+};
+
+static_assert(sizeof(GfxSceneInstanceResourceIndirectionEntry) == 8);
+
+
+/**
+ * \brief Resource info
+ *
+ * Encodes either an index into an asset list, or a resource
+ * parameter directly such as a descriptor. If the least
+ * significant bit is set, the index in the upper dword is
+ * an asset reference.
+ */
+struct GfxSceneInstanceResource {
+  GfxSceneInstanceResource() = default;
+
+  explicit GfxSceneInstanceResource(uint64_t d)
+  : data(d) { }
+
+  static GfxSceneInstanceResource fromAssetIndex(uint32_t index) {
+    return GfxSceneInstanceResource(uint64_t(index) << 32 | 1ull);
+  }
+
+  static GfxSceneInstanceResource fromDescriptorIndex(int32_t index) {
+    return GfxSceneInstanceResource(uint64_t(index) << 32);
+  }
+
+  static GfxSceneInstanceResource fromBufferAddress(uint64_t va) {
+    return GfxSceneInstanceResource(va);
+  }
+
+  uint64_t data;
+};
+
+
+/**
  * \brief Instance data buffer header
  *
  * Stores offsets to various categories of per-instance data. This
@@ -226,9 +298,15 @@ struct GfxSceneInstanceDataHeader {
   /** Animation info offset. Stores parameters of active animations, as
    *  well as information on how to blend animations together. */
   uint32_t animationOffset;
-  /** Reserved for future use */
-  uint32_t reserved0;
-  uint32_t reserved1;
+  /** Number of unique resources referenced by this instance. */
+  uint16_t resourceCount;
+  /** Resource indirection count. Resource indirection data is stored
+   *  immediately following resource entries in the resource buffer. */
+  uint16_t resourceIndirectionCount;
+  /** Resource buffer. Stores resource entries and relocation entries, so
+   *  that the instance update shader can resolve indirections and copy
+   *  plain descriptor indices and buffer addresses to each draw's buffer. */
+  uint32_t resourceOffset;
   /** Axis-aligned bounding box, in model space. Empty if the number of
    *  joints is zero, otherwise this will contain the adjusted AABB. */
   GfxAabb<float16_t> aabb;
@@ -373,6 +451,21 @@ public:
       : nullptr;
   }
 
+  /**
+   * \brief Retrieves pointer to resource entries
+   *
+   * Encodes a raw descriptor index, a buffer address,
+   * or an index into the asset list buffer.
+   * \returns Pointer to resource entries
+   */
+  GfxSceneInstanceResource* getResourceEntries() const {
+    auto header = getHeader();
+
+    return header->resourceCount
+      ? m_buffer.getAs<GfxSceneInstanceResource>(header->resourceOffset)
+      : nullptr;
+  }
+
 private:
 
   AlignedBuffer m_buffer;
@@ -408,6 +501,9 @@ enum class GfxSceneInstanceDirtyFlag : uint32_t {
   /** Animation parameters were updated on the CPU and need to be
    *  uploaded to the GPU. GPU-side updates happen automatically. */
   eDirtyAnimations          = (1u << 6),
+  /** Resource parameters were updated on the CPU and need to be
+   *  uploaded to the GPU. Will trigger the needed GPU update. */
+  eDirtyAssets              = (1u << 7),
 
   eFlagEnum                 = 0
 };
@@ -456,6 +552,26 @@ struct GfxSceneInstanceDrawDesc {
   /** Material parameter size, in bytes. This data is uniform
    *  within the draw. */
   uint32_t materialParameterSize = 0;
+  /** Number of resources used within this draw */
+  uint32_t resourceCount = 0;
+  /** Resource indices used within the draw. Each index accesses
+   *  a resource from the instance description, and the order in
+   *  which resources are defined determines the layout of the
+   *  resource buffer. Buffer addresses are aligned to 8 bytes. */
+  const uint16_t* resourceIndices = nullptr;
+};
+
+
+/**
+ * \brief Resource description for an instance
+ */
+struct GfxSceneInstanceResourceDesc {
+  /** Resource name. If not empty, resources can be looked up by
+   *  name and manually get replaced, which can be useful in case
+   *  per-instance resources need to be created dynamically. */
+  GfxSemanticName name = "";
+  /** Resource type. */
+  GfxSceneInstanceResourceType type = GfxSceneInstanceResourceType::eDescriptorIndex;
 };
 
 
@@ -487,6 +603,11 @@ struct GfxSceneInstanceDesc {
   /** Pointer to draw parameters, including the size of per-draw
    *  material parameters. */
   const GfxSceneInstanceDrawDesc* draws = nullptr;
+  /** Number of resources. Resources defined for this instance can
+   *  be used by multiple draws via the respective index array. */
+  uint32_t resourceCount = 0;
+  /** Resource descriptions. */
+  const GfxSceneInstanceResourceDesc* resources = nullptr;
   /** Axis-aligned bounding box in model space. Should be identical
    *  to the geometry's AABB, and will be recomputed on the fly if
    *  the instance is animated. */
@@ -740,6 +861,18 @@ public:
     const GfxSceneAnimationParameters&  parameters);
 
   /**
+   * \brief Updates resources for the instance
+   *
+   * \param [in] instance Instance node reference
+   * \param [in] resourceIndex Resource to update
+   * \param [in] resourceInfo Encoded resource info
+   */
+  void updateResource(
+          GfxSceneNodeRef               instance,
+          uint32_t                      resourceIndex,
+          GfxSceneInstanceResource      resourceInfo);
+
+  /**
    * \brief Updates pointer to geometry buffer
    *
    * When setting the buffer address to 0, the node must
@@ -762,6 +895,16 @@ public:
   void updateAnimationBuffer(
           GfxSceneNodeRef               instance,
           uint64_t                      animationBuffer);
+
+  /**
+   * \brief Updates pointer to asset list
+   *
+   * \param [in] instance Instance node reference
+   * \param [in] assetListBuffer Asset list buffer address
+   */
+  void updateAssetList(
+          GfxSceneNodeRef               instance,
+          uint64_t                      assetListBuffer);
 
   /**
    * \brief Allocates GPU memory for instance data
@@ -839,7 +982,7 @@ public:
           uint32_t                      frameId);
 
 private:
-
+#
   GfxSceneInstanceBuffer              m_gpuResources;
 
   std::unordered_map<

@@ -84,6 +84,14 @@ void csPrepareUpdate() {
     }
   }
 
+  // Check if the asset list has changed since the last update
+  if (instance.assetListBuffer != uint64_t(0u)) {
+    AssetListBufferIn assetList = AssetListBufferIn(instance.assetListBuffer);
+
+    if (assetList.updateFrameId > instance.updateFrameId)
+      instance.flags |= INSTANCE_DIRTY_ASSETS_BIT;
+  }
+
   // Dispatch the node update if necessary.
   if ((instance.flags & INSTANCE_DIRTY_FLAGS) != 0u) {
     uint32_t payload = instance.flags >> INSTANCE_DIRTY_SHIFT;

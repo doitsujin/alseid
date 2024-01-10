@@ -5,7 +5,9 @@ namespace as {
 
 GfxSceneInstanceDataBuffer::GfxSceneInstanceDataBuffer(
   const GfxSceneInstanceDesc&         desc) {
-  std::vector<uint32_t> materialParameterOffset(desc.drawCount);
+  small_vector<std::pair<uint32_t, uint32_t>, 16> materialParameters(desc.drawCount);
+  small_vector<std::pair<uint32_t, uint32_t>, 16> resourceParameters(desc.drawCount);
+  small_vector<GfxSceneInstanceResourceIndirectionEntry, 32> resourceIndirections;
 
   // Compute size and layout of the instance data buffer
   GfxSceneInstanceDataHeader header = { };
@@ -36,9 +38,45 @@ GfxSceneInstanceDataBuffer::GfxSceneInstanceDataBuffer(
   header.aabb = desc.aabb;
 
   for (uint32_t i = 0; i < desc.drawCount; i++) {
-    materialParameterOffset[i] = allocateStorage(
-      dataAllocator, desc.draws[i].materialParameterSize);
+    uint32_t materialParameterSize = desc.draws[i].materialParameterSize;
+    uint32_t materialParameterOffset = allocateStorage(dataAllocator, materialParameterSize);
+    materialParameters[i] = { materialParameterOffset, materialParameterSize };
+
+    uint32_t resourceParameterSize = 0;
+    uint32_t resourceParameterOffset = 0;
+
+    for (uint32_t j = 0; j < desc.draws[i].resourceCount; j++) {
+      uint16_t resourceIndex = desc.draws[i].resourceIndices[j];
+      const auto& resource = desc.resources[resourceIndex];
+
+      uint32_t size = resource.type == GfxSceneInstanceResourceType::eBufferAddress
+        ? sizeof(uint64_t)
+        : sizeof(uint32_t);
+
+      resourceParameterSize = align(resourceParameterSize, size);
+
+      auto& indirection = resourceIndirections.emplace_back();
+      indirection.type = resource.type;
+      indirection.srcEntry = resourceIndex;
+      indirection.dstOffset = dataAllocator + resourceParameterSize;
+
+      resourceParameterSize += size;
+    }
+
+    if (resourceParameterSize) {
+      resourceParameterSize = align(resourceParameterSize, 16u);
+      resourceParameterOffset = allocateStorage(dataAllocator, resourceParameterSize);
+    }
+
+    resourceParameters[i] = { resourceParameterOffset, resourceParameterSize };
   }
+
+  // Allocate storage for the resource buffer
+  header.resourceCount = uint16_t(desc.resourceCount);
+  header.resourceIndirectionCount = uint16_t(resourceIndirections.size());
+  header.resourceOffset = allocateStorage(dataAllocator,
+    header.resourceCount * sizeof(GfxSceneInstanceResource) +
+    header.resourceIndirectionCount * sizeof(GfxSceneInstanceResourceIndirectionEntry));
 
   // Initialize actual host data
   m_buffer = AlignedBuffer(dataAllocator, 16);
@@ -59,8 +97,27 @@ GfxSceneInstanceDataBuffer::GfxSceneInstanceDataBuffer(
     draws[i].meshIndex = desc.draws[i].meshIndex;
     draws[i].meshInstanceIndex = desc.draws[i].meshInstanceIndex;
     draws[i].meshInstanceCount = desc.draws[i].meshInstanceCount;
-    draws[i].materialParameterOffset = materialParameterOffset[i];
-    draws[i].materialParameterSize = desc.draws[i].materialParameterSize;
+    draws[i].materialParameterOffset = materialParameters[i].first;
+    draws[i].materialParameterSize = materialParameters[i].second;
+    draws[i].resourceParameterOffset = resourceParameters[i].first;
+    draws[i].resourceParameterSize = resourceParameters[i].second;
+  }
+
+  if (!resourceIndirections.empty()) {
+    auto entries = m_buffer.template getAs<GfxSceneInstanceResource>(header.resourceOffset);
+
+    for (uint32_t i = 0; i < desc.resourceCount; i++) {
+      entries[i] = desc.resources[i].type == GfxSceneInstanceResourceType::eBufferAddress
+        ? GfxSceneInstanceResource::fromBufferAddress(0)
+        : GfxSceneInstanceResource::fromDescriptorIndex(-1);
+    }
+
+    auto indirections = m_buffer.template getAs<GfxSceneInstanceResourceIndirectionEntry>(
+      header.resourceOffset + header.resourceCount * sizeof(GfxSceneInstanceResource));
+
+    std::memcpy(indirections,
+      resourceIndirections.data(),
+      resourceIndirections.size() * sizeof(GfxSceneInstanceResourceIndirectionEntry));
   }
 }
 
@@ -330,6 +387,24 @@ void GfxSceneInstanceManager::updateAnimationParameters(
 }
 
 
+void GfxSceneInstanceManager::updateResource(
+        GfxSceneNodeRef               instance,
+        uint32_t                      resourceIndex,
+        GfxSceneInstanceResource      resourceInfo) {
+  uint32_t index = uint32_t(instance.index);
+
+  auto& hostData = m_instanceHostData[index];
+
+  auto header = hostData.dataBuffer.getHeader();
+  auto resources = hostData.dataBuffer.getResourceEntries();
+
+  if (resourceIndex < header->resourceCount) {
+    resources[resourceIndex] = resourceInfo;
+    markDirty(index, GfxSceneInstanceDirtyFlag::eDirtyAssets);
+  }
+}
+
+
 void GfxSceneInstanceManager::updateGeometryBuffer(
         GfxSceneNodeRef               instance,
         uint64_t                      geometryBuffer) {
@@ -353,6 +428,20 @@ void GfxSceneInstanceManager::updateAnimationBuffer(
 
   if (nodeData.animationBuffer != animationBuffer) {
     nodeData.animationBuffer = animationBuffer;
+    markDirty(index, GfxSceneInstanceDirtyFlag::eDirtyNode);
+  }
+}
+
+
+void GfxSceneInstanceManager::updateAssetList(
+        GfxSceneNodeRef               instance,
+        uint64_t                      assetListBuffer) {
+  uint32_t index = uint32_t(instance.index);
+
+  auto& nodeData = m_instanceNodeData[index];
+
+  if (nodeData.assetListBuffer != assetListBuffer) {
+    nodeData.assetListBuffer = assetListBuffer;
     markDirty(index, GfxSceneInstanceDirtyFlag::eDirtyNode);
   }
 }
@@ -519,7 +608,8 @@ void GfxSceneInstanceManager::updateBufferData(
           GfxSceneInstanceDirtyFlag::eDirtyMorphTargetWeights |
           GfxSceneInstanceDirtyFlag::eDirtyShadingParameters |
           GfxSceneInstanceDirtyFlag::eDirtyMaterialParameters |
-          GfxSceneInstanceDirtyFlag::eDirtyAnimations;
+          GfxSceneInstanceDirtyFlag::eDirtyAnimations |
+          GfxSceneInstanceDirtyFlag::eDirtyAssets;
       }
 
       auto header = hostData.dataBuffer.getHeader();
@@ -528,6 +618,12 @@ void GfxSceneInstanceManager::updateBufferData(
       if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyHeader) {
         uploadInstanceData(context, hostData, 0, sizeof(*header));
         uploadInstanceData(context, hostData, header->drawOffset, header->drawCount * sizeof(*draws));
+
+        if (header->resourceIndirectionCount) {
+          uploadInstanceData(context, hostData,
+            header->resourceOffset + header->resourceCount * sizeof(GfxSceneInstanceResource),
+            header->resourceIndirectionCount * sizeof(GfxSceneInstanceResourceIndirectionEntry));
+        }
       }
 
       if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyRelativeTransforms) {
@@ -582,12 +678,8 @@ void GfxSceneInstanceManager::updateBufferData(
       }
 
       if ((dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyAssets) && header->resourceCount) {
-        uploadInstanceData(context, hostData,
-          header->resourceOffset + sizeof(*resourceHeader),
-          header->resourceCount * sizeof(GfxSceneInstanceAssetEntry));
-        uploadInstanceData(context, hostData,
-          resourceHeader->localDataOffset,
-          resourceHeader->localDataSize);
+        uploadInstanceData(context, hostData, header->resourceOffset,
+          header->resourceCount * sizeof(GfxSceneInstanceResource));
         nodeFlags |= GfxSceneInstanceFlag::eDirtyAssets;
       }
     }
