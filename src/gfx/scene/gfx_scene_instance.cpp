@@ -476,7 +476,6 @@ void GfxSceneInstanceManager::processPassGroupInstances(
 
   GfxSceneInstanceUpdateExecuteArgs execArgs = { };
   execArgs.instanceBufferVa = m_gpuResources.getGpuAddress();
-  execArgs.sceneBufferVa = nodeManager.getGpuAddress();
   execArgs.groupBufferVa = groupBuffer.getGpuAddress();
 
   pipelines.executeInstanceUpdates(context, dispatches.second, execArgs);

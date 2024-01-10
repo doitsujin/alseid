@@ -12,6 +12,24 @@
 #define MAX_TASK_SHADER_WORKGROUP_SIZE                (64)
 
 
+// Declare actual specialization constants for relevant stages
+#if defined(STAGE_COMP) || defined(STAGE_MESH) || defined(STAGE_TASK)
+layout(constant_id = SPEC_CONST_ID_MIN_SUBGROUP_SIZE)
+const uint CsMinSubgroupSize = 128u;
+layout(constant_id = SPEC_CONST_ID_MAX_SUBGROUP_SIZE)
+const uint CsMaxSubgroupSize = 128u;
+layout(constant_id = SPEC_CONST_ID_TASK_SHADER_WORKGROUP_SIZE)
+const uint TsWorkgroupSize = 64u;
+layout(constant_id = SPEC_CONST_ID_MESH_SHADER_WORKGROUP_SIZE)
+const uint MsWorkgroupSize = 128u;
+#endif
+
+#ifdef STAGE_MESH
+layout(constant_id = SPEC_CONST_ID_MESH_SHADER_FLAGS)
+const uint MsFlags = 0u;
+#endif // STAGE_MESH
+
+
 // Convenience macro to generate a scalarization loop for a potentially
 // non-uniform value. Will execute one iteration per unique value. Note
 // that for floats, you may need to use floatBitsToUint, or otherwise

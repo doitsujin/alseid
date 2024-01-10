@@ -5,9 +5,6 @@
 
 #include "../as_scene.glsl"
 
-layout(constant_id = SPEC_CONST_ID_TASK_SHADER_WORKGROUP_SIZE)
-const uint32_t TsWorkgroupSize = 128;
-
 // Task shader payload. Stores uniform information about the render
 // pass, instance, and meshlets to render.
 struct TsPayload {

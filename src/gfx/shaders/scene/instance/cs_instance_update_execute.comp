@@ -19,17 +19,16 @@
 
 layout(local_size_x_id = SPEC_CONST_ID_MIN_SUBGROUP_SIZE) in;
 
-layout(constant_id = SPEC_CONST_ID_MIN_SUBGROUP_SIZE) const uint CsJointCacheSize = 128;
+const uint CsJointCacheSize = CsMinSubgroupSize;
 
 // Useful constants for some compile-time subgroup optimizations
 bool IsSingleSubgroup = (gl_NumSubgroups == 1);
 
 layout(push_constant)
 uniform PushData {
-  InstanceNodeBuffer    instanceBuffer;
-  uint64_t              sceneBuffer;
+  InstanceNodeBufferIn  instanceBuffer;
   uint64_t              groupBuffer;
-};
+} globals;
 
 
 // Helper function to compute the axis-aligned bounding box for

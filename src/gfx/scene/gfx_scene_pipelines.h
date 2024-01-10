@@ -122,11 +122,10 @@ static_assert(sizeof(GfxSceneInstanceUpdatePrepareArgs) == 32);
  */
 struct GfxSceneInstanceUpdateExecuteArgs {
   uint64_t instanceBufferVa;
-  uint64_t sceneBufferVa;
   uint64_t groupBufferVa;
 };
 
-static_assert(sizeof(GfxSceneInstanceUpdateExecuteArgs) == 24);
+static_assert(sizeof(GfxSceneInstanceUpdateExecuteArgs) == 16);
 
 
 /**

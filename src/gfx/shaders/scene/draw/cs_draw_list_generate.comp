@@ -21,9 +21,6 @@
 
 layout(local_size_x = PASS_GROUP_WORKGROUP_SIZE) in;
 
-layout(constant_id = SPEC_CONST_ID_TASK_SHADER_WORKGROUP_SIZE)
-const uint CsTaskShaderWorkgroupSize = 128;
-
 layout(push_constant)
 uniform PushData {
   uint64_t            drawListVa;
@@ -269,7 +266,7 @@ void csEmitDraw(in InstanceDrawInfo drawInfo) {
   drawInstanceInfo.passMask = drawInfo.passMask;
 
   u32vec3 drawParameters = u32vec3(0u);
-  drawParameters.x = asComputeWorkgroupCount1D(lodMeshletCount, CsTaskShaderWorkgroupSize);
+  drawParameters.x = asComputeWorkgroupCount1D(lodMeshletCount, TsWorkgroupSize);
   drawParameters.y = draw.meshInstanceCount;
   drawParameters.z = bitCount(drawInfo.passMask);
 

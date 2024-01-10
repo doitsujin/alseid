@@ -15,10 +15,6 @@
 // size for us, depending on driver preferences.
 layout(local_size_x_id = SPEC_CONST_ID_MESH_SHADER_WORKGROUP_SIZE) in;
 
-layout(constant_id = SPEC_CONST_ID_MESH_SHADER_WORKGROUP_SIZE)
-const uint MsWorkgroupSize = 128u;
-
-
 // Flip face orientation. This is generally required for mirrored
 // mesh instances in order to maintain a consistent front face.
 #define MS_FLIP_FACE_BIT                (1u << 0)
