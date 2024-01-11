@@ -998,6 +998,7 @@ private:
   std::vector<uint32_t>               m_dirtyIndices;
 
   std::vector<GfxSceneInstanceNodeUpdateEntry> m_updateEntries;
+  std::vector<GfxSceneUploadChunk>    m_uploadChunks;
 
   alignas(CacheLineSize)
   std::mutex                          m_freeMutex;
@@ -1031,7 +1032,7 @@ private:
     const GfxContext&                   context,
           uint32_t                      frameId);
 
-  static void uploadInstanceData(
+  void uploadInstanceData(
     const GfxContext&                   context,
     const GfxSceneInstanceHostInfo&     hostData,
           uint32_t                      offset,

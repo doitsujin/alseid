@@ -604,79 +604,63 @@ void GfxSceneInstanceManager::updateBufferData(
     GfxSceneInstanceFlags nodeFlags = 0u;
 
     if (hostData.dataSlice.buffer) {
-      if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyHeader) {
-        dirtyFlags |=
+      if (dirtyFlags & (
           GfxSceneInstanceDirtyFlag::eDirtyRelativeTransforms |
           GfxSceneInstanceDirtyFlag::eDirtyMorphTargetWeights |
-          GfxSceneInstanceDirtyFlag::eDirtyShadingParameters |
-          GfxSceneInstanceDirtyFlag::eDirtyMaterialParameters |
-          GfxSceneInstanceDirtyFlag::eDirtyAnimations |
-          GfxSceneInstanceDirtyFlag::eDirtyAssets;
-      }
+          GfxSceneInstanceDirtyFlag::eDirtyAnimations))
+        nodeFlags |= GfxSceneInstanceFlag::eDirtyDeform;
 
-      auto header = hostData.dataBuffer.getHeader();
-      auto draws = hostData.dataBuffer.getDraws();
+      if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyAssets)
+        nodeFlags |= GfxSceneInstanceFlag::eDirtyAssets;
 
       if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyHeader) {
-        uploadInstanceData(context, hostData, 0, sizeof(*header));
-        uploadInstanceData(context, hostData, header->drawOffset, header->drawCount * sizeof(*draws));
+        // Upload everything in one go. This also implicitly zeroes out any
+        // GPU-managed parts of the data buffer, and is expected to be more
+        // efficient than dispatching individual updates.
+        uploadInstanceData(context, hostData, 0, hostData.dataBuffer.getSize());
+      } else {
+        auto header = hostData.dataBuffer.getHeader();
+        auto draws = hostData.dataBuffer.getDraws();
 
-        if (header->resourceIndirectionCount) {
-          uploadInstanceData(context, hostData,
-            header->resourceOffset + header->resourceCount * sizeof(GfxSceneInstanceResource),
-            header->resourceIndirectionCount * sizeof(GfxSceneInstanceResourceIndirectionEntry));
+        if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyRelativeTransforms) {
+          uint32_t jointSize = header->jointCount * sizeof(QuatTransform);
+          uint32_t jointOffset = header->animationCount ? jointSize : 0u;
+
+          uploadInstanceData(context, hostData, header->jointRelativeOffset + jointOffset, jointSize);
+          nodeFlags |= GfxSceneInstanceFlag::eDirtyDeform;
         }
 
-        for (uint32_t i = 0; i < header->drawCount; i++) {
-          if (draws[i].resourceParameterSize) {
-            uploadInstanceData(context, hostData,
-              draws[i].resourceParameterOffset,
-              draws[i].resourceParameterSize);
+        if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyMorphTargetWeights) {
+          uint32_t weightSize = header->weightCount * sizeof(int16_t);
+          uint32_t weightOffset = (header->animationCount ? 3u : 2u) * weightSize;
+
+          uploadInstanceData(context, hostData, header->weightOffset + weightOffset, weightSize);
+        }
+
+        if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyShadingParameters)
+          uploadInstanceData(context, hostData, header->instanceParameterOffset, header->instanceParameterSize);
+
+        if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyMaterialParameters) {
+          for (uint32_t i = 0; i < header->drawCount; i++) {
+            if (draws[i].materialParameterSize) {
+              uploadInstanceData(context, hostData,
+                draws[i].materialParameterOffset,
+                draws[i].materialParameterSize);
+            }
           }
         }
-      }
 
-      if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyRelativeTransforms) {
-        uint32_t jointSize = header->jointCount * sizeof(QuatTransform);
-        uint32_t jointOffset = header->animationCount ? jointSize : 0u;
+        if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyAnimations) {
+          uint32_t animationSize = sizeof(GfxSceneAnimationHeader) +
+            sizeof(GfxSceneAnimationParameters) * header->animationCount;
 
-        uploadInstanceData(context, hostData, header->jointRelativeOffset + jointOffset, jointSize);
-        nodeFlags |= GfxSceneInstanceFlag::eDirtyDeform;
-      }
-
-      if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyMorphTargetWeights) {
-        uint32_t weightSize = header->weightCount * sizeof(int16_t);
-        uint32_t weightOffset = (header->animationCount ? 3u : 2u) * weightSize;
-
-        uploadInstanceData(context, hostData, header->weightOffset + weightOffset, weightSize);
-        nodeFlags |= GfxSceneInstanceFlag::eDirtyDeform;
-      }
-
-      if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyShadingParameters)
-        uploadInstanceData(context, hostData, header->instanceParameterOffset, header->instanceParameterSize);
-
-      if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyMaterialParameters) {
-        for (uint32_t i = 0; i < header->drawCount; i++) {
-          if (draws[i].materialParameterSize) {
-            uploadInstanceData(context, hostData,
-              draws[i].materialParameterOffset,
-              draws[i].materialParameterSize);
-          }
+          uploadInstanceData(context, hostData, header->animationOffset, animationSize);
         }
-      }
 
-      if ((dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyAnimations) && header->animationCount) {
-        uint32_t animationSize = sizeof(GfxSceneAnimationHeader) +
-          sizeof(GfxSceneAnimationParameters) * header->animationCount;
-
-        uploadInstanceData(context, hostData, header->animationOffset, animationSize);
-        nodeFlags |= GfxSceneInstanceFlag::eDirtyDeform;
-      }
-
-      if ((dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyAssets) && header->resourceCount) {
-        uploadInstanceData(context, hostData, header->resourceOffset,
-          header->resourceCount * sizeof(GfxSceneInstanceResource));
-        nodeFlags |= GfxSceneInstanceFlag::eDirtyAssets;
+        if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyAssets) {
+          uploadInstanceData(context, hostData, header->resourceOffset,
+            header->resourceCount * sizeof(GfxSceneInstanceResource));
+        }
       }
     }
 
@@ -690,8 +674,8 @@ void GfxSceneInstanceManager::updateBufferData(
       updateEntry.srcIndex = updateNodeCount++;
   }
 
-  // If necessary, allocate another scratch buffer and populate
-  // it with the actual host data.
+  // If necessary, allocate another scratch buffer and
+  // populate it with the actual node data.
   GfxScratchBuffer updateInfoBuffer = context->writeScratch(GfxUsage::eShaderResource,
     m_updateEntries.size() * sizeof(GfxSceneInstanceNodeUpdateEntry),
     m_updateEntries.data());
@@ -723,8 +707,12 @@ void GfxSceneInstanceManager::updateBufferData(
 
   pipelines.updateInstanceNodes(context, args);
 
+  // Dispatch compute shader to upload insance data
+  pipelines.uploadChunks(context, m_uploadChunks.size(), m_uploadChunks.data());
+
   m_dirtyIndices.clear();
   m_updateEntries.clear();
+  m_uploadChunks.clear();
 
   context->endDebugLabel();
 }
@@ -801,13 +789,11 @@ void GfxSceneInstanceManager::uploadInstanceData(
   if (!size)
     return;
 
-  GfxScratchBuffer scratch = context->writeScratch(
-    GfxUsage::eTransferSrc, size, hostData.dataBuffer.getAt(offset));
-
-  context->copyBuffer(
-    hostData.dataSlice.buffer,
-    hostData.dataSlice.offset + offset,
-    scratch.buffer, scratch.offset, size);
+  auto& chunk = m_uploadChunks.emplace_back();
+  chunk.srcData = hostData.dataBuffer.getAt(offset);
+  chunk.size = size;
+  chunk.dstVa = hostData.dataSlice.buffer->getGpuAddress() +
+                hostData.dataSlice.offset + offset;
 }
 
 }
