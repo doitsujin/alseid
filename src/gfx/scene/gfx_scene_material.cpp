@@ -4,7 +4,8 @@ namespace as {
 
 GfxSceneMaterial::GfxSceneMaterial(
   const GfxDevice&                    device,
-  const GfxSceneMaterialDesc&         desc) {
+  const GfxSceneMaterialDesc&         desc)
+: m_name(desc.debugName ? desc.debugName : "Unnamed material") {
   GfxRenderState renderState = createRenderState(device, desc);
 
   for (uint32_t i = 0; i < desc.shaderCount; i++) {
@@ -32,7 +33,7 @@ GfxSceneMaterial::~GfxSceneMaterial() {
 }
 
 
-bool GfxSceneMaterial::bindToContext(
+bool GfxSceneMaterial::begin(
   const GfxContext&                   context,
         GfxScenePassType              passType,
         uint32_t                      setIndex) const {
@@ -44,12 +45,19 @@ bool GfxSceneMaterial::bindToContext(
     return false;
 
   // Bind pipeline and render state
+  context->beginDebugLabel(m_name.c_str(), 0xfff6d9a4);
   context->bindPipeline(pipeline.pipeline);
   context->setRenderState(pipeline.renderState);
 
   // TODO bind assets
 
   return true;
+}
+
+
+void GfxSceneMaterial::end(
+  const GfxContext&                   context) const {
+  context->endDebugLabel();
 }
 
 
@@ -150,7 +158,7 @@ void GfxSceneMaterialManager::dispatchDraws(
     if (!m_drawCounts[i])
       continue;
 
-    if (!m_materials[i].bindToContext(context, passType,
+    if (!m_materials[i].begin(context, passType,
         m_desc.materialAssetDescriptorSet))
       continue;
 
@@ -162,6 +170,8 @@ void GfxSceneMaterialManager::dispatchDraws(
       drawBuffer.getDrawParameterDescriptor(i),
       drawBuffer.getDrawCountDescriptor(i),
       m_drawCounts[i]);
+
+    m_materials[i].end(context);
   }
 }
 

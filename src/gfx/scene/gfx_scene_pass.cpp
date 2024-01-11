@@ -385,8 +385,8 @@ void GfxScenePassManager::processPasses(
   const GfxScenePipelines&            pipelines,
   const GfxSceneNodeManager&          nodeManager,
         uint32_t                      currFrameId) {
-  context->beginDebugLabel("Process render passes", 0xff78f0ff);
-  context->beginDebugLabel("Scan pass list", 0xffb4f6ff);
+  context->beginDebugLabel("Process render passes", 0xff6490ff);
+  context->beginDebugLabel("Scan pass list", 0xffa0beff);
 
   GfxPassInfoUpdatePrepareArgs prepArgs = { };
   prepArgs.passInfoVa = getGpuAddress();
@@ -402,7 +402,7 @@ void GfxScenePassManager::processPasses(
 
   context->endDebugLabel();
 
-  context->beginDebugLabel("Execute update", 0xffb4f6ff);
+  context->beginDebugLabel("Execute update", 0xffa0beff);
 
   GfxPassInfoUpdateExecuteArgs execArgs = { };
   execArgs.passInfoVa = getGpuAddress();

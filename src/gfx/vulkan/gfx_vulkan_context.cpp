@@ -110,6 +110,7 @@ void GfxVulkanContext::beginDebugLabel(
         GfxColorValue                 color) {
   if (m_device->isDebugDevice()) {
     auto& vk = m_device->vk();
+    m_barrierBatch.recordCommands(vk, m_cmd);
 
     VkDebugUtilsLabelEXT label = { VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT };
     label.pLabelName = text ? text : "[undefined]";
@@ -127,6 +128,7 @@ void GfxVulkanContext::endDebugLabel() {
   if (m_device->isDebugDevice()) {
     auto& vk = m_device->vk();
 
+    m_barrierBatch.recordCommands(vk, m_cmd);
     vk.vkCmdEndDebugUtilsLabelEXT(m_cmd);
   }
 }

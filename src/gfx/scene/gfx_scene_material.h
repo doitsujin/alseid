@@ -123,10 +123,18 @@ public:
    * \returns \c true if the material supports the given pass
    *    type, or \c false if rendering must be skipped.
    */
-  bool bindToContext(
+  bool begin(
     const GfxContext&                   context,
           GfxScenePassType              passType,
           uint32_t                      setIndex) const;
+
+  /**
+   * \brief Marks the end of rendering with this material
+   *
+   * 
+   */
+  void end(
+    const GfxContext&                   context) const;
 
   /**
    * \brief Adjusts draw count for the material
@@ -157,6 +165,7 @@ private:
 
   std::array<GfxSceneMaterialPipeline, 8> m_pipelines;
   std::atomic<uint32_t>                   m_drawCount = { 0u };
+  std::string                             m_name;
 
   static GfxRenderState createRenderState(
     const GfxDevice&                    device,
