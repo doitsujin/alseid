@@ -240,6 +240,13 @@ uint32_t asFlattenGlobalInvocationIndex() {
 #endif
 
 
+// Aligns integer to a given power of two. Should be a compile-time
+// constant in order to allow for potential compiler optimizations.
+uint32_t align(uint32_t value, uint32_t target) {
+  return (value + target - 1u) & ~(target - 1u);
+}
+
+
 // Computes two-dimensional workgroup count for a one-dimensional count.
 // This is necessary in situations where workgroup counts are expected
 // to exceed device limits, which can be as low as 65565 per dimension.

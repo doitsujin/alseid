@@ -71,11 +71,14 @@ GfxSceneInstanceDataBuffer::GfxSceneInstanceDataBuffer(
     resourceParameters[i] = { resourceParameterOffset, resourceParameterSize };
   }
 
-  // Allocate storage for the resource buffer
+  // Allocate storage for the resource buffer. The indirection array must be
+  // allocated immediately following the entry array to facilitate correct
+  // address calculations.
   header.resourceCount = uint16_t(desc.resourceCount);
   header.resourceIndirectionCount = uint16_t(resourceIndirections.size());
   header.resourceOffset = allocateStorage(dataAllocator,
-    header.resourceCount * sizeof(GfxSceneInstanceResource) +
+    header.resourceCount * sizeof(GfxSceneInstanceResource));
+  uint32_t resourceIndirectionOffset = allocateStorage(dataAllocator,
     header.resourceIndirectionCount * sizeof(GfxSceneInstanceResourceIndirectionEntry));
 
   // Initialize actual host data
@@ -112,8 +115,7 @@ GfxSceneInstanceDataBuffer::GfxSceneInstanceDataBuffer(
         : GfxSceneInstanceResource::fromDescriptorIndex(-1);
     }
 
-    auto indirections = m_buffer.template getAs<GfxSceneInstanceResourceIndirectionEntry>(
-      header.resourceOffset + header.resourceCount * sizeof(GfxSceneInstanceResource));
+    auto indirections = m_buffer.template getAs<GfxSceneInstanceResourceIndirectionEntry>(resourceIndirectionOffset);
 
     std::memcpy(indirections,
       resourceIndirections.data(),
@@ -624,6 +626,14 @@ void GfxSceneInstanceManager::updateBufferData(
             header->resourceOffset + header->resourceCount * sizeof(GfxSceneInstanceResource),
             header->resourceIndirectionCount * sizeof(GfxSceneInstanceResourceIndirectionEntry));
         }
+
+        for (uint32_t i = 0; i < header->drawCount; i++) {
+          if (draws[i].resourceParameterSize) {
+            uploadInstanceData(context, hostData,
+              draws[i].resourceParameterOffset,
+              draws[i].resourceParameterSize);
+          }
+        }
       }
 
       if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyRelativeTransforms) {
@@ -646,27 +656,13 @@ void GfxSceneInstanceManager::updateBufferData(
         uploadInstanceData(context, hostData, header->instanceParameterOffset, header->instanceParameterSize);
 
       if (dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyMaterialParameters) {
-        // Batch material parameter updates. In general, this data will always be
-        // laid out in such a way that this can be batched, but the structure allows
-        // for different layouts, and there's no harm in being conservative here.
-        uint32_t updateOffset = 0;
-        uint32_t updateSize = 0;
-
         for (uint32_t i = 0; i < header->drawCount; i++) {
-          if (!draws[i].materialParameterSize)
-            continue;
-
-          if (draws[i].materialParameterOffset == updateOffset + updateSize) {
-            updateSize += draws[i].materialParameterSize;
-          } else {
-            uploadInstanceData(context, hostData, updateOffset, updateSize);
-
-            updateOffset = draws[i].materialParameterOffset;
-            updateSize = draws[i].materialParameterSize;
+          if (draws[i].materialParameterSize) {
+            uploadInstanceData(context, hostData,
+              draws[i].materialParameterOffset,
+              draws[i].materialParameterSize);
           }
         }
-
-        uploadInstanceData(context, hostData, updateOffset, updateSize);
       }
 
       if ((dirtyFlags & GfxSceneInstanceDirtyFlag::eDirtyAnimations) && header->animationCount) {

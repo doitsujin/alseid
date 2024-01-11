@@ -267,8 +267,10 @@ void csUpdateAssets(in InstanceNode instanceNode) {
   uint32_t indirectionCount = counts.y;
 
   InstanceResourceBufferIn resourceBuffer = InstanceResourceBufferIn(instanceNode.propertyBuffer + instanceInfo.resourceOffset);
-  InstanceResourceIndirectionBufferIn indirectionBuffer = InstanceResourceIndirectionBufferIn(instanceNode.propertyBuffer +
-    instanceInfo.resourceOffset + resourceCount * INSTANCE_RESOURCE_ENTRY_SIZE);
+
+  // The indirection data offset is not stored anywhere, we need to compute it manually.
+  uint32_t indirectionOffset = align(instanceInfo.resourceOffset + resourceCount * INSTANCE_RESOURCE_ENTRY_SIZE, 16u);
+  InstanceResourceIndirectionBufferIn indirectionBuffer = InstanceResourceIndirectionBufferIn(instanceNode.propertyBuffer + indirectionOffset);
 
   // Ensure that it is safe to dereference the asset list pointer. If not,
   // default to null pointers and invalid descriptor indices when needed.
