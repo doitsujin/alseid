@@ -177,7 +177,7 @@ bool csPrepareNextIteration(out InstanceDrawInfo info) {
     uint32_t validIndexBit = subgroupBallotFindMSB(
       subgroupBallot(dataIndex >= 0) & gl_SubgroupLeMask);
 
-    dataIndex = subgroupBroadcast(dataIndex, validIndexBit);
+    dataIndex = subgroupShuffle(dataIndex, validIndexBit);
 
     // Adjust current iteration parameters based on invocation IDs
     InstanceDrawInfo result = csGetDrawInfoForThread(uint32_t(dataIndex));
