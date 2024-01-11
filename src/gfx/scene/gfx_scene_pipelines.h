@@ -187,6 +187,46 @@ struct GfxPassInfoUpdateExecuteArgs {
 
 
 /**
+ * \brief Arguments for data upload shader
+ */
+struct GfxSceneUploadArgs {
+  uint64_t scratchVa;
+  uint64_t metadataVa;
+  uint32_t chunkIndex;
+  uint32_t chunkCount;
+};
+
+
+/**
+ * \brief Data upload chunk info on the GPU
+ *
+ * Stores parameters for a single upload from
+ * a scratch buffer.
+ */
+struct GfxSceneUploadInfo {
+  /** Scratch buffer offset, in bytes */
+  uint32_t srcOffset;
+  /** Data size, in bytes */
+  uint32_t srcSize;
+  /** Destination address */
+  uint64_t dstVa;
+};
+
+
+/**
+ * \brief Chunk description for data upload
+ */
+struct GfxSceneUploadChunk {
+  /** Pointer to source data */
+  const void* srcData;
+  /** Data size, in bytes */
+  uint32_t size;
+  /** Destination address */
+  uint64_t dstVa;
+};
+
+
+/**
  * \brief Pipelines for scene rendering
  *
  * Creates compute and graphics pipelines for built-in shaders
@@ -435,6 +475,24 @@ public:
     const GfxDescriptor&                dispatch,
     const GfxPassInfoUpdateExecuteArgs& args) const;
 
+  /**
+   * \brief Uploads data to a buffer
+   *
+   * Allocates scratch buffers for both the payload and the metadata
+   * buffer, and dispatches a compute shader to scatter the data to
+   * the appropriate locations.
+   * Using this over regular buffer copy functions is preferred when
+   * individual uploads are small. The shader operates with a chunk
+   * size of 16 bytes per thread.
+   * \param [in] context Context object
+   * \param [in] chunkCount Number of chunks to upload
+   * \param [in] chunks Chunk description
+   */
+  void uploadChunks(
+    const GfxContext&                   context,
+          uint32_t                      chunkCount,
+    const GfxSceneUploadChunk*          chunks) const;
+
 private:
 
   GfxDevice           m_device;
@@ -460,6 +518,7 @@ private:
   GfxComputePipeline  m_csRenderPassUpload;
 
   GfxComputePipeline  m_csSceneUpdate;
+  GfxComputePipeline  m_csSceneUpload;
 
   template<size_t N>
   GfxComputePipeline createComputePipeline(

@@ -32,6 +32,8 @@ as_shader_includes = files(
 )
 
 as_shader_builtins = [
+  [ 'scene/cs_scene_upload.comp', 'cs' ],
+
   [ 'scene/animation/cs_animation_prepare.comp', 'cs' ],
   [ 'scene/animation/cs_animation_process.comp', 'cs' ],
 

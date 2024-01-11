@@ -1,0 +1,204 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#include "as_include_head.glsl"
+
+#define CS_MAIN csMain
+
+// This shader uses subgroup shuffle extensively, running
+// with small subgroups is beneficial on some hardware.
+layout(local_size_x_id = SPEC_CONST_ID_MIN_SUBGROUP_SIZE) in;
+
+
+// Source data buffer reference type. Expects individual
+// chunks to be aligned to 16 bytes.
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+readonly buffer QwordBufferIn {
+  uvec4                   data[];
+};
+
+
+// Destination data buffer reference type. Enforces 16-byte
+// alignment and stores for more optimal code generation.
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+writeonly buffer QwordBufferOut {
+  uvec4                   data;
+};
+
+
+// Upload metadata. Source offset and size are given in
+// bytes, relative to the source data buffer.
+struct ChunkInfo {
+  uint32_t                srcOffset;
+  uint32_t                srcSize;
+  uint64_t                dstData;
+};
+
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+readonly buffer ChunkMetadataBufferIn {
+  ChunkInfo               entries[];
+};
+
+
+// Shader arguments. Supports multiple dispatches via the
+// chunk index, in case a very large number of chunks is
+// to be processed.
+layout(push_constant)
+uniform PushData {
+  QwordBufferIn           srcData;
+  ChunkMetadataBufferIn   chunkData;
+  uint32_t                chunkIndex;
+  uint32_t                chunkCount;
+} globals;
+
+
+// Helper function to push the current invocation index to another invocation
+// for data exchange purposes. Always needs to go through LDS since we cannot
+// otherwise scan the accumulated counts in constant time.
+shared int32_t csThreadIndexForOffsetShared[gl_WorkGroupSize.x];
+
+int32_t csGetDataIndexForThread(uint32_t count, uint32_t accum) {
+  uint32_t ofs = gl_SubgroupSize * gl_SubgroupID;
+  uint32_t sid = gl_SubgroupInvocationID;
+
+  // Initialize with an invalid index
+  csThreadIndexForOffsetShared[ofs + sid] = -1;
+
+  controlBarrier(gl_ScopeSubgroup, gl_ScopeSubgroup,
+    gl_StorageSemanticsShared, gl_SemanticsAcquireRelease);
+
+  // Push source data thread index to the shared array
+  if (count > 0u && accum < gl_SubgroupSize)
+    csThreadIndexForOffsetShared[ofs + accum] = int32_t(sid);
+
+  controlBarrier(gl_ScopeSubgroup, gl_ScopeSubgroup,
+    gl_StorageSemanticsShared, gl_SemanticsAcquireRelease);
+
+  // Fetch the index for the current thread
+  int32_t result = csThreadIndexForOffsetShared[ofs + sid];
+
+  controlBarrier(gl_ScopeSubgroup, gl_ScopeSubgroup,
+    gl_StorageSemanticsShared, gl_SemanticsAcquireRelease);
+
+  return result;
+}
+
+
+// Global chunk metadata
+ChunkInfo chunkInfo;
+
+ChunkInfo csShuffleChunkInfo(uint32_t index) {
+  return ChunkInfo(
+    subgroupShuffle(chunkInfo.srcOffset, index),
+    subgroupShuffle(chunkInfo.srcSize, index),
+    packUint2x32(subgroupShuffle(unpackUint2x32(chunkInfo.dstData), index)));
+}
+
+
+bool csPrepareNextIteration(out ChunkInfo info) {
+  if (gl_SubgroupSize * gl_NumSubgroups != gl_WorkGroupSize.x) {
+    // Fallback path in case the subgroup layout is weird. This will emit one
+    // draw per thread and iteration with no cross-thread communication.
+    info = chunkInfo;
+
+    if (chunkInfo.srcSize == 0u)
+      return false;
+
+    chunkInfo.srcOffset += 1u;
+    chunkInfo.srcSize -= 1u;
+    chunkInfo.dstData += 16u;
+    return true;
+  } else {
+    // Optimized path. Essentially flattens the chunk arrays to a single
+    // array, and improves memory access locality by processing multiple
+    // adjacent copies in the same iteration.
+    uint32_t qwordCount = chunkInfo.srcSize;
+    uint32_t qwordAccum = subgroupExclusiveAdd(qwordCount);
+
+    if (subgroupAll(qwordCount == 0u))
+      return false;
+
+    // Find index of the last invocation with a valid index, and use
+    // that to find the invocation to read draw infos from.
+    int32_t dataIndex = csGetDataIndexForThread(qwordCount, qwordAccum);
+
+    uint32_t validIndexBit = subgroupBallotFindMSB(
+      subgroupBallot(dataIndex >= 0) & gl_SubgroupLeMask);
+
+    dataIndex = subgroupShuffle(dataIndex, validIndexBit);
+
+    // Adjust iteration parameters by 
+    uint32_t qwordIndex = gl_SubgroupInvocationID - validIndexBit;
+
+    ChunkInfo result = csShuffleChunkInfo(uint32_t(dataIndex));
+    result.srcOffset += qwordIndex;
+    result.srcSize = qwordIndex < result.srcSize ? 1u : 0u;
+    result.dstData += qwordIndex * 16u;
+
+    info = result;
+
+    // Compute the number of qwords copied for the current
+    // invocation's upload, and adjust its parameters.
+    uint32_t qwordsProcessed = uint32_t(clamp(
+      int32_t(gl_SubgroupSize) - int32_t(qwordAccum),
+      0, int32_t(qwordCount)));
+
+    chunkInfo.srcOffset += qwordsProcessed;
+    chunkInfo.srcSize -= qwordCount;
+    chunkInfo.dstData += qwordsProcessed * 16u;
+    return result.srcSize != 0u;
+  }
+}
+
+
+void csMain() {
+  uint32_t index = globals.chunkIndex + gl_GlobalInvocationID.x;
+
+  // Load per-thread upload info, and convert size and offset members to
+  // multiples of 16 since that's the unit size this shader operates on.
+  chunkInfo = ChunkInfo(0u, 0u, 0ul);
+
+  if (index < globals.chunkCount) {
+    chunkInfo = globals.chunkData.entries[index];
+    chunkInfo.srcOffset /= 16u;
+    chunkInfo.srcSize += 15u;
+    chunkInfo.srcSize /= 16u;
+  }
+
+  // Figure out what to copy in the first iteration. This also
+  // assumes that valid upload entries do not have a size of 0.
+  ChunkInfo iteration = ChunkInfo(0u, 0u, 0ul);
+  bool doLoop = csPrepareNextIteration(iteration);
+
+  do {
+    // Write back destination pointer for later use
+    QwordBufferOut dstBuffer = QwordBufferOut(iteration.dstData);
+
+    // This can only ever be false on the last iteration of this loop,
+    // in which case we should distribute a valid index from an active
+    // thread to the inactive threads in order to avoid touching an
+    // additonal cache line with the load operation below.
+    bool doStore = doLoop;
+
+    uint32_t validOffset = subgroupBroadcast(iteration.srcOffset,
+      subgroupBallotFindLSB(subgroupBallot(doStore)));
+
+    if (!doStore)
+      iteration.srcOffset = validOffset;
+
+    // Unconditionally perform the memory load to help compilers figure
+    // out data dependencies more efficiently. The data will not be
+    // needed until the store is performed.
+    uvec4 srcData = globals.srcData.data[iteration.srcOffset];
+
+    // Work out what to copy for the next iteration
+    doLoop = csPrepareNextIteration(iteration);
+
+    // Perform the store for invocations that require it.
+    if (doStore)
+      dstBuffer.data = srcData;
+  } while (subgroupAny(doLoop));
+}
+
+#include "as_include_tail.glsl"
