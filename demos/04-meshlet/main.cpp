@@ -60,7 +60,6 @@ public:
     // Create geometry object and buffer
     m_geometry = createGeometry();
     m_geometryBuffer = createGeometryBuffer();
-    m_animationBuffer = createAnimationBuffer();
 
     // Create state objects
     m_renderState = createRenderState();
@@ -262,7 +261,6 @@ private:
   GfxRenderState        m_renderState;
 
   GfxBuffer             m_geometryBuffer;
-  GfxBuffer             m_animationBuffer;
   GfxImage              m_depthImage;
 
   float                 m_x = 0.0f;
@@ -419,7 +417,7 @@ private:
     instanceDesc.nodeIndex = instanceNode;
     instanceDesc.aabb = m_geometry->info.aabb;
 
-    if (m_animationBuffer) {
+    if (!m_geometry->animations.empty()) {
       instanceDesc.flags |= GfxSceneInstanceFlag::eAnimation;
       instanceDesc.animationCount = 1u;
     }
@@ -431,9 +429,7 @@ private:
 
     m_sceneInstanceManager->allocateGpuBuffer(instanceRef);
     m_sceneInstanceManager->updateGeometryBuffer(instanceRef, m_geometryBuffer->getGpuAddress());
-
-    if (m_animationBuffer)
-      m_sceneInstanceManager->updateAnimationBuffer(instanceRef, m_animationBuffer->getGpuAddress());
+    m_sceneInstanceManager->updateAnimationBuffer(instanceRef, m_geometryBuffer->getGpuAddress() + m_geometry->info.animationDataOffset);
 
     m_sceneMaterialManager->addInstanceDraws(*m_sceneInstanceManager, instanceRef);
 
@@ -604,28 +600,6 @@ private:
 
     GfxBufferDesc bufferDesc;
     bufferDesc.debugName = "Geometry buffer";
-    bufferDesc.size = subFile->getSize();
-    bufferDesc.usage = GfxUsage::eShaderResource |
-      GfxUsage::eDecompressionDst |
-      GfxUsage::eTransferDst;
-
-    GfxBuffer buffer = m_device->createBuffer(bufferDesc, GfxMemoryType::eAny);
-
-    m_transfer->uploadBuffer(subFile, buffer, 0);
-    m_transfer->waitForCompletion(m_transfer->flush());
-    return buffer;
-  }
-
-
-  GfxBuffer createAnimationBuffer() {
-    auto file = m_archive->findFile("CesiumMan");
-    auto subFile = file->findSubFile(FourCC('A', 'N', 'I', 'M'));
-
-    if (!subFile)
-      return GfxBuffer();
-
-    GfxBufferDesc bufferDesc;
-    bufferDesc.debugName = "Animation buffer";
     bufferDesc.size = subFile->getSize();
     bufferDesc.usage = GfxUsage::eShaderResource |
       GfxUsage::eDecompressionDst |

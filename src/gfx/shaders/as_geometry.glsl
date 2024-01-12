@@ -1,3 +1,8 @@
+#ifndef AS_GEOMETRY_H
+#define AS_GEOMETRY_H
+
+#include "./scene/animation/as_animation.glsl"
+
 // Axis-aligned bounding box
 struct Aabb {
   f32vec3   lo;  // Vertex with minimum component values
@@ -34,14 +39,16 @@ vec3 aabbComputeVertex(in Aabb aabb, uint vertex) {
 // start of the geometry metadata structure itself.
 struct Geometry {
   Aabb16    aabb;
+  uint8_t   bufferCount;
   uint8_t   materialCount;
-  uint8_t   morphTargetCount;
-  uint16_t  bufferCount;
   uint16_t  meshCount;
   uint16_t  jointCount;
+  uint16_t  morphTargetCount;
   uint32_t  bufferPointerOffset;
   uint32_t  jointDataOffset;
   uint32_t  meshletDataOffset;
+  uint32_t  animationDataOffset;
+  uint32_t  reserved;
 };
 
 
@@ -348,3 +355,11 @@ MeshletMetadataRef geometryGetEmbeddedBuffer(in GeometryRef geometryAddress, in 
   uint64_t address = uint64_t(geometryAddress) + geometry.meshletDataOffset;
   return MeshletMetadataRef(address);
 }
+
+
+AnimationBufferRef geometryGetAnimationBuffer(in GeometryRef geometryAddress, in Geometry geometry) {
+  uint64_t address = uint64_t(geometryAddress) + geometry.animationDataOffset;
+  return AnimationBufferRef(address);
+}
+
+#endif // AS_GEOMETRY_H

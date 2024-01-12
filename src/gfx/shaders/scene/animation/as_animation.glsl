@@ -1,4 +1,7 @@
-// High-level keyframe data structure. 
+#ifndef AS_ANIMATION_H
+#define AS_ANIMATION_H
+
+// High-level keyframe data structure.
 struct Keyframe {
   // Time stamp for the current key frame, in no particular unit.
   float timestamp;
@@ -124,3 +127,5 @@ AnimationMorphTargetRef animationGetMorphTargetBuffer(
   in    AnimationBuffer               info) {
   return AnimationMorphTargetRef(animationVa + info.weightDataOffset);
 }
+
+#endif //AS_ANIMATION_H

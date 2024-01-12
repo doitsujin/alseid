@@ -75,12 +75,6 @@ std::pair<BuildResult, ArchiveFile> GeometryBuildJob::getFileInfo() {
       m_rawSizes[i], std::move(m_buffers[i]));
   }
 
-  if (!m_animationBuffer.empty()) {
-    result.second.addSubFile(FourCC('A', 'N', 'I', 'M'),
-      IoArchiveCompression::eGDeflate, m_animationSize,
-      std::move(m_animationBuffer));
-  }
-
   return result;
 }
 
@@ -145,14 +139,6 @@ void GeometryBuildJob::runCompressJob() {
     m_rawSizes.at(i) = srcBuffer.getSize();
 
     if (!(gdeflateEncode(Lwrap<WrVectorStream>(m_buffers.at(i)), srcBuffer)))
-      m_result.store(BuildResult::eIoError);
-  }
-
-  auto animationBuffer = m_converter->getAnimationBuffer();
-  m_animationSize = animationBuffer.getSize();
-
-  if (m_animationSize) {
-    if (!(gdeflateEncode(Lwrap<WrVectorStream>(m_animationBuffer), animationBuffer)))
       m_result.store(BuildResult::eIoError);
   }
 }

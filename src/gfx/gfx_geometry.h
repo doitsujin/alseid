@@ -805,11 +805,6 @@ struct GfxGeometryInfo {
    *  be expanded by the individual joint bounding volumes for each
    *  instance. */
   GfxAabb<float16_t> aabb;
-  /** Number of materials referenced by the object. */
-  uint8_t materialCount;
-  /** Number of morph targets across all meshes. This determines the
-   *  required size of the morph weight array passed to shaders. */
-  uint8_t morphTargetCount;
   /** Data buffer count. For large assets, it is recommended to split off
    *  more detailed LODs into separate buffers, so that geometry data can
    *  be streamed in and out on demand. The metadata buffer also serves
@@ -818,11 +813,15 @@ struct GfxGeometryInfo {
    *  all buffers with a lower index must also be resident, which means that
    *  data buffers should roughly be ordered by the view distance range of
    *  the LODs they contain. */
-  uint16_t bufferCount;
+  uint8_t bufferCount;
+  /** Number of materials referenced by the object. */
+  uint8_t materialCount;
   /** Number of meshes within this object. */
   uint16_t meshCount;
   /** Number of joints within the skeleton. */
   uint16_t jointCount;
+  /** Number of morph targets across all meshes. */
+  uint16_t morphTargetCount;
   /** Offset to data buffer pointers within the metadata buffer. The
    *  application must overwrite these as it loads data buffers into memory.
    *  Since the first data buffer is part of the metadata buffer, pointers
@@ -834,9 +833,13 @@ struct GfxGeometryInfo {
   /** Offset to the first data buffer, in bytes. Aligned to 16
    *  bytes. Points to an array of meshlet info structures. */
   uint32_t meshletDataOffset;
+  /** Offset to the animation data buffer, in bytes. Aligned to 16 bytes. */
+  uint32_t animationDataOffset;
+  /** Reserved for future use. */
+  uint32_t reserved;
 };
 
-static_assert(sizeof(GfxGeometryInfo) == 32);
+static_assert(sizeof(GfxGeometryInfo) == 40);
 
 
 /**
@@ -868,14 +871,6 @@ struct GfxGeometry {
   std::vector<GfxMorphTargetMetadata> morphTargets;
   /** List of animations */
   std::vector<GfxAnimationMetadata> animations;
-
-  /**
-   * \brief Computes constant buffer data size
-   * \returns Constant data size
-   */
-  uint64_t getConstantDataSize() const {
-    return uint64_t(sizeof(GfxGeometryInfo) + sizeof(GfxMeshInfo) * info.meshCount);
-  }
 
   /**
    * \brief Looks up a specific mesh LOD

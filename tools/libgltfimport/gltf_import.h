@@ -1223,16 +1223,6 @@ public:
   }
 
   /**
-   * \brief Retrieves animation buffer
-   *
-   * Must always be stored last in a file.
-   * \returns Animation buffer view
-   */
-  RdMemoryView getAnimationBuffer() const {
-    return RdMemoryView(m_animationBuffer);
-  }
-
-  /**
    * \brief Dispatches job to convert the asset
    *
    * Processes all meshes and builds all buffers as
@@ -1242,6 +1232,14 @@ public:
   Job dispatchConvert();
 
 private:
+
+  struct AnimationData {
+    GfxAnimationInfo info = { };
+    std::vector<GfxAnimationGroup> groups;
+    std::vector<GfxAnimationKeyframe> keyframes;
+    std::vector<GfxAnimationJoint> joints;
+    std::vector<float> weights;
+  };
 
   Jobs                                        m_jobs;
 
@@ -1264,14 +1262,12 @@ private:
   std::shared_ptr<GltfSharedAabb>             m_aabb;
 
   std::vector<std::shared_ptr<GltfAnimationConverter>> m_animationConverters;
-  std::vector<char>                           m_animationBuffer;
 
   void buildGeometry();
 
   void buildBuffers(
-    const std::vector<GfxMeshletMetadata>& meshlets);
-
-  void buildAnimationBuffer();
+    const std::vector<GfxMeshletMetadata>& meshlets,
+    const AnimationData&                animation);
 
   void computeJointBoundingVolumes();
 
@@ -1302,11 +1298,6 @@ private:
 
   void writeBufferData(
           uint32_t                      buffer,
-          uint32_t                      offset,
-    const void*                         data,
-          size_t                        size);
-
-  void writeAnimationData(
           uint32_t                      offset,
     const void*                         data,
           size_t                        size);

@@ -1341,9 +1341,7 @@ void GltfMeshletBuilder::buildMeshletBuffer(
 
   // Local joint index data immediately follows the header
   size_t localJointDataSize = sizeof(uint16_t) * m_localJoints.size();
-
-  if (localJointDataSize)
-    allocateStorage(offset, localJointDataSize);
+  allocateStorage(offset, localJointDataSize);
 
   // Dual index data is always accessed first
   if (m_metadata.header.flags & GfxMeshletFlag::eDualIndex) {
@@ -1362,11 +1360,8 @@ void GltfMeshletBuilder::buildMeshletBuffer(
   // Generally followed by vertex data. Ignore morph targets for
   // now, if those are used then access patterns are weird anyway.
   uint32_t vertexStride = m_packedLayout->getStreamDataStride(GltfPackedVertexStream::eVertexData);
-
-  if (vertexStride) {
-    m_metadata.header.vertexDataOffset = allocateStorage(
-      offset, m_metadata.header.vertexDataCount * vertexStride);
-  }
+  m_metadata.header.vertexDataOffset = allocateStorage(
+    offset, m_metadata.header.vertexDataCount * vertexStride);
 
   // Index data is used for primitive culling after vertex
   // positions are computed, so we need it next.
@@ -1376,11 +1371,8 @@ void GltfMeshletBuilder::buildMeshletBuffer(
   // Put shading data last since it is only used to compute
   // fragment shader inputs.
   uint32_t shadingStride = m_packedLayout->getStreamDataStride(GltfPackedVertexStream::eShadingData);
-
-  if (shadingStride) {
-    m_metadata.header.shadingDataOffset = allocateStorage(
-      offset, m_metadata.header.shadingDataCount * shadingStride);
-  }
+  m_metadata.header.shadingDataOffset = allocateStorage(
+    offset, m_metadata.header.shadingDataCount * shadingStride);
 
   // Allocate storage for morph target metadata, as well as
   // the morph data buffer.
@@ -1484,6 +1476,9 @@ void GltfMeshletBuilder::buildMeshletBuffer(
 uint16_t GltfMeshletBuilder::allocateStorage(
         uint16_t&                       allocator,
         size_t                          amount) {
+  if (!amount)
+    return 0;
+
   // All offsets are in units of 16 bytes
   uint16_t offset = allocator;
   allocator += uint16_t((amount + 15) / 16);
@@ -2643,7 +2638,7 @@ void GltfConverter::buildGeometry() {
       auto lod = converter->getLodConverter(i);
 
       m_geometry->info.bufferCount = std::max(m_geometry->info.bufferCount,
-        uint16_t(lod->getMetadata().info.bufferIndex + 1));
+        uint8_t(lod->getMetadata().info.bufferIndex + 1));
     }
   }
 
@@ -2666,11 +2661,8 @@ void GltfConverter::buildGeometry() {
   // Allocate storage for joint positions and assign joint metadata.
   m_geometry->info.jointCount = uint16_t(m_jointMetadata.size());
   m_geometry->joints = m_jointMetadata;
-
-  if (m_geometry->info.jointCount) {
-    m_geometry->info.jointDataOffset = allocateStorage(
-      bufferOffset, sizeof(GfxJoint) * m_geometry->info.jointCount);
-  }
+  m_geometry->info.jointDataOffset = allocateStorage(
+    bufferOffset, sizeof(GfxJoint) * m_geometry->info.jointCount);
 
   // Number of meshlets per buffer
   std::vector<uint32_t> bufferMeshletCount(m_geometry->info.bufferCount);
@@ -2695,15 +2687,10 @@ void GltfConverter::buildGeometry() {
         bufferOffset, sizeof(uint16_t) * converter->getJointIndexArraySize());
     }
 
-    if (meshMetadata.info.lodCount) {
-      meshMetadata.info.lodInfoOffset = allocateStorage(bufferOffset,
-        sizeof(GfxMeshLod) * meshMetadata.info.lodCount);
-    }
-
-    if (meshMetadata.info.instanceCount) {
-      meshMetadata.info.instanceDataOffset = allocateStorage(bufferOffset,
-        sizeof(GfxMeshInstance) * meshMetadata.info.instanceCount);
-    }
+    meshMetadata.info.lodInfoOffset = allocateStorage(bufferOffset,
+      sizeof(GfxMeshLod) * meshMetadata.info.lodCount);
+    meshMetadata.info.instanceDataOffset = allocateStorage(bufferOffset,
+      sizeof(GfxMeshInstance) * meshMetadata.info.instanceCount);
 
     m_geometry->meshes.push_back(meshMetadata);
 
@@ -2758,6 +2745,7 @@ void GltfConverter::buildGeometry() {
   }
 
   // Add animation metadata to geometry object
+  AnimationData animation = { };
   uint32_t animationGroup = 0;
 
   for (const auto& a : m_animationConverters) {
@@ -2766,7 +2754,29 @@ void GltfConverter::buildGeometry() {
 
     m_geometry->animations.push_back(metadata);
 
+    a->pushArrays(
+      animation.groups, animation.keyframes,
+      animation.joints, animation.weights);
+
     animationGroup += metadata.groupCount;
+  }
+
+  if (!animation.joints.empty() || !animation.weights.empty()) {
+    uint32_t animationOffset = 0;
+
+    allocateStorage(animationOffset,
+      sizeof(GfxAnimationInfo) +
+      sizeof(GfxAnimationGroup) * animation.groups.size());
+
+    animation.info.groupCount = uint32_t(animation.groups.size());
+    animation.info.keyframeDataOffset = allocateStorage(animationOffset,
+      sizeof(GfxAnimationKeyframe) * animation.keyframes.size());
+    animation.info.jointDataOffset = allocateStorage(animationOffset,
+      sizeof(GfxAnimationJoint) * animation.joints.size());
+    animation.info.weightDataOffset = allocateStorage(animationOffset,
+      sizeof(float) * animation.weights.size());
+
+    m_geometry->info.animationDataOffset = allocateStorage(bufferOffset, animationOffset);
   }
 
   // At this point, all non-meshlet metadata is accounted
@@ -2815,13 +2825,13 @@ void GltfConverter::buildGeometry() {
     m_buffers.at(i).resize(headerSize + bufferDataSizes.at(i));
   }
 
-  buildBuffers(meshlets);
-  buildAnimationBuffer();
+  buildBuffers(meshlets, animation);
 }
 
 
 void GltfConverter::buildBuffers(
-  const std::vector<GfxMeshletMetadata>& meshlets) {
+  const std::vector<GfxMeshletMetadata>& meshlets,
+  const AnimationData&                animation) {
   writeBufferData(0, 0, &m_geometry->info, sizeof(m_geometry->info));
 
   for (size_t i = 0; i < m_geometry->info.meshCount; i++) {
@@ -2881,56 +2891,20 @@ void GltfConverter::buildBuffers(
       sizeof(jointMetatata.info) * i,
       &jointMetatata.info, sizeof(jointMetatata.info));
   }
-}
 
+  if (animation.info.groupCount) {
+    uint32_t animationOffset = m_geometry->info.animationDataOffset;
 
-void GltfConverter::buildAnimationBuffer() {
-  std::vector<GfxAnimationGroup> groups;
-  std::vector<GfxAnimationKeyframe> keyframes;
-  std::vector<GfxAnimationJoint> joints;
-  std::vector<float> weights;
-
-  for (const auto& animation : m_animationConverters)
-    animation->pushArrays(groups, keyframes, joints, weights);
-
-  if (joints.empty() && weights.empty())
-    return;
-
-  // Initialize buffer metadata and allocate storage
-  uint32_t offset = 0;
-  allocateStorage(offset, sizeof(GfxAnimationInfo) + sizeof(GfxAnimationGroup) * groups.size());
-
-  GfxAnimationInfo info = { };
-  info.groupCount = uint32_t(groups.size());
-
-  if (!keyframes.empty()) {
-    info.keyframeDataOffset = allocateStorage(offset,
-      sizeof(GfxAnimationKeyframe) * keyframes.size());
+    writeBufferData(0, animationOffset, &animation.info, sizeof(animation.info));
+    writeBufferData(0, animationOffset + sizeof(animation.info),
+      animation.groups.data(), animation.groups.size() * sizeof(GfxAnimationGroup));
+    writeBufferData(0, animationOffset + animation.info.keyframeDataOffset,
+      animation.keyframes.data(), animation.keyframes.size() * sizeof(GfxAnimationKeyframe));
+    writeBufferData(0, animationOffset + animation.info.jointDataOffset,
+      animation.joints.data(), animation.joints.size() * sizeof(GfxAnimationJoint));
+    writeBufferData(0, animationOffset + animation.info.weightDataOffset,
+      animation.weights.data(), animation.weights.size() * sizeof(float));
   }
-
-  if (!joints.empty()) {
-    info.jointDataOffset = allocateStorage(offset,
-      sizeof(GfxAnimationJoint) * joints.size());
-  }
-
-  if (!weights.empty()) {
-    info.weightDataOffset = allocateStorage(offset,
-      sizeof(float) * weights.size());
-  }
-
-  // Create buffer and copy everything to it. This is
-  // just a bunch of memcpys since we use flat arrays.
-  m_animationBuffer.resize(offset);
-
-  writeAnimationData(0, &info, sizeof(info));
-  writeAnimationData(sizeof(info), groups.data(),
-    sizeof(GfxAnimationGroup) * info.groupCount);
-  writeAnimationData(info.keyframeDataOffset, keyframes.data(),
-    sizeof(GfxAnimationKeyframe) * keyframes.size());
-  writeAnimationData(info.jointDataOffset, joints.data(),
-    sizeof(GfxAnimationJoint) * joints.size());
-  writeAnimationData(info.weightDataOffset, weights.data(),
-    sizeof(float) * weights.size());
 }
 
 
@@ -3123,24 +3097,12 @@ void GltfConverter::writeBufferData(
 }
 
 
-void GltfConverter::writeAnimationData(
-        uint32_t                      offset,
-  const void*                         data,
-        size_t                        size) {
-  auto& storage = m_animationBuffer;
-
-  if (offset + size > storage.size()) {
-    Log::err("Animation data write failed (", storage.size(), "), offset = ", offset, ", size = ", size);
-    return;
-  }
-
-  std::memcpy(&storage[offset], data, size);
-}
-
-
 uint32_t GltfConverter::allocateStorage(
         uint32_t&                     allocator,
         size_t                        amount) {
+  if (!amount)
+    return 0;
+
   uint32_t result = allocator;
   allocator += align(uint32_t(amount), 16u);
   return result;
