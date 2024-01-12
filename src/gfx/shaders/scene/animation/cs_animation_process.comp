@@ -417,6 +417,9 @@ void csProcessAnimation() {
         }
       } else {
         // Standard code path that handles animation groups
+        bool validJoint = false;
+        bool validWeight = false;
+
         for (uint32_t k = 0; k < args.groupCount; k++) {
           // Ignore joints and weights not affected by the current animation group.
           // This generally works because all full animations should specify identity
@@ -444,6 +447,7 @@ void csProcessAnimation() {
           if (elementIndex < instance.jointCount && localJoint < CS_WORKGROUP_SIZE) {
             Transform inputTransform = csInterpolateJoint(jointBuffer, animationGroup, keyframePair, localJoint);
             csBlendTransform(tid, args, inputTransform);
+            validJoint = true;
           }
 
           // Interpolate morph target weights in the same manner
@@ -452,7 +456,18 @@ void csProcessAnimation() {
           if (elementIndex < instance.weightCount && localWeight < CS_WORKGROUP_SIZE) {
             float inputWeight = csInterpolateMorphTargetWeight(weightBuffer, animationGroup, keyframePair, localWeight);
             csBlendWeight(tid, args, inputWeight);
+            validWeight = true;
           }
+        }
+
+        // If the joint or weight were not written, pretend that they were defined as
+        // identity transforms or zero weights. This may be neeed for initialization.
+        if (args.blendOp != AS_INSTANCE_ANIMATION_BLEND_OP_CHAIN) {
+          if (!validJoint)
+            csBlendTransform(tid, args, transIdentity());
+
+          if (!validWeight)
+            csBlendWeight(tid, args, 0.0f);
         }
       }
     }
