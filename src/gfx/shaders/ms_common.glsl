@@ -15,10 +15,6 @@ layout(local_size_x_id = SPEC_CONST_ID_MESH_SHADER_WORKGROUP_SIZE) in;
 #define MAX_PRIM_COUNT (128)
 #endif
 
-// Useful constants for some compile-time subgroup optimizations
-bool IsSingleSubgroup = (gl_NumSubgroups == 1);
-bool IsPackedSubgroup = (gl_NumSubgroups * gl_SubgroupSize == gl_WorkGroupSize.x);
-
 // Convenience macro to perform count invocations of
 // subsequent code with arbitrary workgroup sizes.
 #define MS_LOOP_WORKGROUP(var, cond, count)                         \

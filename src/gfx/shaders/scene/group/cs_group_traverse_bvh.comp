@@ -25,9 +25,6 @@ layout(local_size_x = CS_WORKGROUP_SIZE) in;
 
 #include "as_group.glsl"
 
-// Helper to enable more optimal subgroup-only code paths
-bool IsSingleSubgroup = (gl_NumSubgroups == 1u && gl_SubgroupSize == CS_WORKGROUP_SIZE);
-
 
 // Buffer pointers and parameters
 layout(push_constant)
@@ -49,7 +46,7 @@ void csTraverseBvh() {
   // On the subgroup-optimized path, we make some assumptions about
   // the layout of invocations, so use the subgroup invocation ID.
   uint32_t tid = IsSingleSubgroup
-    ? gl_SubgroupID * gl_SubgroupSize + gl_SubgroupInvocationID
+    ? gl_SubgroupInvocationID
     : gl_LocalInvocationIndex;
 
   // Render pass info buffer

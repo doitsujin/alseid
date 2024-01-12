@@ -21,8 +21,6 @@ layout(local_size_x_id = SPEC_CONST_ID_MIN_SUBGROUP_SIZE) in;
 
 const uint CsJointCacheSize = CsMinSubgroupSize;
 
-// Useful constants for some compile-time subgroup optimizations
-bool IsSingleSubgroup = (gl_NumSubgroups == 1);
 
 layout(push_constant)
 uniform PushData {

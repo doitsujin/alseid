@@ -6,10 +6,6 @@
 // gl_WorkGroupSize built-in will not return the correct value.
 layout(local_size_x_id = SPEC_CONST_ID_TASK_SHADER_WORKGROUP_SIZE) in;
 
-// Useful constants for some compile-time subgroup optimizations
-bool IsSingleSubgroup = (gl_NumSubgroups == 1);
-bool IsPackedSubgroup = (gl_NumSubgroups * gl_SubgroupSize == gl_WorkGroupSize.x);
-
 
 // Reserves space for meshlet outputs per invocation. This must be
 // called exactly once from uniform control flow. Returns the index

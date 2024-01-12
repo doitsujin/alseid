@@ -40,12 +40,6 @@ uniform CsPushData {
 } globals;
 
 
-// For the optimal subgroup path, we need not only to run with just
-// a single subgroup but we also require that the subgroup is full,
-// so that lane indices meaningfully map to a specific invocation.
-bool IsSingleSubgroup = (gl_NumSubgroups == 1);
-bool IsPackedSubgroup = (gl_NumSubgroups == 1 && gl_SubgroupSize == gl_WorkGroupSize.x);
-
 
 // Keyframe pair. Stores the data indices of two keyframes to
 // interpolate between, as well as the interpolation coefficient.
@@ -185,7 +179,7 @@ CsKeyframePair csFindKeyframe(
     // Broadcast selected keyframes to the entire workgroup. On the
     // optimized subgroup path, we can do so simply by reading the
     // correct lanes.
-    if (IsPackedSubgroup) {
+    if (IsSingleSubgroup) {
       loFrame = keyframeUnpack(csShuffleKeyframe(keyframe, loIndex));
       hiFrame = keyframeUnpack(csShuffleKeyframe(keyframe, hiIndex));
     } else {
@@ -366,7 +360,7 @@ void csProcessAnimation() {
 
   uint32_t instanceIndex = getNodeIndexFromRef(instanceList.nodeRefs[workgroupId]);
 
-  uint32_t tid = IsPackedSubgroup
+  uint32_t tid = IsSingleSubgroup
     ? gl_SubgroupInvocationID
     : gl_LocalInvocationIndex;
 

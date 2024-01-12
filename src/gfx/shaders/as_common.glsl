@@ -30,6 +30,13 @@ const uint MsFlags = 0u;
 #endif // STAGE_MESH
 
 
+// Convenience macro to check whether the shader runs with a single,
+// full subgroup. Useful to enable certain optimizations.
+#if defined(STAGE_COMP) || defined(STAGE_MESH) || defined(STAGE_TASK)
+#define IsSingleSubgroup (gl_SubgroupSize == gl_WorkGroupSize.x)
+#endif
+
+
 // Convenience macro to generate a scalarization loop for a potentially
 // non-uniform value. Will execute one iteration per unique value. Note
 // that for floats, you may need to use floatBitsToUint, or otherwise
