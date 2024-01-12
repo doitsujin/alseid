@@ -23,9 +23,9 @@ struct InstanceNode {
   uint32_t        dirtyFrameId;
   uint32_t        updateFrameId;
   uint64_t        geometryBuffer;
-  uint64_t        animationBuffer;
   uint64_t        propertyBuffer;
   uint64_t        assetListBuffer;
+  uint64_t        reserved;
 };
 
 struct InstanceHeader {

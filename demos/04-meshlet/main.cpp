@@ -429,7 +429,6 @@ private:
 
     m_sceneInstanceManager->allocateGpuBuffer(instanceRef);
     m_sceneInstanceManager->updateGeometryBuffer(instanceRef, m_geometryBuffer->getGpuAddress());
-    m_sceneInstanceManager->updateAnimationBuffer(instanceRef, m_geometryBuffer->getGpuAddress() + m_geometry->info.animationDataOffset);
 
     m_sceneMaterialManager->addInstanceDraws(*m_sceneInstanceManager, instanceRef);
 

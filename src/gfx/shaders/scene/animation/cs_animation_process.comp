@@ -373,8 +373,10 @@ void csProcessAnimation() {
   // Load instance node and relevant buffer addresses
   InstanceNode instanceNode = globals.instanceNodeBuffer.nodes[instanceIndex];
 
+  GeometryRef geometryBuffer = GeometryRef(instanceNode.geometryBuffer);
+
   uint64_t instanceVa = instanceNode.propertyBuffer;
-  uint64_t animationVa = instanceNode.animationBuffer;
+  uint64_t animationVa = instanceNode.geometryBuffer + geometryBuffer.geometry.animationDataOffset;
 
   InstanceHeader instance = InstanceDataBufferIn(instanceVa).header;
   InstanceAnimationBufferIn animationParameters = instanceGetAnimationProperties(instanceVa);

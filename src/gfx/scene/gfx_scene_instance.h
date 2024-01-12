@@ -78,15 +78,14 @@ struct GfxSceneInstanceNodeInfo {
   /** GPU address of the geometry buffer. May be 0 if the asset is not
    *  resident. This buffer stores the actual geometry to render. */
   uint64_t geometryBuffer;
-  /** GPU address of the animation buffer. May be 0 if the asset is not
-   *  resident. This buffer stores animation keyframes and metadata. */
-  uint64_t animationBuffer;
   /** GPU address of the instance property buffer. This stores all sorts
    *  of per-instance data, including joint transforms. */
   uint64_t propertyBuffer;
   /** GPU address of asset list to use for this instance. If set,
    *  all non-local asset data will be pulled from this buffer. */
   uint64_t assetListBuffer;
+  /** Reserved for future use */
+  uint64_t reserved;
 };
 
 static_assert(sizeof(GfxSceneInstanceNodeInfo) == 48);
@@ -883,18 +882,6 @@ public:
   void updateGeometryBuffer(
           GfxSceneNodeRef               instance,
           uint64_t                      geometryBuffer);
-
-  /**
-   * \brief Updates pointer to animation buffer
-   *
-   * If the instance is animated, the node must be marked
-   * as non-resident when setting the buffer address to 0.
-   * \param [in] instance Instance node reference
-   * \param [in] animationBuffer Animation buffer address
-   */
-  void updateAnimationBuffer(
-          GfxSceneNodeRef               instance,
-          uint64_t                      animationBuffer);
 
   /**
    * \brief Updates pointer to asset list
