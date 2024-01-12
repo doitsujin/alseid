@@ -135,8 +135,8 @@ uint tsMain() {
       Transform meshletTransform = Transform(meshInstance.transform, meshInstance.translate);
 
       // Apply joint transform as necessary
-      if (meshlet.jointIndex < mesh.skinJoints) {
-        uint32_t jointIndex = meshSkinning.joints[meshlet.jointIndex];
+      if (meshlet.jointIndex < 0xffffu) {
+        uint32_t jointIndex = meshSkinning.joints[meshInstance.jointIndex + meshlet.jointIndex];
 
         if (jointIndex < instanceData.header.jointCount) {
           Transform jointTransform = instanceLoadJoint(instanceNode.propertyBuffer, 0, jointIndex);
