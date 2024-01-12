@@ -625,6 +625,7 @@ private:
  */
 struct GfxVulkanShaderStageExtraInfo {
   VkShaderModuleCreateInfo moduleInfo = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
+  VkPipelineShaderStageRequiredSubgroupSizeCreateInfo requiredSubgroupSize = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO };
 };
 
 

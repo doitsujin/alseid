@@ -1502,14 +1502,30 @@ bool GfxVulkanPipelineManager::initShaderStage(
   // Ensure that gl_SubgroupSize and friends actually behave as expected in
   // compute and mesh shaders, and ensure full subgroups whenever possible.
   if (gfxShaderStageHasWorkgroupSize(stage)) {
+    const auto& deviceProperties = m_device.getVkProperties();
     stageInfo.flags |= VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT;
 
-    uint32_t localSizeX = specData
-      ? getActualWorkgroupSize(shader, *specData).at<0>()
-      : shader->getWorkgroupSize().at<0>();
+    Extent3D localSize = specData
+      ? getActualWorkgroupSize(shader, *specData)
+      : shader->getWorkgroupSize();
 
-    if (!(localSizeX % m_device.getVkProperties().vk13.maxSubgroupSize))
+    if (!(localSize.at<0>() & (deviceProperties.vk13.maxSubgroupSize - 1u)))
       stageInfo.flags |= VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT;
+
+    if (deviceProperties.vk13.requiredSubgroupSizeStages & stageInfo.stage) {
+      // If the workgroup size is less than the maximum subgroup size, we should
+      // ensure that the driver does not give us larger subgroups in order to
+      // benefit from subgroup-optimized code paths.
+      if ((localSize.at<0>() < deviceProperties.vk13.maxSubgroupSize) &&
+          (localSize.at<0>() >= deviceProperties.vk13.minSubgroupSize) &&
+          (!(localSize.at<0>() & (localSize.at<0>() - 1u))) &&
+          (localSize.at<1>() == 1u && localSize.at<2>() == 1u)) {
+        stageInfo.flags &= ~VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT;
+
+        extraInfo.requiredSubgroupSize.pNext = const_cast<void*>(std::exchange(stageInfo.pNext, &extraInfo.requiredSubgroupSize));
+        extraInfo.requiredSubgroupSize.requiredSubgroupSize = localSize.at<0>();
+      }
+    }
   }
 
   return binary.format != GfxShaderFormat::eVulkanSpirv;
