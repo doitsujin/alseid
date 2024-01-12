@@ -434,7 +434,6 @@ private:
     m_sceneNodeManager->updateNodeTransform(instanceNode, QuatTransform::identity());
     m_sceneNodeManager->attachNodesToBvh(rootRef, 1, &instanceRef);
 
-    m_sceneInstanceManager->allocateGpuBuffer(instanceRef);
     m_sceneInstanceManager->updateResource(instanceRef, 0,
       GfxSceneInstanceResource::fromBufferAddress(m_geometryBuffer->getGpuAddress()));
 

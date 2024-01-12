@@ -251,13 +251,15 @@ GfxSceneNodeRef GfxSceneInstanceManager::createInstance(
 
   // Initialize actual host data. Most of this can or needs
   // to be set dynamically anyway.
+  auto& hostData = m_instanceHostData.emplace(index);
+  hostData.dirtyFlags = GfxSceneInstanceDirtyFlag::eDirtyNode | GfxSceneInstanceDirtyFlag::eDirtyHeader;
+  hostData.dataBuffer = GfxSceneInstanceDataBuffer(desc);
+  hostData.gpuBuffer = m_gpuResources.allocData(hostData.dataBuffer.getSize());
+
   auto& nodeData = m_instanceNodeData.emplace(index);
   nodeData.nodeIndex = int32_t(desc.nodeIndex);
   nodeData.flags = desc.flags;
-
-  auto& hostData = m_instanceHostData.emplace(index);
-  hostData.dirtyFlags = GfxSceneInstanceDirtyFlag::eDirtyNode;
-  hostData.dataBuffer = GfxSceneInstanceDataBuffer(desc);
+  nodeData.propertyBuffer = hostData.gpuBuffer.buffer->getGpuAddress() + hostData.gpuBuffer.offset;
 
   // Mark instance as dirty so the node gets uploaded to the GPU
   addToDirtyList(index);
@@ -271,13 +273,8 @@ void GfxSceneInstanceManager::destroyInstance(
         uint32_t                      frameId) {
   uint32_t index = uint32_t(instance.index);
 
-  GfxBufferSlice slice = std::move(m_instanceHostData[index].dataSlice);
-
   std::lock_guard lock(m_freeMutex);
   m_freeQueue.insert({ frameId, index });
-
-  if (slice.buffer)
-    m_freeSlices.insert({ frameId, std::move(slice) });
 }
 
 
@@ -435,40 +432,6 @@ void GfxSceneInstanceManager::updateAssetList(
 }
 
 
-void GfxSceneInstanceManager::allocateGpuBuffer(
-        GfxSceneNodeRef               instance) {
-  uint32_t index = uint32_t(instance.index);
-
-  auto& nodeData = m_instanceNodeData[index];
-  auto& hostData = m_instanceHostData[index];
-
-  if (hostData.dataSlice.buffer)
-    return;
-
-  hostData.dataSlice = m_gpuResources.allocData(hostData.dataBuffer.getSize());
-  nodeData.propertyBuffer = hostData.dataSlice.buffer->getGpuAddress() + hostData.dataSlice.offset;
-
-  markDirty(index, GfxSceneInstanceDirtyFlag::eDirtyNode | GfxSceneInstanceDirtyFlag::eDirtyHeader);
-}
-
-
-void GfxSceneInstanceManager::freeGpuBuffer(
-        GfxSceneNodeRef               instance) {
-  uint32_t index = uint32_t(instance.index);
-
-  auto& nodeData = m_instanceNodeData[index];
-  auto& hostData = m_instanceHostData[index];
-
-  if (!hostData.dataSlice.buffer)
-    return;
-
-  hostData.dataSlice = GfxBufferSlice();
-  nodeData.propertyBuffer = 0;
-
-  markDirty(index, GfxSceneInstanceDirtyFlag::eDirtyNode);
-}
-
-
 void GfxSceneInstanceManager::commitUpdates(
   const GfxContext&                   context,
   const GfxScenePipelines&            pipelines,
@@ -479,7 +442,6 @@ void GfxSceneInstanceManager::commitUpdates(
   updateBufferData(context, pipelines, currFrameId);
 
   cleanupInstanceNodes(lastFrameId);
-  cleanupBufferSlices(lastFrameId);
 }
 
 
@@ -589,7 +551,7 @@ void GfxSceneInstanceManager::updateBufferData(
     GfxSceneInstanceDirtyFlags dirtyFlags = hostData.dirtyFlags.exchange(0);
     GfxSceneInstanceFlags nodeFlags = 0u;
 
-    if (hostData.dataSlice.buffer) {
+    if (hostData.gpuBuffer.buffer) {
       if (dirtyFlags & (
           GfxSceneInstanceDirtyFlag::eDirtyRelativeTransforms |
           GfxSceneInstanceDirtyFlag::eDirtyMorphTargetWeights |
@@ -712,6 +674,8 @@ void GfxSceneInstanceManager::cleanupInstanceNodes(
   for (auto i = range.first; i != range.second; i++) {
     uint32_t index = i->second;
 
+    m_gpuResources.freeData(m_instanceHostData[index].gpuBuffer);
+
     m_instanceHostData.erase(index);
     m_instanceNodeData.erase(index);
 
@@ -719,17 +683,6 @@ void GfxSceneInstanceManager::cleanupInstanceNodes(
   }
 
   m_freeQueue.erase(range.first, range.second);
-}
-
-
-void GfxSceneInstanceManager::cleanupBufferSlices(
-        uint32_t                      frameId) {
-  auto range = m_freeSlices.equal_range(frameId);
-
-  for (auto i = range.first; i != range.second; i++)
-    m_gpuResources.freeData(i->second);
-
-  m_freeSlices.erase(range.first, range.second);
 }
 
 
@@ -778,8 +731,8 @@ void GfxSceneInstanceManager::uploadInstanceData(
   auto& chunk = m_uploadChunks.emplace_back();
   chunk.srcData = hostData.dataBuffer.getAt(offset);
   chunk.size = size;
-  chunk.dstVa = hostData.dataSlice.buffer->getGpuAddress() +
-                hostData.dataSlice.offset + offset;
+  chunk.dstVa = hostData.gpuBuffer.buffer->getGpuAddress() +
+                hostData.gpuBuffer.offset + offset;
 }
 
 }

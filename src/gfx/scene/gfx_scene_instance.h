@@ -522,9 +522,8 @@ struct GfxSceneInstanceHostInfo {
   AtomicFlags<GfxSceneInstanceDirtyFlag> dirtyFlags = { 0u };
   /** Host copy of instance parameters. */
   GfxSceneInstanceDataBuffer dataBuffer;
-  /** Allocated buffer slice. If this is a null slice, the
-   *  instance is by definition not resident. */
-  GfxBufferSlice dataSlice;
+  /** Allocated buffer slice. */
+  GfxBufferSlice gpuBuffer;
 };
 
 
@@ -885,24 +884,6 @@ public:
           uint64_t                      assetListBuffer);
 
   /**
-   * \brief Allocates GPU memory for instance data
-   *
-   * Data is uploaded to the GPU on the next call to \c commitUpdates.
-   * \param [in] instance Instance node reference
-   */
-  void allocateGpuBuffer(
-          GfxSceneNodeRef               instance);
-
-  /**
-   * \brief Frees GPU memory for instance data
-   *
-   * Requires that the node be marked as non-resident.
-   * \param [in] instance Instance node reference
-   */
-  void freeGpuBuffer(
-          GfxSceneNodeRef               instance);
-
-  /**
    * \brief Commits pending updates
    *
    * Ensures that access to already created instance objects
@@ -982,15 +963,10 @@ private:
   std::mutex                          m_freeMutex;
   std::unordered_multimap<
     uint32_t, uint32_t>               m_freeQueue;
-  std::unordered_multimap<
-    uint32_t, GfxBufferSlice>         m_freeSlices;
 
   void updateBufferData(
     const GfxContext&                   context,
     const GfxScenePipelines&            pipelines,
-          uint32_t                      frameId);
-
-  void cleanupBufferSlices(
           uint32_t                      frameId);
 
   void cleanupInstanceNodes(
