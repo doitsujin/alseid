@@ -623,6 +623,8 @@ private:
   ObjectAllocator                     m_nodeAllocator;
   ObjectAllocator                     m_bvhAllocator;
 
+  std::vector<GfxSceneUploadChunk>    m_uploadChunks;
+
   alignas(CacheLineSize)
   std::mutex                          m_dirtyMutex;
   std::vector<uint32_t>               m_dirtyNodes;

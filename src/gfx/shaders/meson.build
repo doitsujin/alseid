@@ -53,8 +53,6 @@ as_shader_builtins = [
   [ 'scene/renderpass/cs_renderpass_update_init.comp', 'cs' ],
   [ 'scene/renderpass/cs_renderpass_update_prepare.comp', 'cs' ],
   [ 'scene/renderpass/cs_renderpass_upload.comp', 'cs' ],
-
-  [ 'scene/cs_scene_update.comp', 'cs' ],
 ]
 
 as_shader_glslang_args = [

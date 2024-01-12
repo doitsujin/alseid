@@ -264,54 +264,6 @@ public:
     const GfxSceneNodeRef*              rootNodes) const;
 
   /**
-   * \brief Updates node buffer
-   *
-   * Copies node data from a host array to the GPU, using a basic compute
-   * shader to unpack the node array written to the scratch buffer.
-   * \param [in] context Context object
-   * \param [in] nodeDataVa Node array address within the scene buffer
-   * \param [in] nodeCount Number of node objects to update
-   * \param [in] nodeIndices Array of indices of nodes to update
-   * \param [in] srcNodes Pointer to flat node data array. This will
-   *    be indexed using the indices stored in the node index array.
-   */
-  template<typename T, std::enable_if_t<std::is_standard_layout_v<T> && std::is_trivial_v<T>, bool> = true>
-  void updateSceneBuffer(
-    const GfxContext&                   context,
-          uint64_t                      nodeDataVa,
-          uint32_t                      nodeCount,
-    const uint32_t*                     nodeIndices,
-    const ObjectMap<T>&                 srcNodes) const {
-    static_assert(!(sizeof(T) % 16));
-
-    auto indexBuffer = context->writeScratch(GfxUsage::eShaderResource,
-      sizeof(*nodeIndices) * nodeCount, nodeIndices);
-
-    auto dataBuffer = context->allocScratch(
-      GfxUsage::eCpuWrite | GfxUsage::eShaderResource,
-      sizeof(T) * nodeCount);
-
-    // Pack node data into the linear scratch buffer, unpacking
-    // will happen in the shader based on the index buffer
-    auto dstNodes = reinterpret_cast<T*>(dataBuffer.map(GfxUsage::eCpuWrite, 0));
-
-    for (uint32_t i = 0; i < nodeCount; i++)
-      dstNodes[i] = srcNodes[nodeIndices[i]];
-
-    // Dispatch the update shader
-    GfxSceneUpdateArgs args = { };
-    args.dstNodeDataVa = nodeDataVa;
-    args.srcNodeDataVa = dataBuffer.getGpuAddress();
-    args.srcNodeIndexVa = indexBuffer.getGpuAddress();
-    args.nodeCount = nodeCount;
-    args.nodeSize = sizeof(T);
-
-    context->bindPipeline(m_csSceneUpdate);
-    context->setShaderConstants(0, args);
-    context->dispatch(m_csSceneUpdate->computeWorkgroupCount(Extent3D(nodeCount, 1u, 1u)));
-  }
-
-  /**
    * \brief Traverses scene BVH
    *
    * Processes a single layer of the scene BVH for a given pass group. Callers
@@ -517,7 +469,6 @@ private:
   GfxComputePipeline  m_csRenderPassUpdatePrepare;
   GfxComputePipeline  m_csRenderPassUpload;
 
-  GfxComputePipeline  m_csSceneUpdate;
   GfxComputePipeline  m_csSceneUpload;
 
   template<size_t N>

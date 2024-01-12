@@ -24,7 +24,6 @@
 #include <cs_renderpass_update_prepare.h>
 #include <cs_renderpass_upload.h>
 
-#include <cs_scene_update.h>
 #include <cs_scene_upload.h>
 
 namespace as {
@@ -47,7 +46,6 @@ GfxScenePipelines::GfxScenePipelines(
 , m_csRenderPassUpdateInit  (createComputePipeline("cs_renderpass_update_init", cs_renderpass_update_init))
 , m_csRenderPassUpdatePrepare(createComputePipeline("cs_renderpass_update_prepare", cs_renderpass_update_prepare))
 , m_csRenderPassUpload      (createComputePipeline("cs_renderpass_upload", cs_renderpass_upload))
-, m_csSceneUpdate           (createComputePipeline("cs_scene_update", cs_scene_update))
 , m_csSceneUpload           (createComputePipeline("cs_scene_upload", cs_scene_upload)) {
 
 }

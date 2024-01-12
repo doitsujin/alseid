@@ -505,22 +505,30 @@ void GfxSceneNodeManager::updateBufferData(
 
   GfxSceneNodeHeader gpuHeader = m_gpuResources.getHeader();
 
-  if (!m_dirtyNodes.empty()) {
-    pipelines.updateSceneBuffer(context,
-      m_gpuResources.getGpuAddress() + gpuHeader.nodeParameterOffset,
-      m_dirtyNodes.size(),
-      m_dirtyNodes.data(),
-      m_nodeData);
+  for (auto nodeIndex : m_dirtyNodes) {
+    const auto& node = m_nodeData[nodeIndex];
+
+    auto& chunk = m_uploadChunks.emplace_back();
+    chunk.srcData = &node;
+    chunk.size = sizeof(node);
+    chunk.dstVa = m_gpuResources.getGpuAddress() +
+      gpuHeader.nodeParameterOffset + sizeof(node) * nodeIndex;
   }
 
-  if (!m_dirtyBvhs.empty()) {
-    pipelines.updateSceneBuffer(context,
-      m_gpuResources.getGpuAddress() + gpuHeader.bvhOffset,
-      m_dirtyBvhs.size(),
-      m_dirtyBvhs.data(),
-      m_bvhData);
+  for (auto bvhIndex : m_dirtyBvhs) {
+    const auto& bvh = m_bvhData[bvhIndex];
+
+    auto& chunk = m_uploadChunks.emplace_back();
+    chunk.srcData = &bvh;
+    chunk.size = sizeof(bvh);
+    chunk.dstVa = m_gpuResources.getGpuAddress() +
+      gpuHeader.bvhOffset + sizeof(bvh) * bvhIndex;
   }
 
+  if (!m_uploadChunks.empty())
+    pipelines.uploadChunks(context, m_uploadChunks.size(), m_uploadChunks.data());
+
+  m_uploadChunks.clear();
   m_dirtyNodes.clear();
   m_dirtyBvhs.clear();
 
