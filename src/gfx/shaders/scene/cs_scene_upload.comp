@@ -145,7 +145,7 @@ bool csPrepareNextIteration(out ChunkInfo info) {
       0, int32_t(qwordCount)));
 
     chunkInfo.srcOffset += qwordsProcessed;
-    chunkInfo.srcSize -= qwordCount;
+    chunkInfo.srcSize -= qwordsProcessed;
     chunkInfo.dstData += qwordsProcessed * 16u;
     return result.srcSize != 0u;
   }
