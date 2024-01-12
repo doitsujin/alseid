@@ -698,12 +698,12 @@ void GfxVulkanGraphicsShaders::getShaderStageInfo(
   const GfxVulkanSpecConstantData*    specData) const {
   mgr.initSpecializationInfo(specData, result.specInfo);
 
-  result.moduleInfo.resize(m_shaders.size());
+  result.extaInfo.resize(m_shaders.size());
   result.stageInfo.resize(m_shaders.size());
 
   for (uint32_t i = 0; i < m_shaders.size(); i++) {
     bool freeCode = mgr.initShaderStage(m_shaders[i],
-      &result.specInfo, result.stageInfo[i], result.moduleInfo[i], specData);
+      &result.specInfo, result.stageInfo[i], result.extaInfo[i], specData);
 
     if (freeCode)
       result.freeMask |= 1u << i;
@@ -1040,9 +1040,9 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createLibraryLocked(
   VkResult vr = vk.vkCreateGraphicsPipelines(vk.device,
     VK_NULL_HANDLE, 1, &info, nullptr, &m_library.pipeline);
 
-  for (uint32_t i = 0; i < shaderStages.moduleInfo.size(); i++) {
+  for (uint32_t i = 0; i < shaderStages.extaInfo.size(); i++) {
     if (shaderStages.freeMask & (1u << i))
-      std::free(const_cast<uint32_t*>(shaderStages.moduleInfo[i].pCode));
+      std::free(const_cast<uint32_t*>(shaderStages.extaInfo[i].moduleInfo.pCode));
   }
 
   if (vr)
@@ -1155,7 +1155,7 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
       vk.vkDestroyShaderModule(vk.device, shaderStages.stageInfo[i].module, nullptr);
 
     if (shaderStages.freeMask & (1u << i))
-      std::free(const_cast<uint32_t*>(shaderStages.moduleInfo[i].pCode));
+      std::free(const_cast<uint32_t*>(shaderStages.extaInfo[i].moduleInfo.pCode));
   }
 
   if (vr)
@@ -1366,14 +1366,14 @@ VkPipeline GfxVulkanComputePipeline::createPipelineLocked() {
   m_mgr.initSpecializationInfo(&m_specConstants, specInfo);
 
   // Set up basic compute pipeline info
-  VkShaderModuleCreateInfo moduleInfo = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
+  GfxVulkanShaderStageExtraInfo extraInfo = { };
 
   VkComputePipelineCreateInfo pipelineInfo = { VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO };
   pipelineInfo.layout = m_layout.getLayout();
   pipelineInfo.basePipelineIndex = -1;
 
   bool freeCode = m_mgr.initShaderStage(m_desc.compute,
-    &specInfo, pipelineInfo.stage, moduleInfo, &m_specConstants);
+    &specInfo, pipelineInfo.stage, extraInfo, &m_specConstants);
 
   VkPipeline pipeline = VK_NULL_HANDLE;
   VkResult vr = vk.vkCreateComputePipelines(vk.device,
@@ -1384,7 +1384,7 @@ VkPipeline GfxVulkanComputePipeline::createPipelineLocked() {
     vk.vkDestroyShaderModule(vk.device, pipelineInfo.stage.module, nullptr);
 
   if (freeCode)
-    std::free(const_cast<uint32_t*>(moduleInfo.pCode));
+    std::free(const_cast<uint32_t*>(extraInfo.moduleInfo.pCode));
 
   if (vr)
     throw VulkanError(strcat("Vulkan: Failed to create compute pipeline (shader: ", m_desc.compute->getDebugName(), ")").c_str(), vr);
@@ -1455,19 +1455,17 @@ bool GfxVulkanPipelineManager::initShaderStage(
   const GfxShader&                    shader,
   const VkSpecializationInfo*         specInfo,
         VkPipelineShaderStageCreateInfo& stageInfo,
-        VkShaderModuleCreateInfo&     moduleInfo,
+        GfxVulkanShaderStageExtraInfo& extraInfo,
   const GfxVulkanSpecConstantData*    specData) const {
   auto& vk = m_device.vk();
 
   GfxShaderStage stage = shader->getShaderStage();
   GfxShaderBinary binary = shader->getShaderBinary();
 
-  moduleInfo = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
-
   switch (binary.format) {
     case GfxShaderFormat::eVulkanSpirv: {
-      moduleInfo.codeSize = binary.size;
-      moduleInfo.pCode = reinterpret_cast<const uint32_t*>(binary.data);
+      extraInfo.moduleInfo.codeSize = binary.size;
+      extraInfo.moduleInfo.pCode = reinterpret_cast<const uint32_t*>(binary.data);
     } break;
 
     case GfxShaderFormat::eVulkanSpirvCompressed: {
@@ -1475,8 +1473,8 @@ bool GfxVulkanPipelineManager::initShaderStage(
       size_t size = spirvGetDecodedSize(compressed);
 
       void* buffer = std::malloc(size);
-      moduleInfo.codeSize = size;
-      moduleInfo.pCode = reinterpret_cast<uint32_t*>(buffer);
+      extraInfo.moduleInfo.codeSize = size;
+      extraInfo.moduleInfo.pCode = reinterpret_cast<uint32_t*>(buffer);
 
       spirvDecodeBinary(WrMemoryView(buffer, size), compressed);
     } break;
@@ -1492,10 +1490,10 @@ bool GfxVulkanPipelineManager::initShaderStage(
 
   if (m_device.getVkFeatures().extGraphicsPipelineLibrary.graphicsPipelineLibrary) {
     // Chain shader module info if possible
-    stageInfo.pNext = &moduleInfo;
+    stageInfo.pNext = &extraInfo.moduleInfo;
   } else {
     VkResult vr = vk.vkCreateShaderModule(vk.device,
-      &moduleInfo, nullptr, &stageInfo.module);
+      &extraInfo.moduleInfo, nullptr, &stageInfo.module);
 
     if (vr)
       throw VulkanError("Vulkan: Failed to create shader module", vr);

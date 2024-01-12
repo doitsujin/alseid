@@ -621,12 +621,20 @@ private:
 
 
 /**
+ * \brief Additional shader module parameters
+ */
+struct GfxVulkanShaderStageExtraInfo {
+  VkShaderModuleCreateInfo moduleInfo = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
+};
+
+
+/**
  * \brief Helper to build shader stage arrays
  */
 struct GfxVulkanGraphicsShaderStages {
   uint32_t freeMask = 0;
   VkSpecializationInfo specInfo = { };
-  small_vector<VkShaderModuleCreateInfo, 5> moduleInfo;
+  small_vector<GfxVulkanShaderStageExtraInfo, 5> extaInfo;
   small_vector<VkPipelineShaderStageCreateInfo, 5> stageInfo;
 };
 
@@ -1013,7 +1021,7 @@ public:
    * \param [in] shader Shader object
    * \param [in] specInfo Specialization info
    * \param [out] stageInfo Vulkan shader stage info
-   * \param [out] moduleInfo Vulkan shader module info
+   * \param [out] extraInfo Additional stage parameters
    * \returns \c true if the code in the returned
    *    shader module create info must be freed
    */
@@ -1021,7 +1029,7 @@ public:
     const GfxShader&                    shader,
     const VkSpecializationInfo*         specInfo,
           VkPipelineShaderStageCreateInfo& stageInfo,
-          VkShaderModuleCreateInfo&     moduleInfo,
+          GfxVulkanShaderStageExtraInfo& extraInfo,
     const GfxVulkanSpecConstantData*    specData) const;
 
   /**
