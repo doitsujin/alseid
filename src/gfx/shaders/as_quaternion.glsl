@@ -72,7 +72,7 @@ vec3 quatApplyNorm(vec4 q, vec3 v) {
 
 
 // Packs normalized quaternion
-uvec2 quatPack(vec4 q) {
+uvec2 quatPackNorm(vec4 q) {
   return uvec2(
     packSnorm2x16(q.xy),
     packSnorm2x16(q.zw));
@@ -80,7 +80,7 @@ uvec2 quatPack(vec4 q) {
 
 
 // Unpacks normalized quaternion
-vec4 quatUnpack(uvec2 q) {
+vec4 quatUnpackNorm(uvec2 q) {
   return vec4(
     unpackSnorm2x16(q.x),
     unpackSnorm2x16(q.y));

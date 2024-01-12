@@ -365,7 +365,7 @@ JointInfluenceRef msGetJointInfluenceData(in MsContext context, in Meshlet meshl
 // Buffer that stores dual quaternions for each local joint. If
 // local joints are enabled for a meshlet, we can use this to
 // avoid having to laod and convert the transform multiple times.
-shared uvec2 msJointDualQuatRShared[MESHLET_LOCAL_JOINT_COUNT];
+shared vec4 msJointDualQuatRShared[MESHLET_LOCAL_JOINT_COUNT];
 shared vec4 msJointDualQuatDShared[MESHLET_LOCAL_JOINT_COUNT];
 
 // Loads a joint transform from memory
@@ -388,7 +388,7 @@ DualQuat msLoadJointDualQuatFromMemory(in MsContext context, uint32_t jointSet, 
 // Loads a joint's dual-quaternion from LDS
 DualQuat msLoadJointDualQuat(in Meshlet meshlet, uint joint) {
   return DualQuat(
-    quatUnpack(msJointDualQuatRShared[joint]),
+    msJointDualQuatRShared[joint],
     msJointDualQuatDShared[joint]);
 }
 
@@ -408,7 +408,7 @@ void msLoadLocalJointsFromMemory(
       jointIndex = skinningBuffer.joints[jointIndex];
 
       Transform transform = msLoadJointTransform(context, jointSet, jointIndex);
-      msJointDualQuatRShared[0] = quatPack(transform.rot);
+      msJointDualQuatRShared[0] = transform.rot;
       msJointDualQuatDShared[0].xyz = transform.pos;
     }
   } else {
@@ -421,7 +421,7 @@ void msLoadLocalJointsFromMemory(
         jointIndex = skinningBuffer.joints[context.invocation.meshInstance.jointIndex + jointIndex];
 
         DualQuat dq = msLoadJointDualQuatFromMemory(context, jointSet, jointIndex);
-        msJointDualQuatRShared[index] = quatPack(dq.r);
+        msJointDualQuatRShared[index] = dq.r;
         msJointDualQuatDShared[index] = dq.d;
       }
     }
@@ -438,7 +438,7 @@ Transform msComputeJointTransform(in MsContext context, in Meshlet meshlet, in J
     // We stored the raw transform for this joint in shared memory
     // without conversion, so just load it as-is.
     Transform result;
-    result.rot = quatUnpack(msJointDualQuatRShared[0]);
+    result.rot = msJointDualQuatRShared[0];
     result.pos = msJointDualQuatDShared[0].xyz;
     return result;
   } else {
