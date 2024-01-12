@@ -261,6 +261,8 @@ struct GfxSceneInstanceResource {
  * the instance itself.
  */
 struct GfxSceneInstanceDataHeader {
+  /** Absolute address of geometry buffer. */
+  uint64_t geometryVa;
   /** Offset to global shading parameter data. All materials that use
    *  this data must interpret this data in a consistent manner. */
   uint32_t instanceParameterOffset;
@@ -298,20 +300,23 @@ struct GfxSceneInstanceDataHeader {
    *  well as information on how to blend animations together. */
   uint32_t animationOffset;
   /** Number of unique resources referenced by this instance. */
-  uint16_t resourceCount;
+  uint32_t resourceCount;
+  /** Resource buffer. Stores asset list indices or plain resource
+   *  parameters in the form of descriptor indices or buffer addresses. */
+  uint32_t resourceOffset;
   /** Resource indirection count. Resource indirection data is stored
    *  immediately following resource entries in the resource buffer. */
-  uint16_t resourceIndirectionCount;
-  /** Resource buffer. Stores resource entries and relocation entries, so
-   *  that the instance update shader can resolve indirections and copy
-   *  plain descriptor indices and buffer addresses to each draw's buffer. */
-  uint32_t resourceOffset;
+  uint32_t indirectionCount;
+  /** Indirection data offset, in bytes. Stores information about where
+   *  to copy resource parameters, so that draw time indirections can
+   *  be avoided as much as possible. */
+  uint32_t indirectionOffset;
   /** Axis-aligned bounding box, in model space. Empty if the number of
    *  joints is zero, otherwise this will contain the adjusted AABB. */
   GfxAabb<float16_t> aabb;
 };
 
-static_assert(sizeof(GfxSceneInstanceDataHeader) == 64);
+static_assert(sizeof(GfxSceneInstanceDataHeader) == 80);
 
 
 /**
@@ -605,6 +610,9 @@ struct GfxSceneInstanceDesc {
   /** Number of resources. Resources defined for this instance can
    *  be used by multiple draws via the respective index array. */
   uint32_t resourceCount = 0;
+  /** Geometry resource index. Must point to a valid buffer
+   *  resource for the instance to render. */
+  uint32_t geometryResource = ~0u;
   /** Resource descriptions. */
   const GfxSceneInstanceResourceDesc* resources = nullptr;
   /** Axis-aligned bounding box in model space. Should be identical

@@ -262,24 +262,19 @@ void csUpdateAssets(in InstanceNode instanceNode) {
   InstanceRawBufferOut32 instanceData32 = InstanceRawBufferOut32(instanceNode.propertyBuffer);
   InstanceRawBufferOut64 instanceData64 = InstanceRawBufferOut64(instanceNode.propertyBuffer);
 
-  uvec2 counts = instanceGetResourceCount(instanceInfo.resourceCountAndIndirectionCount);
-  uint32_t resourceCount = counts.x;
-  uint32_t indirectionCount = counts.y;
-
   InstanceResourceBufferIn resourceBuffer = InstanceResourceBufferIn(instanceNode.propertyBuffer + instanceInfo.resourceOffset);
 
   // The indirection data offset is not stored anywhere, we need to compute it manually.
-  uint32_t indirectionOffset = align(instanceInfo.resourceOffset + resourceCount * INSTANCE_RESOURCE_ENTRY_SIZE, 16u);
-  InstanceResourceIndirectionBufferIn indirectionBuffer = InstanceResourceIndirectionBufferIn(instanceNode.propertyBuffer + indirectionOffset);
+  InstanceResourceIndirectionBufferIn indirectionBuffer = InstanceResourceIndirectionBufferIn(instanceNode.propertyBuffer + instanceInfo.indirectionOffset);
 
   // Ensure that it is safe to dereference the asset list pointer. If not,
   // default to null pointers and invalid descriptor indices when needed.
   bool hasAssetList = instanceNode.assetListBuffer != uint64_t(0u);
 
-  for (uint32_t i = 0; i < indirectionCount; i += gl_WorkGroupSize.x) {
+  for (uint32_t i = 0; i < instanceInfo.indirectionCount; i += gl_WorkGroupSize.x) {
     uint32_t index = i + gl_LocalInvocationIndex;
 
-    if (index < indirectionCount) {
+    if (index < instanceInfo.indirectionCount) {
       InstanceResourceIndirection indirection = indirectionBuffer.entries[index];
 
       // Interpret the 64-bit encoded entry. If the least significant bit is

@@ -29,6 +29,7 @@ struct InstanceNode {
 };
 
 struct InstanceHeader {
+  uint64_t        geometryVa;
   uint32_t        parameterOffset;
   uint32_t        parameterSize;
   uint32_t        drawCount;
@@ -40,8 +41,10 @@ struct InstanceHeader {
   uint32_t        weightOffset;
   uint32_t        animationCount;
   uint32_t        animationOffset;
-  uint32_t        resourceCountAndIndirectionCount;
+  uint32_t        resourceCount;
   uint32_t        resourceOffset;
+  uint32_t        indirectionCount;
+  uint32_t        indirectionOffset;
   Aabb16          aabb;
 };
 
@@ -243,8 +246,6 @@ uvec2 instanceGetResourceCount(uint32_t packed) {
 // Resource entry buffer reference type. The least significant bit
 // in the x component of each entry signifies whether the entry is
 // an asset list index or a plain descriptor index / address.
-#define INSTANCE_RESOURCE_ENTRY_SIZE (8u)
-
 layout(buffer_reference, buffer_reference_align = 8, scalar)
 readonly buffer InstanceResourceBufferIn {
   uvec2 entries[];

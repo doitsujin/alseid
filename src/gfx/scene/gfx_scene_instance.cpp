@@ -37,6 +37,20 @@ GfxSceneInstanceDataBuffer::GfxSceneInstanceDataBuffer(
     sizeof(GfxSceneAnimationParameters) * desc.animationCount);
   header.aabb = desc.aabb;
 
+  // Add resource indirection entry for the geometry buffer
+  if (desc.geometryResource < desc.resourceCount) {
+    const auto& resource = desc.resources[desc.geometryResource];
+
+    if (resource.type == GfxSceneInstanceResourceType::eBufferAddress) {
+      auto& indirection = resourceIndirections.emplace_back();
+      indirection.type = resource.type;
+      indirection.srcEntry = uint16_t(desc.geometryResource);
+      indirection.dstOffset = offsetof(GfxSceneInstanceDataHeader, geometryVa);
+    }
+  }
+
+  // Allocate storage for per-draw resource parameters, and add
+  // the corresponding resource indirection entries.
   for (uint32_t i = 0; i < desc.drawCount; i++) {
     uint32_t materialParameterSize = desc.draws[i].materialParameterSize;
     uint32_t materialParameterOffset = allocateStorage(dataAllocator, materialParameterSize);
@@ -75,11 +89,11 @@ GfxSceneInstanceDataBuffer::GfxSceneInstanceDataBuffer(
   // allocated immediately following the entry array to facilitate correct
   // address calculations.
   header.resourceCount = uint16_t(desc.resourceCount);
-  header.resourceIndirectionCount = uint16_t(resourceIndirections.size());
   header.resourceOffset = allocateStorage(dataAllocator,
     header.resourceCount * sizeof(GfxSceneInstanceResource));
-  uint32_t resourceIndirectionOffset = allocateStorage(dataAllocator,
-    header.resourceIndirectionCount * sizeof(GfxSceneInstanceResourceIndirectionEntry));
+  header.indirectionCount = uint16_t(resourceIndirections.size());
+  header.indirectionOffset = allocateStorage(dataAllocator,
+    header.indirectionCount * sizeof(GfxSceneInstanceResourceIndirectionEntry));
 
   // Initialize actual host data
   m_buffer = AlignedBuffer(dataAllocator, 16);
@@ -115,7 +129,7 @@ GfxSceneInstanceDataBuffer::GfxSceneInstanceDataBuffer(
         : GfxSceneInstanceResource::fromDescriptorIndex(-1);
     }
 
-    auto indirections = m_buffer.template getAs<GfxSceneInstanceResourceIndirectionEntry>(resourceIndirectionOffset);
+    auto indirections = m_buffer.template getAs<GfxSceneInstanceResourceIndirectionEntry>(header.indirectionOffset);
 
     std::memcpy(indirections,
       resourceIndirections.data(),
