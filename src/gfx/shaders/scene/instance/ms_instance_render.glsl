@@ -450,7 +450,7 @@ Transform msComputeJointTransform(in MsContext context, in Meshlet meshlet, in J
     if (meshlet.jointCountPerVertex > 0)
       joint = jointInfluenceUnpack(jointData.data[vertexIndex]);
 
-    if (joint.weight > 0) {
+    if (joint.weight > 0.0f) {
       // Load first joint and skip all the expensive code below if
       // vertices in this meshlet are only influenced by one joint.
       DualQuat accum = msLoadJointDualQuat(meshlet, joint.index);
@@ -992,8 +992,10 @@ void msMain() {
 #endif
 
   // Export vertex positions and fragment shader inputs
+#ifndef MS_NO_SHADING_DATA
   MsInputShadingDataRef shadingData = MsInputShadingDataRef(
     meshletComputeAddress(context.invocation.meshletVa, meshlet.shadingDataOffset));
+#endif
 
   MS_LOOP_WORKGROUP(index, outputVertexCount, MAX_VERT_COUNT) {
     // Compute vertex and shading data indices
