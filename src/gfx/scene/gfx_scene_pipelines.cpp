@@ -216,60 +216,68 @@ void GfxScenePipelines::uploadChunks(
   const GfxContext&                   context,
         uint32_t                      chunkCount,
   const GfxSceneUploadChunk*          chunks) const {
-  // Compute total scratch buffer size, in bytes
-  uint32_t totalSize = 0;
-
-  for (uint32_t i = 0; i < chunkCount; i++)
-    totalSize += align(chunks[i].size, 16u);
-
-  // Allocate scratch buffer and metadata buffer
-  GfxScratchBuffer chunkBuffer = context->allocScratch(
-    GfxUsage::eCpuWrite | GfxUsage::eShaderResource, totalSize);
-  GfxScratchBuffer metadataBuffer = context->allocScratch(
-    GfxUsage::eCpuWrite | GfxUsage::eShaderResource,
-    chunkCount * sizeof(GfxSceneUploadInfo));
-
-  auto chunkData = chunkBuffer.map(GfxUsage::eCpuWrite, 0);
-  auto metadata = reinterpret_cast<GfxSceneUploadInfo*>(
-    metadataBuffer.map(GfxUsage::eCpuWrite, 0));
-
-  // Copy data and metadata to GPU buffers
-  totalSize = 0;
-
-  for (uint32_t i = 0; i < chunkCount; i++) {
-    std::memcpy(ptroffset(chunkData, totalSize),
-      chunks[i].srcData, chunks[i].size);
-
-    uint32_t chunkSize = align(chunks[i].size, 16u);
-
-    metadata[i].srcOffset = totalSize;
-    metadata[i].srcSize = chunkSize;
-    metadata[i].dstVa = chunks[i].dstVa;
-
-    totalSize += chunkSize;
-  }
-
-  // Dispatch compute workgroups. If for some reason the number of
-  // chunks is very high, perform multiple dispatches, but this is
-  // generally not expected to happen.
-  uint32_t chunksPerIteration = 16384u * m_csSceneUpload->getWorkgroupSize().at<0>();
+  const uint32_t maxChunksPerIteration = 16384u * m_csSceneUpload->getWorkgroupSize().at<0>();
+  const uint32_t maxBytesPerIteration = 1u << 20;
 
   context->bindPipeline(m_csSceneUpload);
 
-  GfxSceneUploadArgs args = { };
-  args.scratchVa = chunkBuffer.getGpuAddress();
-  args.metadataVa = metadataBuffer.getGpuAddress();
-  args.chunkIndex = 0;
-  args.chunkCount = chunkCount;
+  uint32_t chunkIndex = 0;
 
-  while (args.chunkIndex < args.chunkCount) {
-    chunksPerIteration = std::min(args.chunkCount - args.chunkIndex, chunksPerIteration);
+  while (chunkIndex < chunkCount) {
+    uint32_t totalSize = 0;
+    uint32_t localCount = 0;
+
+    for (uint32_t i = chunkIndex; i < std::min(chunkCount, chunkIndex + maxChunksPerIteration); i++) {
+      uint32_t chunkSize = align(chunks[i].size, 16u);
+
+      if (totalSize && totalSize + chunkSize > maxBytesPerIteration)
+        break;
+
+      totalSize += chunkSize;
+      localCount += 1u;
+    }
+
+    // Allocate scratch buffer and metadata buffer
+    GfxScratchBuffer chunkBuffer = context->allocScratch(
+      GfxUsage::eCpuWrite | GfxUsage::eShaderResource, totalSize);
+    GfxScratchBuffer metadataBuffer = context->allocScratch(
+      GfxUsage::eCpuWrite | GfxUsage::eShaderResource,
+      localCount * sizeof(GfxSceneUploadInfo));
+
+    auto chunkData = chunkBuffer.map(GfxUsage::eCpuWrite, 0);
+    auto metadata = reinterpret_cast<GfxSceneUploadInfo*>(
+      metadataBuffer.map(GfxUsage::eCpuWrite, 0));
+
+    // Copy data and metadata to GPU buffers
+    totalSize = 0;
+
+    for (uint32_t i = 0; i < localCount; i++) {
+      const auto& chunk = chunks[chunkIndex + i];
+
+      std::memcpy(ptroffset(chunkData, totalSize),
+        chunk.srcData, chunk.size);
+
+      uint32_t chunkSize = align(chunk.size, 16u);
+
+      metadata[i].srcOffset = totalSize;
+      metadata[i].srcSize = chunkSize;
+      metadata[i].dstVa = chunk.dstVa;
+
+      totalSize += chunkSize;
+    }
+
+    GfxSceneUploadArgs args = { };
+    args.scratchVa = chunkBuffer.getGpuAddress();
+    args.metadataVa = metadataBuffer.getGpuAddress();
+    args.chunkIndex = 0;
+    args.chunkCount = localCount;
 
     context->setShaderConstants(0, args);
     context->dispatch(m_csSceneUpload->computeWorkgroupCount(
-      Extent3D(chunksPerIteration, 1u, 1u)));
+      Extent3D(localCount, 1u, 1u)));
 
-    args.chunkIndex += chunksPerIteration;
+    // Prepare next iteration
+    chunkIndex += localCount;
   }
 }
 
