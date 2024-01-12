@@ -107,7 +107,7 @@ MsInvocationInfo msGetInvocationInfo(
 
   // Compute address of joint indices used for skinning, if present.
   result.skinningVa = tsPayload.skinningDataOffset != 0u
-    ? result.instanceNode.geometryBuffer + tsPayload.skinningDataOffset
+    ? result.instanceInfo.geometryVa + tsPayload.skinningDataOffset
     : uint64_t(0u);
 
   return result;

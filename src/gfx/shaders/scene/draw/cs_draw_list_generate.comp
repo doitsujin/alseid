@@ -241,11 +241,12 @@ uvec2 csSelectLod(uint64_t geometryBuffer, uint32_t meshIndex, float viewDistanc
 void csEmitDraw(in InstanceDrawInfo drawInfo) {
   // Load draw properties from memory
   InstanceNode instanceNode = csLoadInstanceNode(drawInfo.instanceIndex);
+  InstanceHeader instanceInfo = InstanceDataBufferIn(instanceNode.propertyBuffer).header;
   InstanceDraw draw = instanceLoadDraw(instanceNode.propertyBuffer, drawInfo.drawIndex);
 
   // Select mesh LOD based on the precomputed view distance, and skip
   // the draw if there is no suitable LOD for the current mesh.
-  uvec2 lodInfo = csSelectLod(instanceNode.geometryBuffer,
+  uvec2 lodInfo = csSelectLod(instanceInfo.geometryVa,
     draw.meshIndex, drawInfo.viewDistanceSq);
 
   uint32_t lodIndex = lodInfo.x;
@@ -290,14 +291,11 @@ void csGenerateDraws() {
     instanceDrawInfo.instanceIndex = getNodeIndexFromRef(nodeItem.nodeRef);
 
     InstanceNode instance = csLoadInstanceNode(instanceDrawInfo.instanceIndex);
+    InstanceHeader instanceInfo = InstanceDataBufferIn(instance.propertyBuffer).header;
 
     SceneHeader scene = SceneHeader(globals.sceneVa);
 
-    bool hasInstanceData = instance.propertyBuffer != uint64_t(0u);
-    bool hasGeometryData = instance.geometryBuffer != uint64_t(0u);
-
-    if (hasInstanceData && hasGeometryData) {
-      InstanceDataBufferIn instanceData = InstanceDataBufferIn(instance.propertyBuffer);
+    if (instanceInfo.geometryVa != 0ul) {
       uint32_t transformIndex = nodeComputeTransformIndices(instance.nodeIndex, scene.nodeCount, globals.frameId).x;
 
       SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(globals.sceneVa + scene.nodeTransformOffset);
@@ -327,8 +325,8 @@ void csGenerateDraws() {
           // If the bounding box is empty, ignore it and always render the instance.
           // This essentially assumes that the instance is infinitely large.
           Aabb aabb = Aabb(
-            vec3(instanceData.header.aabb.lo),
-            vec3(instanceData.header.aabb.hi));
+            vec3(instanceInfo.aabb.lo),
+            vec3(instanceInfo.aabb.hi));
 
           float aabbRadiusSq = dot(aabb.hi - aabb.lo, aabb.hi - aabb.lo) * 0.5f;
 
@@ -392,9 +390,9 @@ void csGenerateDraws() {
       }
 
       if (instanceDrawInfo.passMask != 0u) {
-        instanceDrawInfo.drawCount = instanceData.header.drawCount;
+        instanceDrawInfo.drawCount = instanceInfo.drawCount;
         instanceDrawInfo.viewDistanceSq = csComputeLodDistance(
-          instance.geometryBuffer, worldTransform);
+          instanceInfo.geometryVa, worldTransform);
       }
     }
   }

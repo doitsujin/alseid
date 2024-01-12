@@ -408,6 +408,10 @@ private:
 
     uint32_t instanceNode = m_sceneNodeManager->createNode();
 
+    GfxSceneInstanceResourceDesc instanceGeometryDesc = { };
+    instanceGeometryDesc.name = "Geometry";
+    instanceGeometryDesc.type = GfxSceneInstanceResourceType::eBufferAddress;
+
     GfxSceneInstanceDesc instanceDesc = { };
     instanceDesc.flags = GfxSceneInstanceFlag::eDeform;
     instanceDesc.drawCount = draws.size();
@@ -415,6 +419,9 @@ private:
     instanceDesc.jointCount = m_geometry->info.jointCount;
     instanceDesc.weightCount = m_geometry->info.morphTargetCount;
     instanceDesc.nodeIndex = instanceNode;
+    instanceDesc.resourceCount = 1;
+    instanceDesc.geometryResource = 0;
+    instanceDesc.resources = &instanceGeometryDesc;
     instanceDesc.aabb = m_geometry->info.aabb;
 
     if (!m_geometry->animations.empty()) {
@@ -428,7 +435,8 @@ private:
     m_sceneNodeManager->attachNodesToBvh(rootRef, 1, &instanceRef);
 
     m_sceneInstanceManager->allocateGpuBuffer(instanceRef);
-    m_sceneInstanceManager->updateGeometryBuffer(instanceRef, m_geometryBuffer->getGpuAddress());
+    m_sceneInstanceManager->updateResource(instanceRef, 0,
+      GfxSceneInstanceResource::fromBufferAddress(m_geometryBuffer->getGpuAddress()));
 
     m_sceneMaterialManager->addInstanceDraws(*m_sceneInstanceManager, instanceRef);
 

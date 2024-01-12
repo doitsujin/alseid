@@ -65,11 +65,14 @@ uint32_t csGetInstanceNodeRef() {
   if (updateFrameId >= globals.frameId)
     return 0u;
 
-  // Exit early if the instance does not have animations, or if the
-  // animation buffer is not resident.
-  if ((instance.flags & INSTANCE_ANIMATION_BIT) == 0u ||
-      uint64_t(instance.propertyBuffer) == uint64_t(0u) ||
-      uint64_t(instance.geometryBuffer) == uint64_t(0u))
+  // Exit early if the instance does not have animations or is not resident
+  if ((instance.flags & INSTANCE_ANIMATION_BIT) == 0u || instance.propertyBuffer == 0ul)
+    return 0u;
+
+  // Exit if the geometry buffer of the animation is not defined
+  InstanceHeader instanceInfo = InstanceDataBufferIn(instance.propertyBuffer).header;
+
+  if (instanceInfo.geometryVa == 0ul)
     return 0u;
 
   // Exit early if the instance does not have any active animations

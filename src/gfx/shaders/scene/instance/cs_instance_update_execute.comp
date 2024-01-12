@@ -213,36 +213,40 @@ void csTransformJoints(in GeometryRef geometryBuffer, uint64_t instanceBuffer, u
 }
 
 void csUpdateDeform(in InstanceNode instanceNode) {
-  InstanceDataBuffer instanceInfo = InstanceDataBuffer(instanceNode.propertyBuffer);
+  InstanceHeader instanceInfo = InstanceDataBuffer(instanceNode.propertyBuffer).header;
+
+  // Exit early if the geometry buffer is not resident
+  if (instanceInfo.geometryVa == 0ul)
+    return;
 
   // If animations are enabled for the instance but none are currently
   // defined as active, read the app-defined data directly.
   uint32_t hostSetOffset = 0u;
 
-  if (instanceInfo.header.animationCount != 0u) {
+  if (instanceInfo.animationCount != 0u) {
     InstanceAnimationBufferIn animationParameters = instanceGetAnimationProperties(instanceNode.propertyBuffer);
     hostSetOffset = animationParameters.header.animationCount == 0u ? 1u : 0u;
   }
 
   // Copy current absolute joint transforms to previous frame's array
-  for (uint i = 0; i < instanceInfo.header.jointCount; i += gl_WorkGroupSize.x) {
+  for (uint i = 0; i < instanceInfo.jointCount; i += gl_WorkGroupSize.x) {
     uint32_t index = i + gl_LocalInvocationIndex;
 
-    if (index < instanceInfo.header.jointCount) {
+    if (index < instanceInfo.jointCount) {
       Transform transform = instanceLoadJoint(instanceNode.propertyBuffer, 0, index);
       instanceStoreJoint(instanceNode.propertyBuffer, 1, index, transform);
     }
   }
 
   // Compute absolute joint transforms for the current frame
-  if (instanceInfo.header.jointCount > 0)
-    csTransformJoints(GeometryRef(instanceNode.geometryBuffer), instanceNode.propertyBuffer, hostSetOffset);
+  if (instanceInfo.jointCount > 0)
+    csTransformJoints(GeometryRef(instanceInfo.geometryVa), instanceNode.propertyBuffer, hostSetOffset);
 
   // Copy current absolute joint transforms to previous frame's array
-  for (uint i = 0; i < instanceInfo.header.weightCount; i += gl_WorkGroupSize.x) {
+  for (uint i = 0; i < instanceInfo.weightCount; i += gl_WorkGroupSize.x) {
     uint32_t index = i + gl_LocalInvocationIndex;
 
-    if (index < instanceInfo.header.weightCount) {
+    if (index < instanceInfo.weightCount) {
       int16_t curr = instanceLoadMorphTargetWeight(instanceNode.propertyBuffer, 2u + hostSetOffset, index);
       int16_t prev = instanceLoadMorphTargetWeight(instanceNode.propertyBuffer, 0u, index);
 
@@ -282,7 +286,6 @@ void csUpdateAssets(in InstanceNode instanceNode) {
       uvec2 srcData = resourceBuffer.entries[uint32_t(indirection.srcEntry)];
       bool useAssetList = (srcData.x & 1) != 0;
 
-      // Control flow is not expected to diverge much here since buffers are rare.
       if (uint32_t(indirection.type) == INSTANCE_RESOURCE_TYPE_BUFFER_ADDRESS) {
         uvec2 dstData = srcData;
 
@@ -311,6 +314,10 @@ void csUpdateAssets(in InstanceNode instanceNode) {
       }
     }
   }
+
+  // Ensure that we can properly read the geometry buffer address later
+  controlBarrier(gl_ScopeWorkgroup, gl_ScopeWorkgroup,
+    gl_StorageSemanticsBuffer, gl_SemanticsAcquireRelease);
 }
 
 
@@ -326,13 +333,14 @@ void csExecuteUpdate() {
   uint32_t dirtyFlags = getNodeTypeFromRef(nodeRef) << INSTANCE_DIRTY_SHIFT;
   uint32_t instanceIndex = getNodeIndexFromRef(nodeRef);
 
+  // Update assets first since this may make the geometry buffer resident
   InstanceNode instanceNode = globals.instanceBuffer.nodes[instanceIndex];
-
-  if ((dirtyFlags & INSTANCE_DIRTY_DEFORM_BIT) != 0)
-    csUpdateDeform(instanceNode);
 
   if ((dirtyFlags & INSTANCE_DIRTY_ASSETS_BIT) != 0)
     csUpdateAssets(instanceNode);
+
+  if ((dirtyFlags & INSTANCE_DIRTY_DEFORM_BIT) != 0)
+    csUpdateDeform(instanceNode);
 }
 
 #include "../../as_include_tail.glsl"

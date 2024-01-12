@@ -421,20 +421,6 @@ void GfxSceneInstanceManager::updateResource(
 }
 
 
-void GfxSceneInstanceManager::updateGeometryBuffer(
-        GfxSceneNodeRef               instance,
-        uint64_t                      geometryBuffer) {
-  uint32_t index = uint32_t(instance.index);
-
-  auto& nodeData = m_instanceNodeData[index];
-
-  if (nodeData.geometryBuffer != geometryBuffer) {
-    nodeData.geometryBuffer = geometryBuffer;
-    markDirty(index, GfxSceneInstanceDirtyFlag::eDirtyNode);
-  }
-}
-
-
 void GfxSceneInstanceManager::updateAssetList(
         GfxSceneNodeRef               instance,
         uint64_t                      assetListBuffer) {

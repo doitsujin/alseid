@@ -79,10 +79,11 @@ uint tsMain() {
   tsLoadNodeTransformsFromMemory(context, instanceNode.nodeIndex);
 
   // Load draw parameters
+  InstanceHeader instanceInfo = InstanceDataBufferIn(instanceNode.propertyBuffer).header;
   InstanceDraw draw = instanceLoadDraw(instanceNode.propertyBuffer, context.invocation.drawIndex);
 
   // Load mesh properties
-  GeometryRef geometry = GeometryRef(instanceNode.geometryBuffer);
+  GeometryRef geometry = GeometryRef(instanceInfo.geometryVa);
   Geometry geometryMetadata = geometry.geometry;
 
   Mesh mesh = geometry.meshes[uint32_t(draw.meshIndex)];
