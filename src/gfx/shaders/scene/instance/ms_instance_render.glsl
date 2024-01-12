@@ -365,8 +365,7 @@ JointInfluenceRef msGetJointInfluenceData(in MsContext context, in Meshlet meshl
 // Buffer that stores dual quaternions for each local joint. If
 // local joints are enabled for a meshlet, we can use this to
 // avoid having to laod and convert the transform multiple times.
-shared vec4 msJointDualQuatRShared[MESHLET_LOCAL_JOINT_COUNT];
-shared vec4 msJointDualQuatDShared[MESHLET_LOCAL_JOINT_COUNT];
+shared DualQuat msJointDualQuatShared[MESHLET_LOCAL_JOINT_COUNT];
 
 // Loads a joint transform from memory
 Transform msLoadJointTransform(in MsContext context, uint32_t jointSet, uint32_t jointIndex) {
@@ -387,43 +386,100 @@ DualQuat msLoadJointDualQuatFromMemory(in MsContext context, uint32_t jointSet, 
 
 // Loads a joint's dual-quaternion from LDS
 DualQuat msLoadJointDualQuat(in Meshlet meshlet, uint joint) {
-  return DualQuat(
-    msJointDualQuatRShared[joint],
-    msJointDualQuatDShared[joint]);
+  return msJointDualQuatShared[joint];
 }
+
+
+// Loads joint indices either into shared memory, or into a global
+// register which can be accessed like an array via subgroup ops.
+bool MsJointIndicesUseSubgroupPath = (gl_SubgroupSize == MESHLET_LOCAL_JOINT_COUNT);
+
+shared uint16_t msJointIndicesShared[MESHLET_LOCAL_JOINT_COUNT];
+
+uint32_t msJointIndicesGlobal;
+uint32_t msJointIndexMeshletGlobal;
+
+void msLoadLocalJointIndicesFromMemory(
+  in    MsContext                       context,
+  in    Meshlet                         meshlet) {
+  MeshSkinningRef skinningBuffer = MeshSkinningRef(context.invocation.skinningVa);
+
+  if (meshlet.jointIndex < 0xffffu) {
+    // Load joint index for the entire meshlet from skinning buffer.
+    // Local joints are skipped, do not bother initializing LDS for them.
+    msJointIndexMeshletGlobal = skinningBuffer.joints[context.invocation.meshInstance.jointIndex + meshlet.jointIndex];
+
+    if (MsJointIndicesUseSubgroupPath)
+      msJointIndicesGlobal = 0xffffu;
+  } else {
+    msJointIndexMeshletGlobal = 0xffffu;
+
+    uint jointCount = min(uint(meshlet.jointCount), MESHLET_LOCAL_JOINT_COUNT);
+
+    if (MsJointIndicesUseSubgroupPath) {
+      // Subgroup-optimized variant. Essentially treats the global variable
+      // as an array that we can read from with subgroup operations, which
+      // saves us some LDS.
+      uint32_t index = gl_SubgroupInvocationID;
+
+      msJointIndicesGlobal = 0xffffu;
+
+      if (index < jointCount) {
+        msJointIndicesGlobal = uint(MeshletRef(context.invocation.meshletVa).jointIndices[index]);
+        msJointIndicesGlobal = skinningBuffer.joints[context.invocation.meshInstance.jointIndex + msJointIndicesGlobal];
+      }
+    } else {
+      // LDS path, just stores joint indices in a shared array.
+      MS_LOOP_WORKGROUP(index, jointCount, MESHLET_LOCAL_JOINT_COUNT) {
+        uint32_t jointIndex = uint(MeshletRef(context.invocation.meshletVa).jointIndices[index]);
+        jointIndex = skinningBuffer.joints[context.invocation.meshInstance.jointIndex + jointIndex];
+        msJointIndicesShared[index] = uint16_t(jointIndex);
+      }
+
+      barrier();
+    }
+  }
+}
+
+
+// Loads local joint index for the given thread ID
+uint32_t msGetLocalJointIndex(uint32_t jointIndex) {
+  if (MsJointIndicesUseSubgroupPath)
+    return subgroupShuffle(msJointIndicesGlobal, jointIndex);
+  else
+    return msJointIndicesShared[jointIndex];
+}
+
 
 // Loads local joints into shared memory.
 void msLoadLocalJointsFromMemory(
   in    MsContext                       context,
   in    Meshlet                         meshlet,
         uint32_t                        jointSet) {
-  MeshSkinningRef skinningBuffer = MeshSkinningRef(context.invocation.skinningVa);
-  uint jointIndex = uint(meshlet.jointIndex);
-
-  if (jointIndex < context.invocation.instanceInfo.jointCount) {
+  if (meshlet.jointIndex < 0xffffu) {
     // If there's only one joint active for the entire meshlet, we do not need
     // to convert it into the dual-quaternion representation since there will
     // be no interpolation.
     if (gl_LocalInvocationIndex == 0) {
-      jointIndex = skinningBuffer.joints[jointIndex];
+      Transform transform = transIdentity();
 
-      Transform transform = msLoadJointTransform(context, jointSet, jointIndex);
-      msJointDualQuatRShared[0] = transform.rot;
-      msJointDualQuatDShared[0].xyz = transform.pos;
+      if (msJointIndexMeshletGlobal < context.invocation.instanceInfo.jointCount)
+        transform = msLoadJointTransform(context, jointSet, msJointIndexMeshletGlobal);
+
+      msJointDualQuatShared[0] = DualQuat(transform.rot, vec4(transform.pos, 0.0f));
     }
   } else {
     uint jointCount = min(uint(meshlet.jointCount), MESHLET_LOCAL_JOINT_COUNT);
 
     MS_LOOP_WORKGROUP(index, jointCount, MESHLET_LOCAL_JOINT_COUNT) {
-      jointIndex = uint(MeshletRef(context.invocation.meshletVa).jointIndices[index]);
+      uint32_t jointIndex = msGetLocalJointIndex(index);
 
-      if (jointIndex < context.invocation.instanceInfo.jointCount) {
-        jointIndex = skinningBuffer.joints[context.invocation.meshInstance.jointIndex + jointIndex];
+      DualQuat dq = dualQuatIdentity();
 
-        DualQuat dq = msLoadJointDualQuatFromMemory(context, jointSet, jointIndex);
-        msJointDualQuatRShared[index] = dq.r;
-        msJointDualQuatDShared[index] = dq.d;
-      }
+      if (jointIndex < context.invocation.instanceInfo.jointCount)
+        dq = msLoadJointDualQuatFromMemory(context, jointSet, jointIndex);
+
+      msJointDualQuatShared[index] = dq;
     }
   }
 }
@@ -432,14 +488,12 @@ void msLoadLocalJointsFromMemory(
 // essentially iterate over the per-vertex list of joint influences
 // and interpolate the dual quaternions using the joint weights.
 Transform msComputeJointTransform(in MsContext context, in Meshlet meshlet, in JointInfluenceRef jointData, uint vertexIndex) {
-  uint jointIndex = uint(meshlet.jointIndex);
-
-  if (jointIndex < 0xffffu) {
+  if (uint32_t(meshlet.jointIndex) < 0xffffu) {
     // We stored the raw transform for this joint in shared memory
     // without conversion, so just load it as-is.
     Transform result;
-    result.rot = msJointDualQuatRShared[0];
-    result.pos = msJointDualQuatDShared[0].xyz;
+    result.rot = msJointDualQuatShared[0].r;
+    result.pos = msJointDualQuatShared[0].d.xyz;
     return result;
   } else {
     // If the weight of the first joint is zero, the vertex is not
@@ -857,6 +911,7 @@ void msMain() {
   // If local joints are used for this meshlet, we will need to load
   // all joints into shared memory so we can reuse them later on.
   JointInfluenceRef jointData = msGetJointInfluenceData(context, meshlet);
+  msLoadLocalJointIndicesFromMemory(context, meshlet);
 #endif // MS_NO_SKINNING
 
 #ifndef MS_NO_MOTION_VECTORS
