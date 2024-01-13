@@ -461,11 +461,11 @@ void csTraverseBvh() {
 
   // Initialize visible pass mask with a subset of passes that the parent
   // node was visible in, and cull passes from that list from there.
-  uint32_t visibility = (bvhNodeItem.partialVisibilityMask & (1u << tid)) != 0u
-    ? NODE_VISIBILITY_FULL
-    : NODE_VISIBILITY_NONE;
-
   bool bvhAabbValid = all(lessThan(bvhAabb.lo, bvhAabb.hi));
+
+  uint32_t visibility = (bvhNodeItem.partialVisibilityMask & (1u << tid)) != 0u
+    ? (bvhAabbValid ? NODE_VISIBILITY_FULL : NODE_VISIBILITY_PART)
+    : (NODE_VISIBILITY_NONE);
 
   if (bvhAabbValid) {
     // Distance-cull against current render pass if its view distance is limited.
@@ -501,9 +501,6 @@ void csTraverseBvh() {
     }
 
     visibility = csTestFrustumAabbCooperative(tid, visibility, passInfo, bvhAabb);
-  } else {
-    // Assume partial visibility for any node with empty BVH
-    visibility = NODE_VISIBILITY_PART;
   }
 
   // Compute workgroup-uniform visibility mask from the two state flags
