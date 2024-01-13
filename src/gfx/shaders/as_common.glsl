@@ -34,6 +34,7 @@ const uint MsFlags = 0u;
 // full subgroup. Useful to enable certain optimizations.
 #if defined(STAGE_COMP) || defined(STAGE_MESH) || defined(STAGE_TASK)
 #define IsSingleSubgroup (gl_SubgroupSize == gl_WorkGroupSize.x)
+#define IsFullSubgroup (gl_SubgroupSize <= gl_WorkGroupSize.x)
 #endif
 
 

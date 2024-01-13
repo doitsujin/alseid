@@ -1,7 +1,11 @@
 #ifndef AS_SCENE_NODE_TRANSFORM_H
 #define AS_SCENE_NODE_TRANSFORM_H
 
-#define MAX_NODE_DEPTH (16u)
+// Pick maximum node depth in such a way that the shader can use shared
+// memory for other purposes. This way, 1.75kiB are used for each set of
+// 32 threads.
+#define MAX_NODE_DEPTH (14u)
+
 
 // Helper function to load a sub-transform for a given node.
 // Takes the node reference rather than the actual node index.

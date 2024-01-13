@@ -9,6 +9,10 @@
 
 #define CS_MAIN csTraverseBvh
 
+#define NODE_VISIBILITY_NONE (0u)
+#define NODE_VISIBILITY_PART (1u)
+#define NODE_VISIBILITY_FULL (2u)
+
 // Prefer small workgroups. Most of the code in this shader only scales
 // with the active render pass count, which is expected to be low.
 // BVH node chains are designed to operate on this assumption as well.
@@ -25,8 +29,10 @@ layout(local_size_x = CS_WORKGROUP_SIZE) in;
 
 #include "as_group.glsl"
 
+#define PASS_INDEX_INVALID (0xffffu)
 
-// Buffer pointers and parameters
+
+// Shader parameters
 layout(push_constant)
 uniform PushData {
   uint64_t  passBuffer;
@@ -37,6 +43,363 @@ uniform PushData {
 };
 
 
+// Reduced render pass data. This is used so that we do not
+// end up accidentally loading pass properties we don't need.
+struct CsBvhTraversalPassInfo {
+  uint32_t      index;
+  uint32_t      flags;
+  Transform     transform;
+  float         viewDistance;
+  f32vec4       mirrorPlane;
+};
+
+
+// Default-initializes render pass data.
+CsBvhTraversalPassInfo csInitPassInfo() {
+  CsBvhTraversalPassInfo result;
+  result.index = PASS_INDEX_INVALID;
+  result.flags = 0;
+  result.transform = transIdentity();
+  result.viewDistance = 0.0f;
+  result.mirrorPlane = vec4(0.0f);
+  return result;
+}
+
+
+// Convenience method to load relevant render pass properties from memory.
+CsBvhTraversalPassInfo csLoadPassInfoFromMemory(
+        uint32_t                      passIndex,
+  in    Transform                     bvhTransform) {
+  PassInfoBufferIn passBuffer = PassInfoBufferIn(passBuffer);
+
+  PassInfo pass = passBuffer.passes[passIndex];
+
+  CsBvhTraversalPassInfo result;
+  result.index = passIndex;
+  result.flags = pass.flags;
+  result.transform = transChain(pass.currTransform.transform, bvhTransform);
+  result.viewDistance = pass.viewDistanceLimit;
+  result.mirrorPlane = pass.currMirrorPlane;
+  return result;
+}
+
+
+// Convenience method to read render pass properties from another thread.
+CsBvhTraversalPassInfo csShufflePassInfo(
+  in    CsBvhTraversalPassInfo        pass,
+        uint32_t                      thread) {
+  CsBvhTraversalPassInfo result;
+  result.index = subgroupShuffle(pass.index, thread);
+  result.flags = subgroupShuffle(pass.flags, thread);
+  result.transform.rot = subgroupShuffle(pass.transform.rot, thread);
+  result.transform.pos = subgroupShuffle(pass.transform.pos, thread);
+  result.viewDistance = subgroupShuffle(pass.viewDistance, thread);
+  result.mirrorPlane = subgroupShuffle(pass.mirrorPlane, thread);
+  return result;
+}
+
+
+// Convenience method to emulate subgroup broadcast at a workgroup
+// level, in case the shader is run with multiple subgroups.
+shared uint32_t csHelperShared;
+
+uint32_t csWorkgroupBroadcast(
+        uint32_t                      tid,
+        uint32_t                      value,
+        uint32_t                      index) {
+  if (IsSingleSubgroup) {
+    return subgroupBroadcast(value, index);
+  } else {
+    if (tid == index)
+      csHelperShared = value;
+
+    barrier();
+
+    value = csHelperShared;
+    barrier();
+
+    return value;
+  }
+}
+
+// Convenience method to emulate subgroup ballot at a workgroup
+// level, in case the shader is run with multiple subgroups.
+uint32_t csWorkgroupBallot(
+        uint32_t                      tid,
+        bool                          value) {
+  if (IsSingleSubgroup) {
+    return subgroupBallot(value).x;
+  } else {
+    if (tid == 0u)
+      csHelperShared = 0u;
+    barrier();
+
+    uint32_t ballot = subgroupOr((value ? 1u : 0u) << tid);
+
+    if (subgroupElect())
+      atomicOr(csHelperShared, ballot);
+
+    barrier();
+
+    ballot = csHelperShared;
+    barrier();
+
+    return ballot;
+  }
+}
+
+
+// Convenience method to transform a model space vertex to view space,
+// including any mirroring etc. from the render pass.
+vec3 csTransformVertex(
+  in    CsBvhTraversalPassInfo        passInfo,
+        vec3                          vertex) {
+  vertex = transApply(passInfo.transform, vertex);
+
+  if ((passInfo.flags & RENDER_PASS_USES_MIRROR_PLANE_BIT) != 0u)
+    vertex = planeMirror(passInfo.mirrorPlane, vertex);
+
+  return vertex;
+}
+
+
+// Computes bit mask for a single frustum plane. If the vertex passes
+// the test, the corresponding bit in the will be set in the result.
+uint32_t csTestFrustumPlane(
+  in    ViewFrustum                   frustum,
+        vec3                          vertex,
+        uint32_t                      plane) {
+  bool result = planeDistanceToPoint(frustum.planes[plane], vertex) >= 0.0f;
+  return (result ? 1u : 0u) << plane;
+}
+
+
+// Computes final visibility value for a pass, using the per-plane
+// frustum test results of 8 consecutive threads.
+#define FRUSTUM_TEST_SIZE (CS_WORKGROUP_SIZE / 8u)
+
+shared uvec2 csEvalMaskShared[FRUSTUM_TEST_SIZE];
+
+uint32_t csEvalFrustumTestResults(
+        uint32_t                      tid,
+        uint32_t                      results) {
+  uint32_t partMask;
+  uint32_t fullMask;
+
+  if (IsFullSubgroup && gl_SubgroupSize >= 8) {
+    // Super fast path, we can do a clustered or to work out whether
+    // any vertices failed all planes, and a clustered and to check
+    // whether any vertices failed any planes.
+    partMask = subgroupClusteredOr(results, 8);
+    fullMask = subgroupClusteredAnd(results, 8);
+  } else {
+    // Slow path, need to go through LDS
+    uint32_t idx = tid >> 3;
+
+    if (tid < FRUSTUM_TEST_SIZE)
+      csEvalMaskShared[tid] = uvec2(0u);
+    barrier();
+
+    atomicOr(csEvalMaskShared[idx].x, results);
+    atomicAnd(csEvalMaskShared[idx].y, results);
+    barrier();
+
+    // Can skip the barrier here since the caller will insert one
+    partMask = csEvalMaskShared[idx].x;
+    fullMask = csEvalMaskShared[idx].y;
+  }
+
+  return (fullMask == 0x3f) ? NODE_VISIBILITY_FULL
+       : (partMask == 0x3f) ? NODE_VISIBILITY_PART
+       : NODE_VISIBILITY_NONE;
+}
+
+
+// Cooperatively test the BVH's bounding volume against the view
+// frustum for all non-cube map passes that the node is still at
+// least partially visible in.
+shared uint8_t csFrustumTestResultsShared[CS_WORKGROUP_SIZE];
+shared uint32_t csFrustumPassIndicesShared[FRUSTUM_TEST_SIZE];
+
+shared CsBvhTraversalPassInfo csFrustumPassInfoShared[FRUSTUM_TEST_SIZE];
+
+uint32_t csTestFrustumAabbCooperative(
+        uint32_t                      tid,
+        uint32_t                      visibilityIn,
+  in    CsBvhTraversalPassInfo        pass,
+  in    Aabb                          aabb) {
+  PassInfoBufferIn passInfos = PassInfoBufferIn(passBuffer);
+
+  // Initialize frustum test info. No barrier since we'll insert
+  // one before accessing the array again anyway.
+  csFrustumTestResultsShared[tid] = uint8_t(NODE_VISIBILITY_FULL);
+
+  // Only perform frustum testing if the result is meaningful
+  bool performTest = (visibilityIn > NODE_VISIBILITY_NONE) &&
+    ((pass.flags & RENDER_PASS_IS_CUBE_MAP_BIT) == 0);
+
+  // Compute bit mask of passes to perform frustum testing for.
+  // The implementation will use 8 threads per pass.
+  uint32_t frustumTestMask = csWorkgroupBallot(tid, performTest);
+
+  while (frustumTestMask != 0u) {
+    // Initialize thread index array
+    if (tid < FRUSTUM_TEST_SIZE)
+      csFrustumPassIndicesShared[tid] = CS_WORKGROUP_SIZE;
+
+    // Check whether the pass of the current thread is going to
+    // be processed in the current iteration.
+    uint32_t passBits = bitCount(frustumTestMask & ((1u << tid) - 1u));
+
+    bool testIteration = performTest && (passBits < FRUSTUM_TEST_SIZE);
+    frustumTestMask &= ~csWorkgroupBallot(tid, testIteration);
+
+    barrier();
+
+    // Write thread indices to shared memory, as well as the
+    // actual render pass properties if necessary.
+    if (testIteration) {
+      csFrustumPassIndicesShared[passBits] = tid;
+
+      if (!IsSingleSubgroup)
+        csFrustumPassInfoShared[tid] = pass;
+    }
+
+    barrier();
+
+    // Load pass to process in the current iteration
+    uint32_t passIndex = csFrustumPassIndicesShared[tid >> 3u];
+    uint32_t testResults = 0u;
+
+    if (passIndex < CS_WORKGROUP_SIZE) {
+      // Load view frustum for the current pass from memory
+      CsBvhTraversalPassInfo passInfo;
+      
+      if (IsSingleSubgroup)
+        passInfo = csShufflePassInfo(pass, passIndex);
+      else
+        passInfo = csFrustumPassInfoShared[tid >> 3u];
+
+      ViewFrustum frustum = passInfos.passes[passInfo.index].frustum;
+
+      // Compute view space position of selected bounding box vertex
+      vec3 vertex = aabbComputeVertex(aabb, tid & 0x7u);
+      vertex = csTransformVertex(passInfo, vertex);
+
+      // Compute bit mask of planes that the current vertex is on
+      // the correct side on.
+      testResults =
+        csTestFrustumPlane(frustum, vertex, 0) |
+        csTestFrustumPlane(frustum, vertex, 1) |
+        csTestFrustumPlane(frustum, vertex, 2) |
+        csTestFrustumPlane(frustum, vertex, 3) |
+        csTestFrustumPlane(frustum, vertex, 4) |
+        csTestFrustumPlane(frustum, vertex, 5);
+    }
+
+    // Merge results from threads working on the same pass and
+    // compute the final visibility status.
+    uint32_t visibility = csEvalFrustumTestResults(tid, testResults);
+
+    if ((passIndex < CS_WORKGROUP_SIZE) && ((tid & 0x7u) == 0u))
+      csFrustumTestResultsShared[passIndex] = uint8_t(visibility);
+
+    barrier();
+  }
+
+  // Return lowest common visibility status for this pass
+  uint32_t visibility = csFrustumTestResultsShared[tid];
+  return min(visibility, visibilityIn);
+}
+
+
+// Tests visibility based on view distance.
+uint32_t csTestViewDistance(
+        Aabb                          aabb,
+  in    CsBvhTraversalPassInfo        passInfo,
+        float                         maxDistance) {
+  float maxDistSq = maxDistance * maxDistance;
+
+  // Scale bounding box with the transform as needed
+  float scale = quatGetScale(passInfo.transform.rot);
+
+  aabb.lo *= scale;
+  aabb.hi *= scale;
+
+  // Compute the view origin relative to the bounding box.
+  Transform inverseTransform = transInverse(passInfo.transform);
+  vec3 pos = inverseTransform.pos;
+
+  if ((passInfo.flags & RENDER_PASS_USES_MIRROR_PLANE_BIT) != 0u) {
+    // If the pass is mirrored, we need to do reverse the mirroring
+    // first by essentially mirroring a null vector, and then
+    // apply the inverse transform to it.
+    pos = -2.0f * passInfo.mirrorPlane.w * passInfo.mirrorPlane.xyz;
+    pos = transApply(inverseTransform, pos);
+  }
+
+  // Compute point on the box that is furthest away from the view.
+  // This is always a corner of the box.
+  vec3 far = max(abs(aabb.lo - pos), abs(aabb.hi - pos));
+  float farDistSq = dot(far, far);
+
+  if (farDistSq < maxDistSq)
+    return NODE_VISIBILITY_FULL;
+
+  // Compute point on the box that is closest to the view.
+  vec3 rel = (pos - aabb.lo) / aabb.hi;
+  vec3 near = mix(aabb.lo, aabb.hi, clamp(rel, 0.0f, 1.0f)) - pos;
+  float nearDistSq = dot(near, near);
+
+  return nearDistSq < maxDistSq
+    ? NODE_VISIBILITY_PART
+    : NODE_VISIBILITY_NONE;
+}
+
+
+// Computes pass masks for partial and full visibility given the
+// visibility status of a node for each thread representing a pass.
+shared uvec2 csVisibilityMaskShared;
+
+uvec2 csComputeVisibilityMask(uint32_t tid, uint32_t visibility) {
+  uvec2 mask;
+
+  bool part = visibility >= NODE_VISIBILITY_PART;
+  bool full = visibility >= NODE_VISIBILITY_FULL;
+
+  if (IsFullSubgroup) {
+    mask = uvec2(
+      subgroupBallot(part).x,
+      subgroupBallot(full).x);
+
+    if (!IsSingleSubgroup)
+      mask <<= gl_SubgroupID * gl_SubgroupSize;
+  } else {
+    mask = subgroupOr(uvec2(
+      part ? 1u << tid : 0u,
+      full ? 1u << tid : 0u));
+  }
+
+  if (!IsSingleSubgroup) {
+    if (tid == 0u)
+      csVisibilityMaskShared = uvec2(0u);
+    barrier();
+
+    if (subgroupElect()) {
+      atomicOr(csVisibilityMaskShared.x, mask.x);
+      atomicOr(csVisibilityMaskShared.y, mask.y);
+    }
+
+    barrier();
+
+    mask = csVisibilityMaskShared;
+    barrier();
+  }
+
+  return mask;
+}
+
+
 void csTraverseBvh() {
   // Unpack 16-bit shader arguments here, this is only necessary because
   // we cannot require support for 16-bit push constant storage.
@@ -45,12 +408,9 @@ void csTraverseBvh() {
 
   // On the subgroup-optimized path, we make some assumptions about
   // the layout of invocations, so use the subgroup invocation ID.
-  uint32_t tid = IsSingleSubgroup
-    ? gl_SubgroupInvocationID
+  uint32_t tid = IsFullSubgroup
+    ? gl_SubgroupInvocationID + gl_SubgroupID * gl_SubgroupSize
     : gl_LocalInvocationIndex;
-
-  // Render pass info buffer
-  PassInfoBufferIn passInfos = PassInfoBufferIn(passBuffer);
 
   // Node property and transform buffers, used to load the BVH transform as well
   // as to update child node transforms.
@@ -65,8 +425,10 @@ void csTraverseBvh() {
   // BVH node list, both for processing the current set of nodes as well as
   // generating a list for the next iteration.
   PassGroupBuffer group = PassGroupBuffer(groupBuffer);
-
   PassGroupBvhList bvhList = PassGroupBvhList(groupBuffer + group.bvhListOffset);
+
+  uint32_t groupPassCount = group.passCount;
+  uint32_t groupPassIndex = group.passIndices[tid];
 
   // BVH visibility buffer. Indexed via the actual BVH index from the
   // node reference, stores occlusion test results from prior frames.
@@ -80,16 +442,72 @@ void csTraverseBvh() {
   uint32_t bvhIndex = getNodeIndexFromRef(bvhNodeItem.nodeRef);
   uint32_t bvhNode = bvhNodes.nodes[bvhIndex].nodeIndex;
 
+  Aabb bvhAabb = Aabb(
+    vec3(bvhNodes.nodes[bvhIndex].aabb.lo),
+    vec3(bvhNodes.nodes[bvhIndex].aabb.hi));
+
+  float bvhDistance = bvhNodes.nodes[bvhIndex].maxDistance;
+
   // Load absolute BVH transform. The previous iteration will have updated
   // transforms for all relevant BVH nodes at this point, so this is safe.
   uint32_t transformIndex = bvhNode + (frameId & 1u) * scene.nodeCount;
   Transform bvhTransform = nodeTransforms.nodeTransforms[transformIndex].absoluteTransform;
 
-  // TODO implement culling
-  uint32_t passMask = (2u << (group.passCount - 1u)) - 1u;
-  passMask &= bvhNodeItem.partialVisibilityMask;
+  // Load render pass infos from memory.
+  CsBvhTraversalPassInfo passInfo = csInitPassInfo();
 
-  u32vec2 visibilityMask = u32vec2(passMask, 0u);
+  if (tid < groupPassCount)
+    passInfo = csLoadPassInfoFromMemory(groupPassIndex, bvhTransform);
+
+  // Initialize visible pass mask with a subset of passes that the parent
+  // node was visible in, and cull passes from that list from there.
+  uint32_t visibility = (bvhNodeItem.partialVisibilityMask & (1u << tid)) != 0u
+    ? NODE_VISIBILITY_FULL
+    : NODE_VISIBILITY_NONE;
+
+  bool bvhAabbValid = all(lessThan(bvhAabb.lo, bvhAabb.hi));
+
+  if (bvhAabbValid) {
+    // Distance-cull against current render pass if its view distance is limited.
+    // If the current pass is the reference pass for distance culling, which is
+    // usually the case for the main render pass, we can probe the BVH distance.
+    float testDistance = passInfo.viewDistance;
+
+    if (passInfo.index == distanceCullingPass && bvhDistance > 0.0f)
+      testDistance = testDistance > 0.0f ? min(testDistance, bvhDistance) : bvhDistance;
+
+    if (visibility > NODE_VISIBILITY_NONE && testDistance > 0.0f)
+      visibility = csTestViewDistance(bvhAabb, passInfo, testDistance);
+
+    if (bvhDistance > 0.0f && distanceCullingPass < PASS_INDEX_INVALID) {
+      // If any thread already processed the reference pass and the shader is
+      // running on a single subgroup, we can trivially broadcast the result.
+      uint32_t passIndexEqMask = csWorkgroupBallot(tid, passInfo.index == distanceCullingPass);
+
+      if (passIndexEqMask != 0u) {
+        visibility = min(visibility, csWorkgroupBroadcast(
+          tid, visibility, findLSB(passIndexEqMask)));
+      } else {
+        // Otherwise, we need to do an additional visibility test, loading
+        // the reference pass from memory.
+        CsBvhTraversalPassInfo refPass = csLoadPassInfoFromMemory(distanceCullingPass, bvhTransform);
+
+        if (refPass.viewDistance > 0.0f)
+          refPass.viewDistance = min(refPass.viewDistance, bvhDistance);
+
+        visibility = min(visibility, csTestViewDistance(
+          bvhAabb, refPass, refPass.viewDistance));
+      }
+    }
+
+    visibility = csTestFrustumAabbCooperative(tid, visibility, passInfo, bvhAabb);
+  } else {
+    // Assume partial visibility for any node with empty BVH
+    visibility = NODE_VISIBILITY_PART;
+  }
+
+  // Compute workgroup-uniform visibility mask from the two state flags
+  u32vec2 visibilityMask = csComputeVisibilityMask(tid, visibility);
 
   // Combine visibility with occlusion test results from the previous frame,
   // and write back occlusion test properties for the current frame. Ensure
@@ -97,19 +515,22 @@ void csTraverseBvh() {
   // frames, or otherwise nodes will stay invisible indefinitely.
   PassGroupBvhVisibility bvhVisibility = bvhVisibilityBuffer.bvhs[bvhIndex];
 
-  // TODO also apply the per-pass ignore mask
+  uint32_t occlusionTestIgnoreMask = group.ignoreOcclusionTestMask |
+    csWorkgroupBallot(tid, (passInfo.flags & RENDER_PASS_IGNORE_OCCLUSION_TEST_BIT) != 0u);
+
   uint32_t occlusionTestFailedMask =  bvhVisibility.prevFrameOcclusionTestPerformedMask
                                    & ~bvhVisibility.prevFrameOcclusionTestPassedMask
-                                   & ~group.ignoreOcclusionTestMask;
+                                   & ~occlusionTestIgnoreMask;
 
-  // TODO AND this with occlusion test mask
   bvhVisibility.prevFrameOcclusionTestPerformedMask = visibilityMask.x;
   bvhVisibility.prevFrameOcclusionTestPassedMask = 0u;
 
-  visibilityMask &= uvec2(~occlusionTestFailedMask);
-
   if (tid == 0u)
     bvhVisibilityBuffer.bvhs[bvhIndex] = bvhVisibility;
+
+  // Remove passes where the previous frame's occlusion test failed from the
+  // visibility mask.
+  visibilityMask &= ~occlusionTestFailedMask;
 
   // If the BVH is partially visible in any enabled pass, process child nodes,
   // update their absolute transform, and make them resident as necessary.

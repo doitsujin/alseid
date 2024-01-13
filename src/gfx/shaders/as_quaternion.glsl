@@ -187,7 +187,7 @@ Transform transSlerp(in Transform a, in Transform b, float w) {
 
 // Inverts normalized transform
 Transform transInverse(in Transform a) {
-  vec4 rot = quatConjugate(a.rot);
+  vec4 rot = quatInverse(a.rot);
   return Transform(rot, quatApply(rot, -a.pos));
 }
 
