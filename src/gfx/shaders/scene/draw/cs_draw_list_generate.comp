@@ -65,6 +65,39 @@ vec3 csTransformVertex(
 }
 
 
+// Helper function to perform distance culling against a bounding box
+bool csTestViewDistance(
+        Aabb                          aabb,
+  in    PassInfo                      passInfo,
+  in    Transform                     transform) {
+  float maxDistSq = passInfo.viewDistanceLimit * passInfo.viewDistanceLimit;
+
+  // Scale bounding box with the transform as needed
+  float scale = quatGetScale(transform.rot);
+
+  aabb.lo *= scale;
+  aabb.hi *= scale;
+
+  // Compute the view origin relative to the bounding box.
+  Transform inverseTransform = transInverse(transform);
+  vec3 pos = inverseTransform.pos;
+
+  if ((passInfo.flags & RENDER_PASS_USES_MIRROR_PLANE_BIT) != 0u) {
+    // If the pass is mirrored, we need to do reverse the mirroring
+    // first by essentially mirroring a null vector, and then
+    // apply the inverse transform to it.
+    pos = -2.0f * passInfo.currMirrorPlane.w * passInfo.currMirrorPlane.xyz;
+    pos = transApply(inverseTransform, pos);
+  }
+
+  // Compute point on the box that is closest to the view.
+  vec3 rel = (pos - aabb.lo) / aabb.hi;
+  vec3 near = mix(aabb.lo, aabb.hi, clamp(rel, 0.0f, 1.0f)) - pos;
+
+  return dot(near, near) < maxDistSq;
+}
+
+
 // Helper function to compute the view distance for the purpose of LOD selection.
 // Uses the center of geometry's static AABB rather than the adjusted AABB for
 // consistency regardless of animation.
@@ -328,31 +361,15 @@ void csGenerateDraws() {
             vec3(instanceInfo.aabb.lo),
             vec3(instanceInfo.aabb.hi));
 
-          float aabbRadiusSq = dot(aabb.hi - aabb.lo, aabb.hi - aabb.lo) * 0.5f;
-
-          if (aabbRadiusSq > 0.0f) {
+          if (all(lessThan(aabb.lo, aabb.hi))) {
             // Compute final view transform. Used for both distance and frustum tests.
             Transform viewTransform = transChainNorm(passInfo.currTransform.transform, worldTransform);
-
-            // Adjust bounding box size by transform scaling factor
-            float aabbScale = quatGetScale(viewTransform.rot);
-            aabbRadiusSq *= aabbScale * aabbScale;
-
-            // If the current render pass has a limited view distance, test the distance to
-            // the bounding sphere around the transformed AABB. This is conservative, but
-            // is reasonably fast. Further culling can happen at a per-meshlet level.
-            float maxDistance = passInfo.viewDistanceLimit;
-
-            if (maxDistance > 0.0f) {
-              vec3 aabbCenter = csTransformVertex(passInfo, viewTransform, aabbComputeCenter(aabb));
-              isVisible = testSphereDistance(aabbCenter, aabbRadiusSq, maxDistance * maxDistance);
-            }
 
             // Perform frustum culling. The idea is to test every transformed vertex of
             // the bounding box against the view frustum for non-cube map passes. Control
             // flow is expected to be relatively uniform up until this point; do not try
             // to parallelize instance-level culling any further.
-            if ((passInfo.flags & RENDER_PASS_IS_CUBE_MAP_BIT) == 0u && isVisible) {
+            if ((passInfo.flags & RENDER_PASS_IS_CUBE_MAP_BIT) == 0u) {
               vec3 v0 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(aabb, 0));
               vec3 v1 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(aabb, 1));
               vec3 v2 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(aabb, 2));
@@ -380,6 +397,11 @@ void csGenerateDraws() {
                 isVisible = max(max(d012, d345), d67) >= 0.0f;
               }
             }
+
+            // If the current render pass has a limited view distance, test
+            // the distance to the closest point on the bounding box.
+            if (isVisible && passInfo.viewDistanceLimit > 0.0f)
+              isVisible = csTestViewDistance(aabb, passInfo, viewTransform);
           }
 
           if (isVisible)
