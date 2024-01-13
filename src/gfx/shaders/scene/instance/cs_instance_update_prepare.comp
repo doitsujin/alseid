@@ -58,7 +58,7 @@ void csPrepareUpdate() {
 
   // Also disable motion vectors if the previous frame's node transform is not
   // up to date. This can happen if the containing BVH node got culled.
-  SceneHeader scene = SceneHeader(sceneBuffer);
+  SceneHeader scene = SceneHeaderIn(sceneBuffer).header;
   SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(sceneBuffer + scene.nodeTransformOffset);
 
   uvec2 nodeTransformIndices = nodeComputeTransformIndices(instance.nodeIndex, scene.nodeCount, frameId);

@@ -107,7 +107,7 @@ void csExecutePassUpdates() {
   uint32_t passIndex = ~0u;
 
   // Load scene buffer pointers
-  SceneHeader sceneHeader = SceneHeader(globals.sceneVa);
+  SceneHeader sceneHeader = SceneHeaderIn(globals.sceneVa).header;
   SceneNodeInfoBuffer nodeInfos = SceneNodeInfoBuffer(globals.sceneVa + sceneHeader.nodeParameterOffset);
   SceneNodeTransformBufferOut nodeTransforms = SceneNodeTransformBufferOut(globals.sceneVa + sceneHeader.nodeTransformOffset);
 

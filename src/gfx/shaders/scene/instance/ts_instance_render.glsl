@@ -47,7 +47,7 @@ shared Transform tsNodeTransformsShared[2];
 void tsLoadNodeTransformsFromMemory(in TsContext context, uint32_t nodeIndex) {
   uint32_t tid = gl_LocalInvocationIndex;
 
-  SceneHeader scene = SceneHeader(context.sceneVa); 
+  SceneHeader scene = SceneHeaderIn(context.sceneVa).header;
   SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(context.sceneVa + scene.nodeTransformOffset);
 
   if (tid < 2u) {

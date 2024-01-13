@@ -293,7 +293,7 @@ void csGenerateDraws() {
     InstanceNode instance = csLoadInstanceNode(instanceDrawInfo.instanceIndex);
     InstanceHeader instanceInfo = InstanceDataBufferIn(instance.propertyBuffer).header;
 
-    SceneHeader scene = SceneHeader(globals.sceneVa);
+    SceneHeader scene = SceneHeaderIn(globals.sceneVa).header;
 
     if (instanceInfo.geometryVa != 0ul) {
       uint32_t transformIndex = nodeComputeTransformIndices(instance.nodeIndex, scene.nodeCount, globals.frameId).x;

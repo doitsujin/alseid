@@ -54,7 +54,7 @@ void csInitPassBuffer() {
 
   // Copy all root nodes to the first BVH node list, while making no
   // assumptions about their visibility. Also update the transforms.
-  SceneHeader scene = SceneHeader(sceneBuffer);
+  SceneHeader scene = SceneHeaderIn(sceneBuffer).header;
   SceneNodeInfoBuffer nodeInfos = SceneNodeInfoBuffer(sceneBuffer + scene.nodeParameterOffset);
   SceneNodeTransformBufferOut nodeTransforms = SceneNodeTransformBufferOut(sceneBuffer + scene.nodeTransformOffset);
   SceneBvhNodeBuffer bvhNodes = SceneBvhNodeBuffer(sceneBuffer + scene.bvhOffset);

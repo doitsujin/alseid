@@ -92,13 +92,17 @@ readonly buffer SceneBvhNodeBuffer {
 
 // Scene buffer info. Stores a bunch of offsets to various node lists
 // that can be both written and read by various compute passes.
-layout(buffer_reference, buffer_reference_align = 16, scalar)
-readonly buffer SceneHeader {
+struct SceneHeader {
   uint32_t  nodeParameterOffset;
   uint32_t  nodeTransformOffset;
   uint32_t  nodeCount;
   uint32_t  bvhOffset;
   uint32_t  bvhCount;
+};
+
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+readonly buffer SceneHeaderIn {
+  SceneHeader header;
 };
 
 #endif /* AS_SCENE_H */

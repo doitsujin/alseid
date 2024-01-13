@@ -54,7 +54,7 @@ void csTraverseBvh() {
 
   // Node property and transform buffers, used to load the BVH transform as well
   // as to update child node transforms.
-  SceneHeader scene = SceneHeader(sceneBuffer); 
+  SceneHeader scene = SceneHeaderIn(sceneBuffer).header;
 
   SceneNodeInfoBuffer nodeInfos = SceneNodeInfoBuffer(sceneBuffer + scene.nodeParameterOffset);
   SceneNodeTransformBufferOut nodeTransforms = SceneNodeTransformBufferOut(sceneBuffer + scene.nodeTransformOffset);
