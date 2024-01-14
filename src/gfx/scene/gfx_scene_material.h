@@ -131,7 +131,9 @@ public:
   /**
    * \brief Marks the end of rendering with this material
    *
-   * 
+   * Used for debugging purposes only. Must be called if and
+   * only if the corresponding begin command succeeded.
+   * \param [in] context Context object
    */
   void end(
     const GfxContext&                   context) const;
