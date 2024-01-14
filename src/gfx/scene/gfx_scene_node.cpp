@@ -224,6 +224,10 @@ GfxSceneNodeRef GfxSceneNodeManager::createBvhNode(
   bvhData.aabb = desc.aabb;
   bvhData.maxDistance = desc.maxDistance;
 
+  // Update node count manually. This is necessary since
+  // chained nodes will otherwise not be accounted for.
+  atomicMax(m_nodeCounts[uint32_t(GfxSceneNodeType::eBvh)], index + 1u);
+
   // Mark node as dirty to update all the BVH bits
   markDirty(bvhData.nodeIndex,
     GfxSceneNodeDirtyFlag::eDirtyBvhNode |
@@ -650,6 +654,9 @@ void GfxSceneNodeManager::insertIntoNodeMap(
         uint32_t                      index) {
   if (reference.type != GfxSceneNodeType::eNone)
     m_nodeMap[uint32_t(reference.type)].emplace(uint32_t(reference.index), index);
+
+  if (uint32_t(reference.type) >= uint32_t(GfxSceneNodeType::eBuiltInCount))
+    atomicMax(m_nodeCounts[uint32_t(reference.type)], uint32_t(reference.index) + 1u);
 }
 
 }

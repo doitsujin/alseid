@@ -435,6 +435,17 @@ public:
   }
 
   /**
+   * \brief Counts nodes of a certain type
+   *
+   * \param [in] type Node type
+   * \returns Current node count of that type
+   */
+  uint32_t getNodeCount(
+          GfxSceneNodeType            type) const {
+    return m_nodeCounts[uint32_t(type)].load();
+  }
+
+  /**
    * \brief Allocates a new node
    *
    * This only allocates a node and initializes it with an identity
@@ -619,6 +630,8 @@ private:
 
   std::array<ObjectMap<uint32_t>,
     uint8_t(GfxSceneNodeType::eCount)> m_nodeMap;
+  std::array<std::atomic<uint32_t>,
+    uint8_t(GfxSceneNodeType::eCount)> m_nodeCounts = { };
 
   ObjectAllocator                     m_nodeAllocator;
   ObjectAllocator                     m_bvhAllocator;

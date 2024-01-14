@@ -256,32 +256,6 @@ static_assert(sizeof(GfxSceneBvhListHeader) == 68);
 
 
 /**
- * \brief Pass group buffer description
- *
- * Provides capacities for the various different node types
- * that need to be stored in the pass group buffer.
- */
-struct GfxScenePassGroupBufferDesc {
-  /** Maximum number of nodes for each type. Nodes used in rendering
-   *  will be distributed to one list per node type. */
-  std::array<uint32_t, size_t(GfxSceneNodeType::eCount)> maxNodeCounts = { };
-
-  /**
-   * \brief Sets a node count for a given type
-   *
-   * Convenience method to avoid havinbg to ocast node types.
-   * \param [in] type Node type
-   * \param [in] count Maximum node count
-   */
-  void setNodeCount(
-          GfxSceneNodeType              type,
-          uint32_t                      count) {
-    maxNodeCounts.at(uint32_t(type)) = count;
-  }
-};
-
-
-/**
  * \brief Pass group buffer
  *
  * Manages a buffer object for a single group of render passes. Since this has
@@ -379,11 +353,11 @@ public:
    * After calling this, the buffer header must unconditionally be updated.
    * If the internal buffer layout changes, occlusion test results from
    * previous frames will be discarded to avoid rendering glitches.
-   * \param [in] desc Description with the maximum node count
+   * \param [in] nodeManager Node manager
    * \param [in] currFrameId Current frame ID
    */
   void resizeBuffer(
-    const GfxScenePassGroupBufferDesc&  desc,
+    const GfxSceneNodeManager&          nodeManager,
           uint32_t                      currFrameId);
 
 private:
@@ -392,13 +366,14 @@ private:
   GfxBuffer                   m_buffer;
 
   std::unordered_map<
-  uint32_t, GfxBuffer>        m_gpuBuffers;
+    uint32_t, GfxBuffer>      m_gpuBuffers;
 
-  GfxScenePassGroupBufferDesc m_desc = { };
   GfxScenePassGroupHeader     m_header = { };
-
   uint32_t                    m_version = 0u;
   bool                        m_doClear = false;
+
+  std::array<uint32_t,
+    uint32_t(GfxSceneNodeType::eCount)> m_nodeCounts = { };
 
   void cleanupGpuBuffers(
           uint32_t                      lastFrameId);

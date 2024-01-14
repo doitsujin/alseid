@@ -77,13 +77,18 @@ void GfxScenePassGroupBuffer::commitUpdates(
 
 
 void GfxScenePassGroupBuffer::resizeBuffer(
-  const GfxScenePassGroupBufferDesc&  desc,
+  const GfxSceneNodeManager&          nodeManager,
         uint32_t                      currFrameId) {
+  std::array<uint32_t, uint32_t(GfxSceneNodeType::eCount)> nodeCounts = { };
+
+  for (uint32_t i = 0; i < nodeCounts.size(); i++)
+    nodeCounts[i] = nodeManager.getNodeCount(GfxSceneNodeType(i));
+
   // Do nothing if the none of the capacities grow
   bool hasGrownCapacity = false;
 
-  for (uint32_t i = 1; i < uint32_t(GfxSceneNodeType::eCount) && !hasGrownCapacity; i++)
-    hasGrownCapacity = desc.maxNodeCounts.at(i) > m_desc.maxNodeCounts.at(i);
+  for (uint32_t i = 0; i < uint32_t(GfxSceneNodeType::eCount) && !hasGrownCapacity; i++)
+    hasGrownCapacity = nodeCounts[i] > m_nodeCounts[i];
 
   if (!hasGrownCapacity)
     return;
@@ -98,11 +103,11 @@ void GfxScenePassGroupBuffer::resizeBuffer(
 
   // Align capacities in such a way that we're unlikely to need to
   // resize or restructure the buffer again very soon
-  for (uint32_t i = 1; i < uint32_t(GfxSceneNodeType::eCount); i++)
-    m_desc.maxNodeCounts.at(i) = align(desc.maxNodeCounts.at(i), 4096u);
+  for (uint32_t i = 0; i < uint32_t(GfxSceneNodeType::eCount); i++)
+    m_nodeCounts[i] = align(nodeCounts[i], 4096u);
 
   // Compute minimum buffer size required to store everything
-  uint32_t maxBvhNodes = m_desc.maxNodeCounts[size_t(GfxSceneNodeType::eBvh)];
+  uint32_t maxBvhNodes = m_nodeCounts[size_t(GfxSceneNodeType::eBvh)];
 
   uint32_t allocator = 0u;
   allocStorage(allocator, sizeof(m_header));
@@ -118,16 +123,15 @@ void GfxScenePassGroupBuffer::resizeBuffer(
   // us to ignore certain node types for certain pass groups entirely,
   // e.g. light nodes during shadow passes.
   for (uint32_t i = uint32_t(GfxSceneNodeType::eBuiltInCount); i < uint32_t(GfxSceneNodeType::eCount); i++) {
-    uint32_t count = m_desc.maxNodeCounts.at(i);
     GfxScenePassTypedNodeListOffsets offsets = { };
 
-    if (count) {
+    if (m_nodeCounts[i]) {
       offsets.nodeList = allocStorage(allocator,
         sizeof(GfxSceneNodeListHeader) +
-        sizeof(GfxSceneNodeListEntry) * count);
+        sizeof(GfxSceneNodeListEntry) * m_nodeCounts[i]);
       offsets.updateList = allocStorage(allocator,
         sizeof(GfxSceneNodeListHeader) +
-        sizeof(uint32_t) * count);
+        sizeof(uint32_t) * m_nodeCounts[i]);
     }
 
     m_header.listOffsets.at(i - uint32_t(GfxSceneNodeType::eBuiltInCount)) = offsets;
