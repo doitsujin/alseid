@@ -6,6 +6,30 @@
 namespace as {
 
 /**
+ * \brief Helper function to atomically store a maximum value
+ *
+ * Updates the atomic in question to be the greater
+ * of the currently stored and desired values.
+ * \param [out] value Atomic value to update
+ * \param [in] desired Desired value
+ * \returns Value previously stored in the atomic
+ */
+template<typename T>
+T atomicMax(std::atomic<T>& value, T desired) {
+  T current = value.load(std::memory_order_acquire);
+
+  while (desired > current) {
+    if (value.compare_exchange_strong(current, desired,
+        std::memory_order_release,
+        std::memory_order_acquire))
+      break;
+  }
+
+  return current;
+}
+
+
+/**
  * \brief Lock-free list
  *
  * Supports lock-free iteration as well as insertion.
