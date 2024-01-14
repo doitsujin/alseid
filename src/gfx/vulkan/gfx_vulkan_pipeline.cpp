@@ -1389,7 +1389,7 @@ VkPipeline GfxVulkanComputePipeline::createPipelineLocked() {
   if (vr)
     throw VulkanError(strcat("Vulkan: Failed to create compute pipeline (shader: ", m_desc.compute->getDebugName(), ")").c_str(), vr);
 
-  m_mgr.device().setDebugName(pipeline, m_desc.compute->getDebugName());
+  m_mgr.device().setDebugName(pipeline, m_debugName.c_str());
   m_pipeline.store(pipeline);
 
   // Reset the contained pipeline description so that
