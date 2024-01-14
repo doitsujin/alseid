@@ -551,7 +551,6 @@ void GfxScenePassManager::cleanupGpuBuffers(
 void GfxScenePassManager::addDirtyPass(
         uint16_t                      pass,
         GfxScenePassFlags             flags) {
-  std::lock_guard lock(m_dirtyMutex);
   auto& passInfo = m_passData[pass];
 
   // Use the dirty frame ID field as an index into the dirty list.
@@ -571,9 +570,11 @@ void GfxScenePassManager::addDirtyPass(
   } else {
     passInfo.dirtyFrameId = dirtyCount;
 
-    auto& dirty = m_dirtyList.emplace_back();
+    DirtyPass dirty = { };
     dirty.pass = pass;
     dirty.flags = flags;
+
+    m_dirtyList.push_back(dirty);
   }
 }
 

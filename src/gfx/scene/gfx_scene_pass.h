@@ -654,8 +654,7 @@ private:
   ObjectAllocator                     m_passAllocator;
   ObjectMap<GfxScenePassInfo, 8u, 8u> m_passData;
 
-  std::mutex                          m_dirtyMutex;
-  std::vector<DirtyPass>              m_dirtyList;
+  LockFreeGrowList<DirtyPass>         m_dirtyList;
 
   void resizeBuffer(
           GfxContext                    context,
