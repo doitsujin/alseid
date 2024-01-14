@@ -953,8 +953,7 @@ private:
   ObjectAllocator                     m_instanceAllocator;
 
   alignas(CacheLineSize)
-  std::mutex                          m_dirtyMutex;
-  std::vector<uint32_t>               m_dirtyIndices;
+  LockFreeGrowList<uint32_t>          m_dirtyIndices;
 
   std::vector<GfxSceneInstanceNodeUpdateEntry> m_updateEntries;
   std::vector<GfxSceneUploadChunk>    m_uploadChunks;

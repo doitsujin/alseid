@@ -702,7 +702,6 @@ void GfxSceneInstanceManager::markDirty(
 
 void GfxSceneInstanceManager::addToDirtyList(
         uint32_t                      index) {
-  std::lock_guard lock(m_dirtyMutex);
   m_dirtyIndices.push_back(index);
 }
 
