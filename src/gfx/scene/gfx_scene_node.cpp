@@ -451,12 +451,11 @@ void GfxSceneNodeManager::markDirty(
 
 void GfxSceneNodeManager::addDirtyNode(
         uint32_t                      index) {
-  std::lock_guard lock(m_dirtyMutex);
   m_dirtyNodes.push_back(index);
 }
 
 
-void GfxSceneNodeManager::addDirtyBvhLocked(
+void GfxSceneNodeManager::addDirtyBvh(
         uint32_t                      index) {
   m_dirtyBvhs.push_back(index);
 }
@@ -480,7 +479,7 @@ void GfxSceneNodeManager::updateBufferData(
       uint32_t childCount = 0;
       uint32_t chainCount = 0;
 
-      addDirtyBvhLocked(bvhIndex);
+      addDirtyBvh(bvhIndex);
 
       while (dirtyFlags & GfxSceneNodeDirtyFlag::eDirtyBvhChain) {
         auto& bvhNode = m_bvhData[bvhIndex];
@@ -492,7 +491,7 @@ void GfxSceneNodeManager::updateBufferData(
           break;
 
         bvhIndex = uint32_t(bvhNode.chainedBvh.index);
-        addDirtyBvhLocked(bvhIndex);
+        addDirtyBvh(bvhIndex);
       }
 
       if (chainCount > 1 && (childCount <= (chainCount - 1u) * GfxSceneBvhInfo::MaxChildCount))

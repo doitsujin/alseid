@@ -626,9 +626,8 @@ private:
   std::vector<GfxSceneUploadChunk>    m_uploadChunks;
 
   alignas(CacheLineSize)
-  std::mutex                          m_dirtyMutex;
-  std::vector<uint32_t>               m_dirtyNodes;
-  std::vector<uint32_t>               m_dirtyBvhs;
+  LockFreeGrowList<uint32_t>          m_dirtyNodes;
+  LockFreeGrowList<uint32_t>          m_dirtyBvhs;
 
   alignas(CacheLineSize)
   std::mutex                          m_freeMutex;
@@ -642,7 +641,7 @@ private:
   void addDirtyNode(
           uint32_t                      index);
 
-  void addDirtyBvhLocked(
+  void addDirtyBvh(
           uint32_t                      index);
 
   void updateBufferData(
