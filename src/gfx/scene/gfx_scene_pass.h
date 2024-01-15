@@ -52,6 +52,9 @@ using GfxScenePassTypeFlags = Flags<GfxScenePassType>;
 
 /**
  * \brief Render pass flags
+ *
+ * Flags that do not need to be known for anything other than
+ * render pass buffer updates are in the lower 16 bits.
  */
 enum class GfxScenePassFlag : uint32_t {
   /** Indicates that the render pass renders a cube map. */
@@ -61,6 +64,10 @@ enum class GfxScenePassFlag : uint32_t {
   /** Indicates that the render pass uses a custom viewport region.
    *  If not set, the viewport region must be ignored. */
   eUsesViewportRegion     = (1u << 2),
+
+  /** Indicates that the pass uses lighting, and that a light list
+   *  should be generated for any pass group containing this pass. */
+  eEnableLighting         = (1u << 6),
 
   /** Indicates that occlusion testing will be performed for this pass.
    *  If set, occlusion testing \e must be performed, or objects will
@@ -92,10 +99,6 @@ enum class GfxScenePassFlag : uint32_t {
   /** Indicates that view distance properties are provided by the GPU
    *  and should be ignored during host updates. */
   eKeepViewDistance       = (1u << 22),
-
-  /** Indicates that the pass uses lighting, and that a light list
-   *  should be generated for any pass group containing this pass. */
-  eEnableLighting         = (1u << 24),
 
   eFlagEnum = 0
 };
