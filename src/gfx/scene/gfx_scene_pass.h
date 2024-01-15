@@ -249,13 +249,15 @@ struct GfxSceneBvhListHeader {
   /** Total number of BVH nodes in the list. Must be initialized to the number
    *  of root BVH nodes when the first set of node parameters is written. */
   uint32_t totalNodeCount;
+  /** Dispatch arguments to use when performing occlusion tests. */
+  GfxDispatchArgs dispatchOcclusionTest;
   /** Double-buffered dispatch arguments for BVH traversal. The traversal shader
    *  will consume one list and generate another, as well as increment the total
    *  node count so it can be used to generate occlusion test draws. */
   std::array<GfxSceneBvhListArgs, 2> args;
 };
 
-static_assert(sizeof(GfxSceneBvhListHeader) == 68);
+static_assert(sizeof(GfxSceneBvhListHeader) == 80);
 
 
 /**
@@ -313,6 +315,15 @@ public:
    */
   std::pair<GfxDescriptor, GfxDescriptor> getDispatchDescriptors(
           GfxSceneNodeType              nodeType) const;
+
+  /**
+   * \brief Queries occlusion test dispatch descriptor
+   *
+   * Expects the task shader to run at the regular task shader
+   * workgroup size.
+   * \returns Descriptor for occlusion testing
+   */
+  GfxDescriptor getOcclusionTestDispatchDescriptor() const;
 
   /**
    * \brief Sets passes for the given pass group

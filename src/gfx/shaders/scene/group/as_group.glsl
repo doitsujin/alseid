@@ -253,8 +253,9 @@ struct PassGroupBvhListArgs {
 // BVH list header. Stores two sets of dispatch arguments so that
 // the traversal shader can consume one while producing the other.
 struct PassGroupBvhListHeader {
-  uint32_t  totalNodeCount;
-  PassGroupBvhListArgs args[2];
+  uint32_t                totalNodeCount;
+  u32vec3                 dispatchOcclusionTest;
+  PassGroupBvhListArgs    args[2];
 };
 
 
@@ -282,8 +283,10 @@ void bvhListInit(
       entryCount, 0u);
   }
 
-  if (tid == 0u)
+  if (tid == 0u) {
     list.header.totalNodeCount = rootCount;
+    list.header.dispatchOcclusionTest = u32vec3(0u, 1u, 1u);
+  }
 }
 
 
@@ -341,7 +344,10 @@ void bvhListCommitArgs(
     list.header.args[nextIndex].dispatchReset.x = entryCount == 0u ? 1u : 0u;
     list.header.args[nextIndex].entryIndex = entryIndex;
 
+    uint32_t tsDispatchSize = asComputeWorkgroupCount1D(entryIndex + entryCount, TsWorkgroupSize);
+
     list.header.totalNodeCount = entryIndex + entryCount;
+    list.header.dispatchOcclusionTest.x = tsDispatchSize;
   }
 }
 

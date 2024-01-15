@@ -51,6 +51,16 @@ std::pair<GfxDescriptor, GfxDescriptor> GfxScenePassGroupBuffer::getDispatchDesc
 }
 
 
+GfxDescriptor GfxScenePassGroupBuffer::getOcclusionTestDispatchDescriptor() const {
+  if (!m_buffer)
+    return GfxDescriptor();
+
+  return m_buffer->getDescriptor(GfxUsage::eParameterBuffer,
+    m_header.bvhListOffset + offsetof(GfxSceneBvhListHeader, dispatchOcclusionTest),
+    sizeof(GfxDispatchArgs));
+}
+
+
 void GfxScenePassGroupBuffer::setPasses(
         uint32_t                      passCount,
   const uint16_t*                     passIndices) {
