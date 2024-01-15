@@ -26,6 +26,8 @@ as_shader_includes = files(
   'scene/instance/ts_instance_common.glsl',
   'scene/instance/ts_instance_render.glsl',
 
+  'scene/occlusion/as_occlusion_test.glsl',
+
   'scene/renderpass/as_renderpass.glsl',
 
   'scene/as_scene.glsl',
@@ -45,6 +47,10 @@ as_shader_builtins = [
   [ 'scene/group/cs_group_reset_update.comp', 'cs' ],
   [ 'scene/group/cs_group_traverse_bvh.comp', 'cs' ],
   [ 'scene/group/cs_group_traverse_reset.comp', 'cs' ],
+
+  [ 'scene/occlusion/fs_occlusion_test.frag', 'fs' ],
+  [ 'scene/occlusion/ms_occlusion_test.mesh', 'ms' ],
+  [ 'scene/occlusion/ts_occlusion_test.task', 'ts' ],
 
   [ 'scene/instance/cs_instance_update_execute.comp', 'cs' ],
   [ 'scene/instance/cs_instance_update_node.comp', 'cs' ],

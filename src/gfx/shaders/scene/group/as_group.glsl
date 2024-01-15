@@ -24,6 +24,16 @@ readonly buffer PassGroupBuffer {
   PassTypedNodeListOffsets nodeListOffsets[];
 };
 
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+readonly buffer PassGroupBufferOut {
+  uint32_t  passCount;
+  uint32_t  ignoreOcclusionTestMask;
+  uint32_t  bvhListOffset;
+  uint32_t  bvhVisibilityOffset;
+  uint16_t  passIndices[PASS_GROUP_PASS_COUNT];
+  PassTypedNodeListOffsets nodeListOffsets[];
+};
+
 
 // Convenience method to remap a group-local pass index to a global
 // index using the lookup table from the pass group header.

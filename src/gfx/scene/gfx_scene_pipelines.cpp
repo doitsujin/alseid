@@ -26,6 +26,10 @@
 
 #include <cs_scene_upload.h>
 
+#include <fs_occlusion_test.h>
+#include <ms_occlusion_test.h>
+#include <ts_occlusion_test.h>
+
 namespace as {
 
 GfxScenePipelines::GfxScenePipelines(
@@ -46,7 +50,9 @@ GfxScenePipelines::GfxScenePipelines(
 , m_csRenderPassUpdateInit  (createComputePipeline("cs_renderpass_update_init", cs_renderpass_update_init))
 , m_csRenderPassUpdatePrepare(createComputePipeline("cs_renderpass_update_prepare", cs_renderpass_update_prepare))
 , m_csRenderPassUpload      (createComputePipeline("cs_renderpass_upload", cs_renderpass_upload))
-, m_csSceneUpload           (createComputePipeline("cs_scene_upload", cs_scene_upload)) {
+, m_csSceneUpload           (createComputePipeline("cs_scene_upload", cs_scene_upload))
+, m_occlusionTestPipeline   (createTaskMeshPipeline("occlusion_test", ts_occlusion_test, ms_occlusion_test, fs_occlusion_test))
+, m_occlusionTestState      (createOcclusionTestRenderState()) {
 
 }
 
@@ -279,6 +285,49 @@ void GfxScenePipelines::uploadChunks(
     // Prepare next iteration
     chunkIndex += localCount;
   }
+}
+
+
+void GfxScenePipelines::testBvhOcclusion(
+  const GfxContext&                   context,
+  const GfxDescriptor&                dispatch,
+  const GfxSceneOcclusionTestArgs&    args) const {
+  context->bindPipeline(m_occlusionTestPipeline);
+  context->setRenderState(m_occlusionTestState);
+  context->setShaderConstants(0, args);
+  context->drawMeshIndirect(dispatch, GfxDescriptor(), 1u);
+}
+
+
+GfxRenderState GfxScenePipelines::createOcclusionTestRenderState() const {
+  GfxDeviceFeatures features = m_device->getFeatures();
+
+  GfxFrontFace frontFace = GfxFrontFace::eCw;
+  GfxCullMode cullMode = GfxCullMode::eBack;
+  bool conservativeRaster = features.conservativeRasterization;
+
+  GfxDepthBias depthBias = { };
+  GfxShadingRate shadingRate = { };
+
+  GfxDepthTest depthTest = { };
+  depthTest.depthCompareOp = GfxCompareOp::eGreater;
+
+  GfxStencilTest stencilTest = { };
+  GfxMultisampling multisampling = { };
+  GfxBlending blending = { };
+
+  GfxRenderStateDesc stateDesc = { };
+  stateDesc.frontFace = &frontFace;
+  stateDesc.cullMode = &cullMode;
+  stateDesc.conservativeRaster = &conservativeRaster;
+  stateDesc.depthBias = &depthBias;
+  stateDesc.shadingRate = &shadingRate;
+  stateDesc.depthTest = &depthTest;
+  stateDesc.stencilTest = &stencilTest;
+  stateDesc.multisampling = &multisampling;
+  stateDesc.blending = &blending;
+
+  return m_device->createRenderState(stateDesc);
 }
 
 }

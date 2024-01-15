@@ -227,6 +227,18 @@ struct GfxSceneUploadChunk {
 
 
 /**
+ * \brief Occlusion test arguments
+ */
+struct GfxSceneOcclusionTestArgs {
+  uint64_t passInfoVa;
+  uint64_t passGroupVa;
+  uint64_t sceneVa;
+  uint32_t passIndex;
+  uint32_t frameId;
+};
+
+
+/**
  * \brief Pipelines for scene rendering
  *
  * Creates compute and graphics pipelines for built-in shaders
@@ -445,6 +457,23 @@ public:
           uint32_t                      chunkCount,
     const GfxSceneUploadChunk*          chunks) const;
 
+  /**
+   * \brief Performs occlusion testing for a given render pass
+   *
+   * Runs a mesh shader pipeline on he list of BVHs within one pass
+   * group. If possible, enables conservative rasterization, so that
+   * running this on a downscaled depth buffer might be useful.
+   *
+   * Note that this replaces the currently bound render state object.
+   * \param [in] context Context object
+   * \param [in] dispatch Task shader dispatch descriptor
+   * \param [in] args Pipeline arguments
+   */
+  void testBvhOcclusion(
+    const GfxContext&                   context,
+    const GfxDescriptor&                dispatch,
+    const GfxSceneOcclusionTestArgs&    args) const;
+
 private:
 
   GfxDevice           m_device;
@@ -471,17 +500,42 @@ private:
 
   GfxComputePipeline  m_csSceneUpload;
 
-  template<size_t N>
+  GfxGraphicsPipeline m_occlusionTestPipeline;
+  GfxRenderState      m_occlusionTestState;
+
+  template<size_t CsSize>
   GfxComputePipeline createComputePipeline(
     const char*                         name,
-    const uint32_t                      (&cs)[N]) const {
+    const uint32_t                      (&cs)[CsSize]) const {
     GfxComputePipelineDesc pipelineDesc = { };
     pipelineDesc.debugName = name;
     pipelineDesc.compute = GfxShader::createBuiltIn(
-      GfxShaderFormat::eVulkanSpirv, N * sizeof(uint32_t), cs);
+      GfxShaderFormat::eVulkanSpirv, CsSize * sizeof(uint32_t), cs);
 
     return m_device->createComputePipeline(pipelineDesc);
   }
+
+
+  template<size_t TsSize, size_t MsSize, size_t FsSize>
+  GfxGraphicsPipeline createTaskMeshPipeline(
+    const char*                         name,
+    const uint32_t                      (&ts)[TsSize],
+    const uint32_t                      (&ms)[MsSize],
+    const uint32_t                      (&fs)[FsSize]) const {
+    GfxMeshPipelineDesc pipelineDesc = { };
+    pipelineDesc.debugName = name;
+    pipelineDesc.task = GfxShader::createBuiltIn(
+      GfxShaderFormat::eVulkanSpirv, TsSize * sizeof(uint32_t), ts);
+    pipelineDesc.mesh = GfxShader::createBuiltIn(
+      GfxShaderFormat::eVulkanSpirv, MsSize * sizeof(uint32_t), ms);
+    pipelineDesc.fragment = GfxShader::createBuiltIn(
+      GfxShaderFormat::eVulkanSpirv, FsSize * sizeof(uint32_t), fs);
+
+    return m_device->createGraphicsPipeline(pipelineDesc);
+  }
+
+
+  GfxRenderState createOcclusionTestRenderState() const;
 
 };
 

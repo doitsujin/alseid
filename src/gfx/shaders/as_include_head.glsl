@@ -27,6 +27,7 @@
 
 #if defined(STAGE_FRAG)
 #extension GL_KHR_shader_subgroup_quad : enable
+#extension GL_EXT_demote_to_helper_invocation : enable
 #endif
 
 #extension GL_EXT_subgroup_uniform_control_flow : enable

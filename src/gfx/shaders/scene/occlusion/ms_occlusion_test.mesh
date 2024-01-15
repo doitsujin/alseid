@@ -1,0 +1,131 @@
+// Mesh shader for occlusion testing
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#include "../../as_include_head.glsl"
+
+#include "../group/as_group.glsl"
+
+#include "../renderpass/as_renderpass.glsl"
+
+#include "../as_scene.glsl"
+
+#include "as_occlusion_test.glsl"
+
+// Render up to 10 bounding boxes in a single workgroup
+#define MS_MAIN msMain
+
+layout(triangles,
+  max_vertices   =  8 * BOX_COUNT_PER_WORKGROUP,
+  max_primitives = 12 * BOX_COUNT_PER_WORKGROUP) out;
+
+
+// Per-primitive fragment shader inputs
+#ifdef FS_UNIFORM
+#undef FS_INPUT_VAR
+#define FS_INPUT_VAR(l, t, n) layout l perprimitiveEXT flat out t fs_##n[];
+FS_UNIFORM
+#endif // FS_UNIFORM
+
+
+// BVH properties stored in shared memory so that we can easily access
+// it when processing primitives and vertices.
+shared uint32_t csBvhIndicesShared[BOX_COUNT_PER_WORKGROUP];
+shared Aabb16 csBvhAabbShared[BOX_COUNT_PER_WORKGROUP];
+shared Transform csBvhTransformsShared[BOX_COUNT_PER_WORKGROUP];
+
+
+// Packed primitive indices. Every set of four bits encodes
+// the vertex indices to use for the given primitive.
+const u64vec3 csPrimIndicesPacked = u64vec3(
+  0x442211000000ul,
+  0x767375654321ul,
+  0x576737415263ul);
+
+
+void msMain() {
+  uint32_t tid = gl_LocalInvocationIndex;
+
+  // Load render pass properties from pass buffer
+  uint32_t passIndex = passGroupGetPassIndex(globals.passGroupVa, globals.passIndex);
+  PassInfo passInfo = PassInfoBufferIn(globals.passInfoVa).passes[passIndex];
+
+  // Load pointer to visibility, only used later.
+  PassGroupBufferOut groupBuffer = PassGroupBufferOut(globals.passGroupVa);
+  uint64_t bvhVisibilityVa = globals.passGroupVa + groupBuffer.bvhVisibilityOffset;
+
+  // Locate BVH node list inside the scene buffer
+  SceneHeader sceneBuffer = SceneHeaderIn(globals.sceneVa).header;
+  SceneNodeTransformBufferIn sceneTransforms = SceneNodeTransformBufferIn(globals.sceneVa + sceneBuffer.nodeTransformOffset);
+
+  // Figure out which BVH nodes the current workgroup is working
+  // on, as well as the local vertex and primitive indices.
+  SceneBvhNodeBuffer bvhNodes = SceneBvhNodeBuffer(globals.sceneVa + sceneBuffer.bvhOffset);
+
+  uint32_t boxIndex = gl_WorkGroupID.x * BOX_COUNT_PER_WORKGROUP;
+  uint32_t boxCount = tsPayload.bvhCount;
+
+  uint32_t localCount = min(boxCount - boxIndex, BOX_COUNT_PER_WORKGROUP);
+
+  uint32_t vertCount = localCount * 8u;
+  uint32_t primCount = localCount * 12u;
+
+  uint32_t localVertBox = tid >> 3u;
+  uint32_t localVertIdx = tid & 0x7u;
+  uint32_t localPrimBox = tid / 12u;
+  uint32_t localPrimIdx = tid - 12u * localPrimBox;
+
+  // Allocate output storage as well while we're at it. No point
+  // in exiting early since the local count cannot be 0.
+  msSetMeshOutputs(vertCount, primCount);
+
+  // Load relevant BVH properties into LDS
+  if (boxIndex + tid < boxCount && tid < localCount) {
+    uint32_t bvhIndex = tsPayload.bvhIndices[boxIndex + tid];
+    uint32_t bvhNode = bvhNodes.nodes[bvhIndex].nodeIndex;
+
+    uint32_t transformIndex = nodeComputeTransformIndices(
+      bvhNode, sceneBuffer.nodeCount, globals.frameId).x;
+
+    csBvhIndicesShared[tid] = bvhIndex;
+    csBvhAabbShared[tid] = bvhNodes.nodes[bvhIndex].aabb;
+    csBvhTransformsShared[tid] = sceneTransforms.nodeTransforms[transformIndex].absoluteTransform;
+  }
+
+  barrier();
+
+  if (tid < vertCount) {
+    Transform transform = csBvhTransformsShared[localVertBox];
+
+    // Load bounding box and convert into a useful format
+    Aabb16 aabb16 = csBvhAabbShared[localVertBox];
+    Aabb aabb = Aabb(vec3(aabb16.lo), vec3(aabb16.hi));
+
+    // Transform vertex into view space and apply further pass transforms
+    transform = transChainNorm(passInfo.currTransform.transform, transform);
+
+    vec3 vertex = aabbComputeVertex(aabb, localVertIdx);
+    vertex = transApply(transform, vertex);
+
+    if ((passInfo.flags & RENDER_PASS_USES_MIRROR_PLANE_BIT) != 0u)
+      vertex = planeMirror(passInfo.currMirrorPlane, vertex);
+
+    gl_MeshVerticesEXT[tid].gl_Position = projApply(passInfo.projection, vertex);
+  }
+
+  if (tid < primCount) {
+    fs_bvhBufferVa[tid] = bvhVisibilityVa;
+    fs_bvhIndex[tid] = csBvhIndicesShared[localPrimBox];
+    fs_passIndex[tid] = globals.passIndex;
+
+    uvec3 localIndices = uvec3(csPrimIndicesPacked >> (4u * localPrimIdx)) & 0xfu;
+
+    if ((passInfo.flags & RENDER_PASS_USES_MIRROR_PLANE_BIT) != 0u)
+      localIndices.xyz = localIndices.xzy;
+
+    gl_PrimitiveTriangleIndicesEXT[tid] = localIndices + 8u * localPrimBox;
+  }
+}
+
+#include "../../as_include_tail.glsl"

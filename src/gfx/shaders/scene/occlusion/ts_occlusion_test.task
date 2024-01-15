@@ -1,0 +1,59 @@
+// Task shader for occlusion testing.
+//
+// 
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#include "../../as_include_head.glsl"
+
+#include "../group/as_group.glsl"
+
+#include "as_occlusion_test.glsl"
+
+#define TS_MAIN tsMain
+
+uint tsMain() {
+  uint32_t passBit = 1u << globals.passIndex;
+
+  // Locate BVH and BVH visibility lists within the group buffer
+  PassGroupBufferOut groupBuffer = PassGroupBufferOut(globals.passGroupVa);
+
+  PassGroupBvhListIn bvhList = PassGroupBvhListIn(globals.passGroupVa + groupBuffer.bvhListOffset);
+  PassGroupBvhVisibilityBuffer bvhVisibility = PassGroupBvhVisibilityBuffer(globals.passGroupVa + groupBuffer.bvhVisibilityOffset);
+
+  // Locate the actual BVH and check whether we should actually run
+  // occlusion tests on it.
+  uint32_t gid = gl_GlobalInvocationID.x;
+  uint32_t tid = gl_LocalInvocationIndex;
+
+  uint32_t bvhIndex = ~0u;
+
+  if (gid < bvhList.header.totalNodeCount) {
+    PassGroupNodeListItem item = bvhList.items[gid];
+    uint32_t index = getNodeIndexFromRef(item.nodeRef);
+
+    if ((bvhVisibility.bvhs[index].testFailMask & passBit) != 0u)
+      bvhIndex = index;
+  }
+
+  // Allocate output storage and write out task payload
+  uint32_t index = tsAllocateOutputs(bvhIndex != ~0u ? 1u : 0u);
+  uint32_t count = tsGetOutputCount();
+
+  if (tid == 0u)
+    tsPayload.bvhCount = count;
+
+  if (bvhIndex != ~0u)
+    tsPayload.bvhIndices[index] = bvhIndex;
+
+  // Mark the occlusion test result for the current pass as valid
+  if (gid == 0u)
+    atomicAnd(groupBuffer.ignoreOcclusionTestMask, ~passBit);
+
+  // Emit the correct number of mesh shader workgroups. Compilers
+  // should be able to optimize the integer division by a constant.
+  return asComputeWorkgroupCount1D(count, BOX_COUNT_PER_WORKGROUP);
+}
+
+#include "../../as_include_tail.glsl"
