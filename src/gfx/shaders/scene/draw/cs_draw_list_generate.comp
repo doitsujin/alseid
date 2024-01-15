@@ -91,7 +91,7 @@ bool csTestViewDistance(
   }
 
   // Compute point on the box that is closest to the view.
-  vec3 rel = (pos - aabb.lo) / aabb.hi;
+  vec3 rel = (pos - aabb.lo) / (aabb.hi - aabb.lo);
   vec3 near = mix(aabb.lo, aabb.hi, clamp(rel, 0.0f, 1.0f)) - pos;
 
   return dot(near, near) < maxDistSq;

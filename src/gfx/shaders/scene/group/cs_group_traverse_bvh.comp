@@ -347,7 +347,7 @@ uint32_t csTestViewDistance(
     return NODE_VISIBILITY_FULL;
 
   // Compute point on the box that is closest to the view.
-  vec3 rel = (pos - aabb.lo) / aabb.hi;
+  vec3 rel = (pos - aabb.lo) / (aabb.hi - aabb.lo);
   vec3 near = mix(aabb.lo, aabb.hi, clamp(rel, 0.0f, 1.0f)) - pos;
   float nearDistSq = dot(near, near);
 
