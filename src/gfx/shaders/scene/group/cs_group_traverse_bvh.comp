@@ -9,9 +9,10 @@
 
 #define CS_MAIN csTraverseBvh
 
-#define NODE_VISIBILITY_NONE (0u)
-#define NODE_VISIBILITY_PART (1u)
-#define NODE_VISIBILITY_FULL (2u)
+#define NODE_VISIBILITY_NONE    (0u)
+#define NODE_VISIBILITY_PART    (1u)
+#define NODE_VISIBILITY_FULL    (2u)
+#define NODE_VISIBILITY_INSIDE  (3u)
 
 // Prefer small workgroups. Most of the code in this shader only scales
 // with the active render pass count, which is expected to be low.
@@ -47,8 +48,9 @@ uniform PushData {
 // Reduced render pass data. This is used so that we do not
 // end up accidentally loading pass properties we don't need.
 struct CsBvhTraversalPassInfo {
-  uint32_t      index;
-  uint32_t      flags;
+  uint16_t      index;
+  uint16_t      flags;
+  float         zNear;
   Transform     transform;
   float         viewDistance;
   f32vec4       mirrorPlane;
@@ -58,8 +60,9 @@ struct CsBvhTraversalPassInfo {
 // Default-initializes render pass data.
 CsBvhTraversalPassInfo csInitPassInfo() {
   CsBvhTraversalPassInfo result;
-  result.index = PASS_INDEX_INVALID;
-  result.flags = 0;
+  result.index = uint16_t(PASS_INDEX_INVALID);
+  result.flags = uint16_t(0u);
+  result.zNear = 0.0f;
   result.transform = transIdentity();
   result.viewDistance = 0.0f;
   result.mirrorPlane = vec4(0.0f);
@@ -76,8 +79,11 @@ CsBvhTraversalPassInfo csLoadPassInfoFromMemory(
   PassInfo pass = passBuffer.passes[passIndex];
 
   CsBvhTraversalPassInfo result;
-  result.index = passIndex;
-  result.flags = pass.flags;
+  result.index = uint16_t(passIndex);
+  result.flags = uint16_t(pass.flags);
+  result.zNear = pass.projection.zScale == 0.0f
+    ? pass.projection.zBias
+    : pass.projection.zBias / pass.projection.zScale;
   result.transform = transChain(pass.currTransform.transform, bvhTransform);
   result.viewDistance = pass.viewDistanceLimit;
   result.mirrorPlane = pass.currMirrorPlane;
@@ -89,9 +95,13 @@ CsBvhTraversalPassInfo csLoadPassInfoFromMemory(
 CsBvhTraversalPassInfo csShufflePassInfo(
   in    CsBvhTraversalPassInfo        pass,
         uint32_t                      thread) {
+  uint32_t indexFlagsPacked = packUint2x16(u16vec2(pass.index, pass.flags));
+  u16vec2 indexFlags = unpackUint2x16(subgroupShuffle(indexFlagsPacked, thread));
+
   CsBvhTraversalPassInfo result;
-  result.index = subgroupShuffle(pass.index, thread);
-  result.flags = subgroupShuffle(pass.flags, thread);
+  result.index = indexFlags.x;
+  result.flags = indexFlags.y;
+  result.zNear = subgroupShuffle(pass.zNear, thread);
   result.transform.rot = subgroupShuffle(pass.transform.rot, thread);
   result.transform.pos = subgroupShuffle(pass.transform.pos, thread);
   result.viewDistance = subgroupShuffle(pass.viewDistance, thread);
@@ -339,6 +349,16 @@ uint32_t csTestViewDistance(
     pos = transApply(inverseTransform, pos);
   }
 
+  // Check whether we are inside the box for occlusion test purposes.
+  vec3 rel = (pos - aabb.lo) / (aabb.hi - aabb.lo);
+
+  float minCoord = min(min(rel.x, rel.y), rel.z);
+  float maxCoord = max(max(rel.x, rel.y), rel.z);
+
+  if (minCoord > 0.0f - passInfo.zNear &&
+      maxCoord < 1.0f + passInfo.zNear)
+    return NODE_VISIBILITY_INSIDE;
+
   // Compute point on the box that is furthest away from the view.
   // This is always a corner of the box.
   vec3 far = max(abs(aabb.lo - pos), abs(aabb.hi - pos));
@@ -348,7 +368,6 @@ uint32_t csTestViewDistance(
     return NODE_VISIBILITY_FULL;
 
   // Compute point on the box that is closest to the view.
-  vec3 rel = (pos - aabb.lo) / (aabb.hi - aabb.lo);
   vec3 near = mix(aabb.lo, aabb.hi, clamp(rel, 0.0f, 1.0f)) - pos;
   float nearDistSq = dot(near, near);
 
@@ -427,13 +446,10 @@ void csTraverseBvh() {
   // generating a list for the next iteration.
   PassGroupBuffer group = PassGroupBuffer(groupBuffer);
   PassGroupBvhList bvhList = PassGroupBvhList(groupBuffer + group.bvhListOffset);
+  PassGroupBvhVisibilityBuffer bvhVisibilityBuffer = PassGroupBvhVisibilityBuffer(groupBuffer + group.bvhVisibilityOffset);
 
   uint32_t groupPassCount = group.passCount;
   uint32_t groupPassIndex = group.passIndices[tid];
-
-  // BVH visibility buffer. Indexed via the actual BVH index from the
-  // node reference, stores occlusion test results from prior frames.
-  PassGroupBvhVisibilityBuffer bvhVisibilityBuffer = PassGroupBvhVisibilityBuffer(groupBuffer + group.bvhVisibilityOffset);
 
   // Load info about the BVH node that the current workgroup processes.
   uint32_t itemIndex = bvhList.header.args[bvhLayer & 1u].entryIndex + uint32_t(gl_WorkGroupID.x);
@@ -451,7 +467,7 @@ void csTraverseBvh() {
 
   // Load absolute BVH transform. The previous iteration will have updated
   // transforms for all relevant BVH nodes at this point, so this is safe.
-  uint32_t transformIndex = bvhNode + (frameId & 1u) * scene.nodeCount;
+  uint32_t transformIndex = nodeComputeTransformIndices(bvhNode, scene.nodeCount, frameId).x;
   Transform bvhTransform = nodeTransforms.nodeTransforms[transformIndex].absoluteTransform;
 
   // Load render pass infos from memory.
@@ -463,6 +479,7 @@ void csTraverseBvh() {
   // Initialize visible pass mask with a subset of passes that the parent
   // node was visible in, and cull passes from that list from there.
   bool bvhAabbValid = all(lessThan(bvhAabb.lo, bvhAabb.hi));
+  bool isInside = false;
 
   uint32_t visibility = (bvhNodeItem.partialVisibilityMask & (1u << tid)) != 0u
     ? (bvhAabbValid ? NODE_VISIBILITY_FULL : NODE_VISIBILITY_PART)
@@ -477,8 +494,10 @@ void csTraverseBvh() {
     if (passInfo.index == distanceCullingPass && bvhDistance > 0.0f)
       testDistance = testDistance > 0.0f ? min(testDistance, bvhDistance) : bvhDistance;
 
-    if (visibility > NODE_VISIBILITY_NONE && testDistance > 0.0f)
+    if (visibility > NODE_VISIBILITY_NONE && testDistance > 0.0f) {
       visibility = csTestViewDistance(bvhAabb, passInfo, testDistance);
+      isInside = visibility == NODE_VISIBILITY_INSIDE;
+    }
 
     if (bvhDistance > 0.0f && distanceCullingPass < PASS_INDEX_INVALID) {
       // If any thread already processed the reference pass and the shader is
@@ -501,6 +520,8 @@ void csTraverseBvh() {
       }
     }
 
+    // Check for which passes the bounding volume is either partially
+    // or fully within the view frustum
     visibility = csTestFrustumAabbCooperative(tid, visibility, passInfo, bvhAabb);
   }
 
@@ -511,24 +532,44 @@ void csTraverseBvh() {
   // and write back occlusion test properties for the current frame. Ensure
   // that we perform the occlusion test even if the test failed in previous
   // frames, or otherwise nodes will stay invisible indefinitely.
-  PassGroupBvhVisibility bvhVisibility = bvhVisibilityBuffer.bvhs[bvhIndex];
+  uint32_t occlusionTestPerformMask = 0u;
+  uint32_t occlusionTestFailMask = 0u;
 
-  uint32_t occlusionTestIgnoreMask = group.ignoreOcclusionTestMask |
-    csWorkgroupBallot(tid, (passInfo.flags & RENDER_PASS_IGNORE_OCCLUSION_TEST_BIT) != 0u);
+  if (bvhAabbValid) {
+    // Process occlusion test results of the previous frame, and compute
+    // the set of passes for which to perform occlusion testing in the
+    // current frame for the current BVH node.
+    occlusionTestPerformMask = csWorkgroupBallot(tid, !isInside &&
+      (passInfo.flags & RENDER_PASS_PERFORM_OCCLUSION_TEST_BIT) != 0u);
 
-  uint32_t occlusionTestFailedMask =  bvhVisibility.prevFrameOcclusionTestPerformedMask
-                                   & ~bvhVisibility.prevFrameOcclusionTestPassedMask
-                                   & ~occlusionTestIgnoreMask;
+    // Compute set of passes for which visibility status is valid
+    uint32_t occlusionTestIgnoreMask = csWorkgroupBallot(tid,
+      (passInfo.flags & RENDER_PASS_IGNORE_OCCLUSION_TEST_BIT) != 0u);
+    uint32_t occlusionTestCheckMask = occlusionTestPerformMask &
+      ~(occlusionTestIgnoreMask | group.ignoreOcclusionTestMask);
 
-  bvhVisibility.prevFrameOcclusionTestPerformedMask = visibilityMask.x;
-  bvhVisibility.prevFrameOcclusionTestPassedMask = 0u;
+    if ((visibilityMask.x & occlusionTestCheckMask) != 0u) {
+      PassGroupBvhVisibility bvhVisibility = bvhVisibilityBuffer.bvhs[bvhIndex];
 
-  if (tid == 0u)
+      occlusionTestFailMask = (bvhVisibility.prevFrameId + 1u == frameId)
+        ? bvhVisibility.testFailMask & occlusionTestCheckMask
+        : 0u;
+    }
+  }
+
+  // Write back new visibility status. This is needed even if the node does
+  // not have a valid bounding box, since otherwise the occlusion test task
+  // shader could read stale data for this node.
+  if (tid == 0u) {
+    PassGroupBvhVisibility bvhVisibility;
+    bvhVisibility.prevFrameId = frameId;
+    bvhVisibility.testFailMask = visibilityMask.x & occlusionTestPerformMask;
+
     bvhVisibilityBuffer.bvhs[bvhIndex] = bvhVisibility;
+  }
 
-  // Remove passes where the previous frame's occlusion test failed from the
-  // visibility mask.
-  visibilityMask &= ~occlusionTestFailedMask;
+  // Do not further process nodes for which occlusion testing failed
+  visibilityMask &= ~occlusionTestFailMask;
 
   // If the BVH is partially visible in any enabled pass, process child nodes,
   // update their absolute transform, and make them resident as necessary.

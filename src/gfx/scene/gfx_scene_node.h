@@ -197,15 +197,14 @@ static_assert(sizeof(GfxSceneBvhInfo) == 128);
  * the BVH node index.
  */
 struct GfxSceneBvhVisibility {
-  /** Bit mask of passes for which the occlusion test has been performed
-   *  in the previous frame. The node must be considered visible for any
-   *  pass that has no valid occlusion test data. */
-  uint32_t prevFrameOcclusionTestPerformedMask;
-  /** Bit mask of passes that passed the occlusion test in the previous
-   *  frame. If this is 0 for any valid pass, the node is not considered
-   *  visible for that pass, but the occlusion test must be performed
-   *  regardless so that the node can become visible again. */
-  uint32_t prevFrameOcclusionTestPassedMask;
+  /** Frame ID when occlusion testing was last performed for this BVH.
+   *  Occlusion tests should be discarded if this is older than one frame. */
+  uint32_t prevFrameId;
+  /** Bit mask of passes where occlusion testing was performed and failed.
+   *  Set for each pass that has occlusion testing enabled when processing
+   *  the BVH node, then occlusion testing itself must reset bits for each
+   *  pass where the bounding volume is visible. */
+  uint32_t testFailMask;
 };
 
 static_assert(sizeof(GfxSceneBvhVisibility) == 8);

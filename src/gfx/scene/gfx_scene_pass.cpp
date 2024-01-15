@@ -195,6 +195,10 @@ void GfxScenePassGroupBuffer::updateGpuBuffer(
   }
 
   context->endDebugLabel();
+
+  // Subsequent frames should perform occlusion
+  // testing normally, barring any future updates
+  m_header.ignoreOcclusionTestMask = 0u;
 }
 
 

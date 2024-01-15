@@ -3,8 +3,8 @@
 
 // BVH visibility status
 struct PassGroupBvhVisibility {
-  uint32_t  prevFrameOcclusionTestPerformedMask;
-  uint32_t  prevFrameOcclusionTestPassedMask;
+  uint32_t  prevFrameId;
+  uint32_t  testFailMask;
 };
 
 
