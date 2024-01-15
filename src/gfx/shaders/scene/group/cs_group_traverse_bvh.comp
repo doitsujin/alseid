@@ -28,6 +28,7 @@ layout(local_size_x = CS_WORKGROUP_SIZE) in;
 #include "../as_scene_node_transform.glsl"
 
 #include "as_group.glsl"
+#include "as_group_visibility.glsl"
 
 #define PASS_INDEX_INVALID (0xffffu)
 

@@ -17,6 +17,7 @@ as_shader_includes = files(
   'scene/draw/as_draw.glsl',
 
   'scene/group/as_group.glsl',
+  'scene/group/as_group_visibility.glsl',
 
   'scene/instance/as_instance.glsl',
   'scene/instance/as_instance_payload.glsl',

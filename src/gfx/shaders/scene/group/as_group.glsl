@@ -367,19 +367,4 @@ readonly buffer PassGroupBvhListIn {
   PassGroupNodeListItem   items[];
 };
 
-
-// BVH visibility status
-struct PassGroupBvhVisibility {
-  uint32_t  prevFrameOcclusionTestPerformedMask;
-  uint32_t  prevFrameOcclusionTestPassedMask;
-};
-
-
-// BVH visibility buffer type. Stores persistent visibility information
-// for each BVH node within the scene for the given pass group.
-layout(buffer_reference, buffer_reference_align = 16, scalar)
-buffer PassGroupBvhVisibilityBuffer {
-  PassGroupBvhVisibility bvhs[];
-};
-
 #endif /* AS_GROUP_H */
