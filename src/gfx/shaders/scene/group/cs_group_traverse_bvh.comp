@@ -329,8 +329,6 @@ uint32_t csTestViewDistance(
         Aabb                          aabb,
   in    CsBvhTraversalPassInfo        passInfo,
         float                         maxDistance) {
-  float maxDistSq = maxDistance * maxDistance;
-
   // Scale bounding box with the transform as needed
   float scale = quatGetScale(passInfo.transform.rot);
 
@@ -359,8 +357,14 @@ uint32_t csTestViewDistance(
       maxCoord < 1.0f + passInfo.zNear)
     return NODE_VISIBILITY_INSIDE;
 
+  // Exit early if the view distance is unlimited
+  if (maxDistance <= 0.0f)
+    return NODE_VISIBILITY_FULL;
+
   // Compute point on the box that is furthest away from the view.
   // This is always a corner of the box.
+  float maxDistSq = maxDistance * maxDistance;
+
   vec3 far = max(abs(aabb.lo - pos), abs(aabb.hi - pos));
   float farDistSq = dot(far, far);
 
@@ -494,7 +498,7 @@ void csTraverseBvh() {
     if (passInfo.index == distanceCullingPass && bvhDistance > 0.0f)
       testDistance = testDistance > 0.0f ? min(testDistance, bvhDistance) : bvhDistance;
 
-    if (visibility > NODE_VISIBILITY_NONE && testDistance > 0.0f) {
+    if (visibility > NODE_VISIBILITY_NONE) {
       visibility = csTestViewDistance(bvhAabb, passInfo, testDistance);
       isInside = visibility == NODE_VISIBILITY_INSIDE;
     }
