@@ -41,7 +41,7 @@ GfxDescriptor GfxSceneDrawBuffer::getDrawParameterDescriptor(
 }
 
 
-GfxBuffer GfxSceneDrawBuffer::updateLayout(
+void GfxSceneDrawBuffer::updateLayout(
   const GfxContext&                   context,
   const GfxSceneDrawBufferDesc&       desc) {
   uint32_t totalDrawCount = 0;
@@ -77,8 +77,6 @@ GfxBuffer GfxSceneDrawBuffer::updateLayout(
   if (m_buffer != nullptr)
     oldSize = m_buffer->getDesc().size;
 
-  GfxBuffer oldBuffer;
-
   if (newSize > oldSize) {
     GfxBufferDesc bufferDesc;
     bufferDesc.debugName = "Draw parameters";
@@ -87,8 +85,11 @@ GfxBuffer GfxSceneDrawBuffer::updateLayout(
     bufferDesc.size = newSize;
     bufferDesc.flags = GfxBufferFlag::eDedicatedAllocation;
 
-    oldBuffer = std::exchange(m_buffer,
+    GfxBuffer oldBuffer = std::exchange(m_buffer,
       m_device->createBuffer(bufferDesc, GfxMemoryType::eAny));
+
+    if (oldBuffer)
+      context->trackObject(oldBuffer);
   }
 
   // Write new buffer contents to a scratch buffer
@@ -117,7 +118,6 @@ GfxBuffer GfxSceneDrawBuffer::updateLayout(
     context->clearBuffer(m_buffer, drawGroupListSize, newSize - drawGroupListSize);
 
   context->endDebugLabel();
-  return oldBuffer;
 }
 
 

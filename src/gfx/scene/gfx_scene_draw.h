@@ -144,11 +144,8 @@ public:
    * time the draw group layouts change.
    * \param [in] context Context object
    * \param [in] desc Draw buffer description
-   * \returns Old buffer, or \c nullptr if no the buffer was not actually
-   *    replaced. This must be kept alive until the current frame finishes
-   *    processing on the GPU.
    */
-  GfxBuffer updateLayout(
+  void updateLayout(
     const GfxContext&                   context,
     const GfxSceneDrawBufferDesc&       desc);
 

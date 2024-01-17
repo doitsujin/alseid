@@ -345,11 +345,8 @@ public:
    * previous buffer contents will be copied to the new buffer.
    * \param [in] context Context to use to perform copies on
    * \param [in] desc New buffer description
-   * \returns Previous buffer if the buffer was replaced, which then
-   *    must be kept alive until the current frame has completed. If
-   *    the buffer was not replaced, \c nullptr will be returned.
    */
-  GfxBuffer resizeBuffer(
+  void resizeBuffer(
     const GfxContext&                   context,
     const GfxSceneNodeBufferDesc&       desc);
 
@@ -579,8 +576,7 @@ public:
    * operations. Also ensures constant time access to node objects.
    * \param [in] context Context object
    * \param [in] pipelines Update pipelines
-   * \param [in] currFrameId Current frame ID
-   * \param [in] lastFrameId Last completed frame ID
+   * \param [in] frameId Current frame ID
    */
   void commitUpdates(
     const GfxContext&                   context,
@@ -617,9 +613,6 @@ public:
 private:
 
   GfxSceneNodeBuffer                  m_gpuResources;
-
-  std::unordered_map<
-    uint32_t, GfxBuffer>              m_gpuBuffers;
 
   alignas(CacheLineSize)
   std::mutex                          m_nodeMutex;
@@ -662,9 +655,6 @@ private:
           uint32_t                      frameId);
 
   void cleanupNodes(
-          uint32_t                      frameId);
-
-  void cleanupGpuBuffers(
           uint32_t                      frameId);
 
   void compactBvhChain(

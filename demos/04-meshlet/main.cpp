@@ -144,7 +144,6 @@ public:
 
       Vector3D up = Vector3D(0.0f, 1.0f, 0.0f);
 
-      m_scenePassGroup->resizeBuffer(*m_sceneNodeManager, m_frameId);
       m_scenePassManager->updateRenderPassProjection(m_scenePassIndex,
         computePerspectiveProjection(Vector2D(1280.0f, 720.0f), 2.0f, 0.001f));
       m_scenePassManager->updateRenderPassTransform(m_scenePassIndex,
@@ -158,9 +157,9 @@ public:
       m_sceneInstanceManager->commitUpdates(context,
         *m_scenePipelines, m_frameId, m_frameId - 1);
       m_scenePassManager->commitUpdates(context,
-        *m_scenePipelines, m_frameId, m_frameId - 1);
+        *m_scenePipelines, m_frameId);
       m_scenePassGroup->commitUpdates(context,
-        m_frameId, m_frameId - 1);
+        *m_sceneNodeManager);
 
       context->memoryBarrier(
         GfxUsage::eShaderStorage | GfxUsage::eTransferDst, GfxShaderStage::eCompute,

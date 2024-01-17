@@ -78,17 +78,34 @@ void GfxScenePassGroupBuffer::setPasses(
 
 void GfxScenePassGroupBuffer::commitUpdates(
   const GfxContext&                   context,
-        uint32_t                      currFrameId,
-        uint32_t                      lastFrameId) {
-  cleanupGpuBuffers(lastFrameId);
+  const GfxSceneNodeManager&          nodeManager) {
+  context->beginDebugLabel("Update pass group buffer", 0xff96c096u);
 
-  updateGpuBuffer(context);
+  bool doClear = resizeBuffer(context, nodeManager);
+
+  auto scratch = context->allocScratch(GfxUsage::eCpuWrite | GfxUsage::eTransferSrc, sizeof(m_header));
+  std::memcpy(scratch.map(GfxUsage::eCpuWrite, 0), &m_header, sizeof(m_header));
+
+  context->copyBuffer(m_buffer, 0,
+    scratch.buffer, scratch.offset,
+    scratch.size);
+
+  if (doClear) {
+    context->clearBuffer(m_buffer, scratch.size,
+      m_buffer->getDesc().size - scratch.size);
+  }
+
+  context->endDebugLabel();
+
+  // Subsequent frames should perform occlusion
+  // testing normally, barring any future updates
+  m_header.ignoreOcclusionTestMask = 0u;
 }
 
 
-void GfxScenePassGroupBuffer::resizeBuffer(
-  const GfxSceneNodeManager&          nodeManager,
-        uint32_t                      currFrameId) {
+bool GfxScenePassGroupBuffer::resizeBuffer(
+  const GfxContext&                   context,
+  const GfxSceneNodeManager&          nodeManager) {
   std::array<uint32_t, uint32_t(GfxSceneNodeType::eCount)> nodeCounts = { };
 
   for (uint32_t i = 0; i < nodeCounts.size(); i++)
@@ -101,12 +118,7 @@ void GfxScenePassGroupBuffer::resizeBuffer(
     hasGrownCapacity = nodeCounts[i] > m_nodeCounts[i];
 
   if (!hasGrownCapacity)
-    return;
-
-  // Clear buffer on next update. While technically unnecessary since
-  // shaders will initialize all the list headers etc. anyway, clearing
-  // unused data to zero may simplify debugging.
-  m_doClear = true;
+    return false;
 
   // Need to invalidate occlusion test results as well
   m_header.ignoreOcclusionTestMask = (2u << (m_header.passCount - 1u)) - 1u;
@@ -151,7 +163,7 @@ void GfxScenePassGroupBuffer::resizeBuffer(
   // anything, the header update and the required initialization pass
   // will set everything up.
   if (m_buffer && m_buffer->getDesc().size >= allocator)
-    return;
+    return true;
 
   // Otherwise, we actually need to create a new buffer
   std::string name = strcat("Pass group v", ++m_version);
@@ -166,39 +178,10 @@ void GfxScenePassGroupBuffer::resizeBuffer(
   bufferDesc.flags = GfxBufferFlag::eDedicatedAllocation;
 
   if (m_buffer)
-    m_gpuBuffers.insert({ currFrameId, std::move(m_buffer) });
+    context->trackObject(m_buffer);
 
   m_buffer = m_device->createBuffer(bufferDesc, GfxMemoryType::eAny);
-}
-
-
-void GfxScenePassGroupBuffer::cleanupGpuBuffers(
-        uint32_t                      lastFrameId) {
-  m_gpuBuffers.erase(lastFrameId);
-}
-
-
-void GfxScenePassGroupBuffer::updateGpuBuffer(
-  const GfxContext&                   context) {
-  context->beginDebugLabel("Update pass group buffer", 0xff96c096u);
-
-  auto scratch = context->allocScratch(GfxUsage::eCpuWrite | GfxUsage::eTransferSrc, sizeof(m_header));
-  std::memcpy(scratch.map(GfxUsage::eCpuWrite, 0), &m_header, sizeof(m_header));
-
-  context->copyBuffer(m_buffer, 0,
-    scratch.buffer, scratch.offset,
-    scratch.size);
-
-  if (std::exchange(m_doClear, false)) {
-    context->clearBuffer(m_buffer, scratch.size,
-      m_buffer->getDesc().size - scratch.size);
-  }
-
-  context->endDebugLabel();
-
-  // Subsequent frames should perform occlusion
-  // testing normally, barring any future updates
-  m_header.ignoreOcclusionTestMask = 0u;
+  return true;
 }
 
 
@@ -383,15 +366,12 @@ void GfxScenePassManager::updateRenderPassViewportRegion(
 void GfxScenePassManager::commitUpdates(
   const GfxContext&                   context,
   const GfxScenePipelines&            pipelines,
-        uint32_t                      currFrameId,
-        uint32_t                      lastFrameId) {
-  cleanupGpuBuffers(lastFrameId);
-
+        uint32_t                      frameId) {
   context->beginDebugLabel("Update render passes", 0xff96c096u);
-  resizeBuffer(context, m_passAllocator.getCount(), currFrameId);
+  resizeBuffer(context, m_passAllocator.getCount(), frameId);
 
   if (!m_dirtyList.empty())
-    dispatchHostCopy(context, pipelines, currFrameId);
+    dispatchHostCopy(context, pipelines, frameId);
 
   dispatchUpdateListInit(context, pipelines);
   context->endDebugLabel();
@@ -402,14 +382,14 @@ void GfxScenePassManager::processPasses(
   const GfxContext&                   context,
   const GfxScenePipelines&            pipelines,
   const GfxSceneNodeManager&          nodeManager,
-        uint32_t                      currFrameId) {
+        uint32_t                      frameId) {
   context->beginDebugLabel("Process render passes", 0xff6490ff);
   context->beginDebugLabel("Scan pass list", 0xffa0beff);
 
   GfxPassInfoUpdatePrepareArgs prepArgs = { };
   prepArgs.passInfoVa = getGpuAddress();
   prepArgs.passListVa = getGpuAddress() + m_bufferUpdateOffset;
-  prepArgs.frameId = currFrameId;
+  prepArgs.frameId = frameId;
   prepArgs.passCount = m_passAllocator.getCount();
 
   pipelines.prepareRenderPassUpdates(context, prepArgs);
@@ -426,7 +406,7 @@ void GfxScenePassManager::processPasses(
   execArgs.passInfoVa = getGpuAddress();
   execArgs.passListVa = getGpuAddress() + m_bufferUpdateOffset;
   execArgs.sceneVa = nodeManager.getGpuAddress();
-  execArgs.frameId = currFrameId;
+  execArgs.frameId = frameId;
 
   GfxDescriptor dispatch = m_buffer->getDescriptor(GfxUsage::eParameterBuffer,
     m_bufferUpdateOffset, sizeof(GfxDispatchArgs));
@@ -505,7 +485,7 @@ void GfxScenePassManager::resizeBuffer(
   m_buffer = std::move(newBuffer);
 
   if (oldBuffer)
-    m_gpuBuffers.insert({ currFrameId, std::move(oldBuffer) });
+    context->trackObject(oldBuffer);
 }
 
 
@@ -557,12 +537,6 @@ void GfxScenePassManager::dispatchHostCopy(
   pipelines.uploadRenderPassInfos(context, args);
 
   m_dirtyList.clear();
-}
-
-
-void GfxScenePassManager::cleanupGpuBuffers(
-        uint32_t                      lastFrameId) {
-  m_gpuBuffers.erase(lastFrameId);
 }
 
 

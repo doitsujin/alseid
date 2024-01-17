@@ -177,7 +177,7 @@ GfxSceneInstanceBuffer::~GfxSceneInstanceBuffer() {
 }
 
 
-GfxBuffer GfxSceneInstanceBuffer::resizeBuffer(
+void GfxSceneInstanceBuffer::resizeBuffer(
   const GfxContext&                   context,
   const GfxSceneInstanceBufferDesc&   desc) {
   // Only recreate the buffer if necessary
@@ -188,7 +188,7 @@ GfxBuffer GfxSceneInstanceBuffer::resizeBuffer(
     oldSize = m_nodeBuffer->getDesc().size;
 
   if (newSize <= oldSize)
-    return GfxBuffer();
+    return;
 
   GfxBufferDesc bufferDesc;
   bufferDesc.debugName = "Instance nodes";
@@ -200,8 +200,10 @@ GfxBuffer GfxSceneInstanceBuffer::resizeBuffer(
   GfxBuffer oldBuffer = std::move(m_nodeBuffer);
   GfxBuffer newBuffer = m_device->createBuffer(bufferDesc, GfxMemoryType::eAny);
 
-  if (oldBuffer)
+  if (oldBuffer) {
     context->copyBuffer(newBuffer, 0, oldBuffer, 0, oldSize);
+    context->trackObject(oldBuffer);
+  }
 
   context->clearBuffer(newBuffer, oldSize, newSize - oldSize);
 
@@ -210,7 +212,6 @@ GfxBuffer GfxSceneInstanceBuffer::resizeBuffer(
     GfxUsage::eShaderStorage, GfxShaderStage::eCompute);
 
   m_nodeBuffer = std::move(newBuffer);
-  return oldBuffer;
 }
 
 
@@ -437,8 +438,6 @@ void GfxSceneInstanceManager::commitUpdates(
   const GfxScenePipelines&            pipelines,
         uint32_t                      currFrameId,
         uint32_t                      lastFrameId) {
-  cleanupGpuBuffers(lastFrameId);
-
   updateBufferData(context, pipelines, currFrameId);
 
   cleanupInstanceNodes(lastFrameId);
@@ -686,12 +685,6 @@ void GfxSceneInstanceManager::cleanupInstanceNodes(
 }
 
 
-void GfxSceneInstanceManager::cleanupGpuBuffers(
-        uint32_t                      frameId) {
-  m_gpuBuffers.erase(frameId);
-}
-
-
 void GfxSceneInstanceManager::markDirty(
         uint32_t                      index,
         GfxSceneInstanceDirtyFlags    flags) {
@@ -712,10 +705,7 @@ void GfxSceneInstanceManager::resizeGpuBuffer(
   GfxSceneInstanceBufferDesc desc;
   desc.instanceCount = m_instanceAllocator.getCount();
 
-  GfxBuffer oldBuffer = m_gpuResources.resizeBuffer(context, desc);
-
-  if (oldBuffer)
-    m_gpuBuffers.insert({ frameId, std::move(oldBuffer) });
+  m_gpuResources.resizeBuffer(context, desc);
 }
 
 

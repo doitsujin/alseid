@@ -340,60 +340,31 @@ public:
   /**
    * \brief Updates the buffer
    *
-   * Writes any changes to the render pass list to the GPU buffer. This
-   * is a relatively cheap operation, and should be called once per frame.
+   * Writes any changes to the render pass list to the GPU buffer. Must
+   * be called at the start of each frame. If the current buffer is too
+   * small or if the data layout changes, any previous contents will be
+   * discarded.
    * \param [in] context Context object to record the copy operation on.
    *    Expects the buffer to be ready for \c GfxUsage::eTransferDst usage.
-   * \param [in] currFrameId Current frame ID
-   * \param [in] lastFrameId Last completed frame ID
    */
   void commitUpdates(
     const GfxContext&                   context,
-          uint32_t                      currFrameId,
-          uint32_t                      lastFrameId);
-
-  /**
-   * \brief Resizes and replaces buffer
-   *
-   * Must only be called at the start of a frame. If the buffer has to be
-   * replaced due to being too small, the previous buffer object will be
-   * returned, and must be tracked until all previous frames have completed.
-   *
-   * In general, this will attempt to choose a buffer size in such a way to
-   * avoid having to frequently recreate the buffer. Thus, unless the buffer
-   * reaches a very large size, it will likely not be shrunk if the number
-   * of nodes ever decreases.
-   *
-   * After calling this, the buffer header must unconditionally be updated.
-   * If the internal buffer layout changes, occlusion test results from
-   * previous frames will be discarded to avoid rendering glitches.
-   * \param [in] nodeManager Node manager
-   * \param [in] currFrameId Current frame ID
-   */
-  void resizeBuffer(
-    const GfxSceneNodeManager&          nodeManager,
-          uint32_t                      currFrameId);
+    const GfxSceneNodeManager&          nodeManager);
 
 private:
 
   GfxDevice                   m_device;
   GfxBuffer                   m_buffer;
 
-  std::unordered_map<
-    uint32_t, GfxBuffer>      m_gpuBuffers;
-
   GfxScenePassGroupHeader     m_header = { };
   uint32_t                    m_version = 0u;
-  bool                        m_doClear = false;
 
   std::array<uint32_t,
     uint32_t(GfxSceneNodeType::eCount)> m_nodeCounts = { };
 
-  void cleanupGpuBuffers(
-          uint32_t                      lastFrameId);
-
-  void updateGpuBuffer(
-    const GfxContext&                   context);
+  bool resizeBuffer(
+    const GfxContext&                   context,
+    const GfxSceneNodeManager&          nodeManager);
 
   static uint32_t allocStorage(
           uint32_t&                     allocator,
@@ -601,14 +572,12 @@ public:
    * Uploads modified pass properties to the GPU.
    * \param [in] context Context object
    * \param [in] pipelines Update pipelines
-   * \param [in] currFrameId Current frame ID
-   * \param [in] lastFrameId Last completed frame ID
+   * \param [in] frameId Current frame ID
    */
   void commitUpdates(
     const GfxContext&                   context,
     const GfxScenePipelines&            pipelines,
-          uint32_t                      currFrameId,
-          uint32_t                      lastFrameId);
+          uint32_t                      frameId);
 
   /**
    * \brief Processes render passes
@@ -618,13 +587,13 @@ public:
    * \param [in] context Context object
    * \param [in] pipelines Update pipelines
    * \param [in] nodeManager Node manager
-   * \param [in] currFrameId Current frame ID
+   * \param [in] frameId Current frame ID
    */
   void processPasses(
     const GfxContext&                   context,
     const GfxScenePipelines&            pipelines,
     const GfxSceneNodeManager&          nodeManager,
-          uint32_t                      currFrameId);
+          uint32_t                      frameId);
 
 private:
 
@@ -637,8 +606,6 @@ private:
   GfxDevice                           m_device;
   GfxBuffer                           m_buffer;
   uint64_t                            m_bufferUpdateOffset = 0u;
-
-  std::unordered_map<uint32_t, GfxBuffer> m_gpuBuffers;
 
   ObjectAllocator                     m_passAllocator;
   ObjectMap<GfxScenePassInfo, 8u, 8u> m_passData;
@@ -658,9 +625,6 @@ private:
     const GfxContext&                   context,
     const GfxScenePipelines&            pipelines,
           uint32_t                      currFrameId);
-
-  void cleanupGpuBuffers(
-          uint32_t                      lastFrameId);
 
   void addDirtyPass(
           uint16_t                      pass,

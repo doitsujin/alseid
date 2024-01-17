@@ -684,11 +684,8 @@ public:
    * \param [in] context Context object. Will be used to copy
    *    old buffer contents as necessary.
    * \param [in] desc Instance buffer description
-   * \returns Old buffer, or \c nullptr if no the buffer was
-   *    not actually replaced. This must be kept alive until
-   *    the current frame finishes processing on the GPU.
    */
-  GfxBuffer resizeBuffer(
+  void resizeBuffer(
     const GfxContext&                   context,
     const GfxSceneInstanceBufferDesc&   desc);
 
@@ -944,9 +941,6 @@ private:
 #
   GfxSceneInstanceBuffer              m_gpuResources;
 
-  std::unordered_map<
-    uint32_t, GfxBuffer>              m_gpuBuffers;
-
   ObjectMap<GfxSceneInstanceNodeInfo> m_instanceNodeData;
   ObjectMap<GfxSceneInstanceHostInfo> m_instanceHostData;
 
@@ -969,9 +963,6 @@ private:
           uint32_t                      frameId);
 
   void cleanupInstanceNodes(
-          uint32_t                      frameId);
-
-  void cleanupGpuBuffers(
           uint32_t                      frameId);
 
   void markDirty(
