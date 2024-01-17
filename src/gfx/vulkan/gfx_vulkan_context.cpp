@@ -72,16 +72,18 @@ void GfxVulkanContext::reset() {
   if (vr)
     throw VulkanError("Vulkan: Failed to reset command pool", vr);
 
-  // Recycle descriptor pools that are no longer in use
+  // Recycle objects that are no longer in use
   for (auto& pool : m_descriptorPools)
     m_device->getDescriptorPoolManager().recyclePool(std::move(pool));
 
   m_descriptorPools.clear();
   m_scratchPages.clear();
+  m_trackedObjects.clear();
 
   // Allocate a command buffer and reset context state
   m_commandBufferIndex = 0;
   m_cmd = allocateCommandBuffer();
+
 
   resetState();
 }
@@ -1013,6 +1015,12 @@ void GfxVulkanContext::setViewports(
     std::tie(m_viewports[i], m_scissors[i]) = getVkViewportAndScissor(viewports[i]);
 
   m_dynamicStatesDirty |= GfxVulkanDynamicState::eViewports;   
+}
+
+
+void GfxVulkanContext::trackObject(
+        std::shared_ptr<GfxTrackable>&& object) {
+  m_trackedObjects.push_back(std::move(object));
 }
 
 

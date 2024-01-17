@@ -241,14 +241,12 @@ using GfxImageView = PtrRef<GfxImageViewIface>;
 /**
  * \brief Image resource interface
  */
-class GfxImageIface {
+class GfxImageIface : public GfxTrackable {
 
 public:
 
   GfxImageIface(
     const GfxImageDesc&                 desc);
-
-  virtual ~GfxImageIface() { }
 
   /**
    * \brief Retrieves view with the given properties

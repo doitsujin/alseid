@@ -132,7 +132,7 @@ using GfxBufferView = PtrRef<GfxBufferViewIface>;
 /**
  * \brief Buffer resource interface
  */
-class GfxBufferIface {
+class GfxBufferIface : public GfxTrackable {
 
 public:
 
@@ -146,8 +146,6 @@ public:
       m_desc.debugName = m_debugName.c_str();
     }
   }
-
-  virtual ~GfxBufferIface() { }
 
   /**
    * \brief Retrieves view with the given properties

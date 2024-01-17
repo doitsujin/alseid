@@ -774,6 +774,26 @@ public:
     setViewports(1, &viewport);
   }
 
+  /**
+   * \brief Tracks lifetime for an object
+   *
+   * Destroy the object when the context is reset. This can be used
+   * to keep resources alive that are no longer needed, but may still
+   * be accessed by the GPU.
+   * \param [in] object Trackable object
+   */
+  virtual void trackObject(
+          std::shared_ptr<GfxTrackable>&& object) = 0;
+
+  /**
+   * \brief Tracks lifetime for an object
+   * \param [in] object Trackable object
+   */
+  template<typename T>
+  void trackObject(const IfaceRef<T>& object) {
+    trackObject(object.getShared());
+  }
+
 };
 
 /** See GfxContextIface. */

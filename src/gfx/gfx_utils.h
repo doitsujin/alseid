@@ -8,6 +8,23 @@
 namespace as {
 
 /**
+ * \brief Trackable object interface
+ *
+ * Classes that can be used with lifetime tracking should inherit
+ * from this class. This only provides a virtual destructor for
+ * the purpose of storing a pointer to the object in a list, and
+ * destroying it when it is safe to do so.
+ */
+class GfxTrackable {
+
+public:
+
+  virtual ~GfxTrackable() { }
+
+};
+
+
+/**
  * \brief Computes extent of a given mip level
  *
  * \param [in] imageExtent Extent of the base mip level

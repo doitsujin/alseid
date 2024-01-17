@@ -502,6 +502,13 @@ public:
           uint32_t                      count,
     const GfxViewport*                  viewports) override;
 
+  /**
+   * \brief Tracks object  lifetime
+   * \param [in] object Object to track
+   */
+  void trackObject(
+          std::shared_ptr<GfxTrackable>&& object) override;
+
 private:
 
   std::shared_ptr<GfxVulkanDevice>  m_device;
@@ -558,6 +565,8 @@ private:
   std::vector<GfxScratchBufferPage> m_scratchPages;
 
   alignas(16) std::array<char, 256> m_shaderConstants = { };
+
+  std::vector<std::shared_ptr<GfxTrackable>> m_trackedObjects;
 
   void updateGraphicsState(
     const GfxVulkanProcs&               vk,

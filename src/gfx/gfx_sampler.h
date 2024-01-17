@@ -125,7 +125,7 @@ struct GfxSamplerDesc {
 /**
  * \brief Sampler interface
  */
-class GfxSamplerIface {
+class GfxSamplerIface : public GfxTrackable {
 
 public:
 
@@ -137,8 +137,6 @@ public:
       m_desc.debugName = m_debugName.c_str();
     }
   }
-
-  virtual ~GfxSamplerIface() { }
 
   /**
    * \brief Retrieves sampler descriptor
