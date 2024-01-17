@@ -144,6 +144,7 @@ public:
 
       Vector3D up = Vector3D(0.0f, 1.0f, 0.0f);
 
+      m_scenePassGroup->resizeBuffer(*m_sceneNodeManager, m_frameId);
       m_scenePassManager->updateRenderPassProjection(m_scenePassIndex,
         computePerspectiveProjection(Vector2D(1280.0f, 720.0f), 2.0f, 0.001f));
       m_scenePassManager->updateRenderPassTransform(m_scenePassIndex,
@@ -438,12 +439,6 @@ private:
       GfxSceneInstanceResource::fromBufferAddress(m_geometryBuffer->getGpuAddress()));
 
     m_sceneMaterialManager->addInstanceDraws(*m_sceneInstanceManager, instanceRef);
-
-    GfxScenePassGroupBufferDesc groupDesc = { };
-    groupDesc.setNodeCount(GfxSceneNodeType::eBvh, 1u);
-    groupDesc.setNodeCount(GfxSceneNodeType::eInstance, 1u);
-
-    m_scenePassGroup->resizeBuffer(groupDesc, 0u);
 
     m_sceneInstanceNode = instanceNode;
     m_sceneInstanceRef = instanceRef;
