@@ -53,6 +53,12 @@ const uint MsFlags = 0u;
     if (processed_ = (value == subgroupBroadcastFirst(value)))
 
 
+// Convenience helpers for ternary min/max. Common enough that
+// this may help reduce the amount of typing required.
+#define asMin3(a, b, c) min(min(a, b), c)
+#define asMax3(a, b, c) max(max(a, b), c)
+
+
 // Decodes three 10-bit signed normalized integers.
 // This is a useful data format for vertex normals.
 vec3 unpackSnorm3x10(uint32_t dword) {
