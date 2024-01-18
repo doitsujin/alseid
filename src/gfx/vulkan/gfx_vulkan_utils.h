@@ -1059,6 +1059,56 @@ inline VkFragmentShadingRateCombinerOpKHR getVkShadingRateCombiner(GfxShadingRat
 
 
 /**
+ * \brief Converts color channel to Vulkan swizzle
+ *
+ * \param [in] channel Color channel
+ * \param [in] identity Identity channel
+ * \returns Vulkan component swizzle
+ */
+inline VkComponentSwizzle getVkImageComponentSwizzle(
+        GfxColorChannel               channel,
+        GfxColorChannel               identity) {
+  if (channel == identity)
+    return VK_COMPONENT_SWIZZLE_IDENTITY;
+
+  switch (channel) {
+    case GfxColorChannel::eR:
+      return VK_COMPONENT_SWIZZLE_R;
+    case GfxColorChannel::eG:
+      return VK_COMPONENT_SWIZZLE_G;
+    case GfxColorChannel::eB:
+      return VK_COMPONENT_SWIZZLE_B;
+    case GfxColorChannel::eA:
+      return VK_COMPONENT_SWIZZLE_A;
+    case GfxColorChannel::e0:
+      return VK_COMPONENT_SWIZZLE_ZERO;
+    case GfxColorChannel::e1:
+      return VK_COMPONENT_SWIZZLE_ONE;
+  }
+
+  // Should be unreachable
+  return VK_COMPONENT_SWIZZLE_MAX_ENUM;
+}
+
+
+/**
+ * \brief Converts component swizzle to Vulkan component mapping
+ *
+ * \param [in] swizzle Component swizzle
+ * \returns Vulkan component mapping
+ */
+inline VkComponentMapping getVkImageComponentMapping(
+  const GfxColorSwizzle&              swizzle) {
+  VkComponentMapping result;
+  result.r = getVkImageComponentSwizzle(swizzle.r, GfxColorChannel::eR);
+  result.g = getVkImageComponentSwizzle(swizzle.g, GfxColorChannel::eG);
+  result.b = getVkImageComponentSwizzle(swizzle.b, GfxColorChannel::eB);
+  result.a = getVkImageComponentSwizzle(swizzle.a, GfxColorChannel::eA);
+  return result;
+}
+
+
+/**
  * \brief Creates shader from built-in binary
  *
  * \param [in] size Code size, in bytes

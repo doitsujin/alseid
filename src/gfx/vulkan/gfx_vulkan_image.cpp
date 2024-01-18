@@ -25,6 +25,9 @@ GfxVulkanImageView::GfxVulkanImageView(
   viewInfo.format = m_device.getVkFormat(desc.format);
   viewInfo.subresourceRange = getVkImageSubresourceRange(desc.subresource);
 
+  if (desc.usage == GfxUsage::eShaderResource)
+    viewInfo.components = getVkImageComponentMapping(desc.swizzle);
+
   VkResult vr = vk.vkCreateImageView(vk.device, &viewInfo, nullptr, &m_view);
 
   if (vr)

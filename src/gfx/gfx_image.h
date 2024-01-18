@@ -37,6 +37,53 @@ enum class GfxImageViewType : uint32_t {
 
 
 /**
+ * \brief Image view channel
+ */
+enum class GfxColorChannel : uint8_t {
+  eR = 0u,  ///< Red channel
+  eG = 1u,  ///< Green channel
+  eB = 2u,  ///< Blue channel
+  eA = 3u,  ///< Alpha channel
+  e0 = 4u,  ///< Constant zero
+  e1 = 5u,  ///< Constant one
+};
+
+
+/**
+ * \brief Image view channel swizzle
+ *
+ * Can be used to remap channels of image views
+ * before they are processed in a shader. Note
+ * that this is only allowed for resource views.
+ */
+struct GfxColorSwizzle {
+  GfxColorSwizzle() = default;
+
+  GfxColorSwizzle(
+          GfxColorChannel             r_,
+          GfxColorChannel             g_,
+          GfxColorChannel             b_,
+          GfxColorChannel             a_)
+  : r(r_), g(g_), b(b_), a(a_) { }
+
+  GfxColorChannel r = GfxColorChannel::eR;
+  GfxColorChannel g = GfxColorChannel::eG;
+  GfxColorChannel b = GfxColorChannel::eB;
+  GfxColorChannel a = GfxColorChannel::eA;
+
+  bool operator == (const GfxColorSwizzle&) const = default;
+  bool operator != (const GfxColorSwizzle&) const = default;
+
+  size_t hash() const {
+    return (uint32_t(r) <<  0) |
+           (uint32_t(g) <<  8) |
+           (uint32_t(b) << 16) |
+           (uint32_t(a) << 24);
+  }
+};
+
+
+/**
  * \brief Image view description
  *
  * The view description is also used to look up
@@ -65,6 +112,8 @@ struct GfxImageViewDesc {
    *    must be included. Otherwise, only one aspect is allowed
    *    and only one mip level is allowed. */
   GfxImageSubresource subresource;
+  /** Color component swizzle for resource views. */
+  GfxColorSwizzle swizzle;
 
   /**
    * \brief Computes hash
@@ -80,6 +129,7 @@ struct GfxImageViewDesc {
     hash.add(subresource.mipCount);
     hash.add(subresource.layerIndex);
     hash.add(subresource.layerCount);
+    hash.add(swizzle.hash());
     return hash;
   }
 
