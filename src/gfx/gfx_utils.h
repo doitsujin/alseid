@@ -59,6 +59,22 @@ inline Extent2D gfxComputeMipExtent(
 
 
 /**
+ * \brief Computes maximum mip count for an image
+ *
+ * \param [in] imageExtent Extent of the image
+ * \returns Maximum number of mips for the image
+ */
+inline uint32_t gfxComputeMipCount(
+        Extent3D                        imageExtent) {
+  uint32_t maxCoord = std::max(std::max(
+    imageExtent.at<0>(), imageExtent.at<1>()),
+    imageExtent.at<2>());
+
+  return uint32_t(findmsb(maxCoord) + 1);
+}
+
+
+/**
  * \brief Computes workgroup count for a given dispatch
  *
  * Utility function to compute the number of workgroups
