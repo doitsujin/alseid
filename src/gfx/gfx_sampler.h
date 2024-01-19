@@ -90,7 +90,7 @@ enum class GfxBorderColor : uint32_t {
  */
 struct GfxSamplerDesc {
   /** Sampler debug name */
-  const char* debugName;
+  const char* debugName = nullptr;
   /** Sampler type */
   GfxSamplerType type = GfxSamplerType::eDefault;
   /** Magnification filter */

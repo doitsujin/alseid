@@ -78,7 +78,7 @@ using GfxBufferFlags = Flags<GfxBufferFlag>;
  */
 struct GfxBufferDesc {
   /** Buffer debug name */
-  const char* debugName;
+  const char* debugName = nullptr;
   /** Buffer usage. Specifies which kind of operations
    *  the buffer can be used with.*/
   GfxUsageFlags usage = 0u;

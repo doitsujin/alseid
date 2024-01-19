@@ -189,7 +189,7 @@ inline uint32_t gfxGetImageDimensions(GfxImageType type) {
  */
 struct GfxImageDesc {
   /** Image debug name */
-  const char* debugName;
+  const char* debugName = nullptr;
   /** Image dimensionality */
   GfxImageType type = GfxImageType::e2D;
   /** Image format. */
