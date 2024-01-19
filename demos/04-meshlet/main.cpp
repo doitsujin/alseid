@@ -137,9 +137,9 @@ public:
       Vector3D yDir(0.0f, 1.0f, 0.0f);
       Vector3D xDir = cross(yDir, zDir);
 
-      m_eye += xDir * m_frameDelta * deltaX;
-      m_eye += yDir * m_frameDelta * deltaY;
-      m_eye += zDir * m_frameDelta * deltaZ;
+      m_eye += xDir * m_frameDelta * deltaX * 20.0f;
+      m_eye += yDir * m_frameDelta * deltaY * 20.0f;
+      m_eye += zDir * m_frameDelta * deltaZ * 20.0f;
 
       m_rotation += m_frameDelta;
 
@@ -154,7 +154,7 @@ public:
         computePerspectiveProjection(Vector2D(1280.0f, 720.0f), 2.0f, 0.001f));
       m_scenePassManager->updateRenderPassTransform(m_scenePassIndex,
         computeViewTransform(m_eye, normalize(m_dir), up), false);
-      m_scenePassManager->updateRenderPassViewDistance(m_scenePassIndex, 30.0f);
+      // m_scenePassManager->updateRenderPassViewDistance(m_scenePassIndex, 30.0f);
 
       m_sceneMaterialManager->updateDrawBuffer(context, *m_sceneDrawBufferPrimary);
       m_sceneMaterialManager->updateDrawBuffer(context, *m_sceneDrawBufferSecondary);
@@ -435,6 +435,22 @@ private:
     m_sceneInstanceManager->updateAnimationMetadata(m_sceneInstanceRef, animationMetadata);
     m_sceneInstanceManager->updateAnimationParameters(m_sceneInstanceRef, 0, animationParameters);
 
+    if (0) {
+    auto job = m_jobs->dispatch(m_jobs->create<BatchJob>(
+      [this, cAnimationParameters = animationParameters, &animation, &animationMetadata] (uint32_t i) {
+        GfxSceneAnimationParameters animationParameters = cAnimationParameters;
+        animationParameters.timestamp += 0.2741f * float(i);
+
+        float count = std::floor(animationParameters.timestamp / animation.duration);
+        animationParameters.timestamp -= animation.duration * count;
+
+        m_sceneInstanceManager->updateAnimationMetadata(m_instances[i], animationMetadata);
+        m_sceneInstanceManager->updateAnimationParameters(m_instances[i], 0, animationParameters);
+      }, m_instances.size(), 1024));
+
+    m_jobs->wait(job);
+    }
+
     if (d.count() >= animation.duration) {
       m_animationIndex = (m_animationIndex + 1) % m_geometry->animations.size();
       m_animationStart = t;
@@ -550,6 +566,54 @@ private:
 
     m_scenePassIndex = m_scenePassManager->createRenderPass(passDesc);
     m_scenePassGroup->setPasses(1, &m_scenePassIndex);
+
+    uint32_t r = 0;
+
+    for (int32_t bz = -7; bz <= 7; bz++) {
+      for (int32_t by = -7; by <= 7; by++) {
+        for (int32_t bx = -7; bx <= 7; bx++) {
+          if (!bz && !by && !bx)
+            continue;
+
+          uint32_t bvhNode = m_sceneNodeManager->createNode();
+          bvhDesc.nodeIndex = bvhNode;
+          bvhDesc.aabb.min = Vector<float16_t, 3>(-3.0_f16, -2.0_f16, -3.0_f16);
+          bvhDesc.aabb.max = Vector<float16_t, 3>( 3.0_f16,  4.0_f16,  3.0_f16);
+
+          GfxSceneNodeRef bvhRef = m_sceneNodeManager->createBvhNode(bvhDesc);
+          m_sceneNodeManager->updateNodeReference(bvhNode, bvhRef);
+          m_sceneNodeManager->updateNodeTransform(bvhNode,
+            QuatTransform::translate(Vector3D(
+              float(5 * bx), float(5 * by), float(5 * bz))));
+
+          m_sceneNodeManager->attachNodesToBvh(rootRef, 1, &bvhRef);
+
+          for (int32_t z = -2; z <= 2; z++) {
+            for (int32_t y = -2; y <= 2; y++) {
+              for (int32_t x = -2; x <= 2; x++) {
+                uint32_t instanceNode = m_sceneNodeManager->createNode();
+                instanceDesc.nodeIndex = instanceNode;
+
+                GfxSceneNodeRef instanceRef = m_sceneInstanceManager->createInstance(instanceDesc);
+                m_sceneNodeManager->updateNodeParent(instanceNode, bvhNode, -1);
+                m_sceneNodeManager->updateNodeReference(instanceNode, instanceRef);
+                m_sceneNodeManager->updateNodeTransform(instanceNode, QuatTransform(
+                  computeRotationQuaternion(Vector3D(0.0f, 1.0f, 0.0f), float(r++)),
+                  Vector4D(float(x), float(y), float(z), 0.0f)));
+                m_sceneNodeManager->attachNodesToBvh(bvhRef, 1, &instanceRef);
+
+                m_sceneInstanceManager->updateResource(instanceRef, 0,
+                  GfxSceneInstanceResource::fromBufferAddress(m_geometryBuffer->getGpuAddress()));
+
+                m_sceneMaterialManager->addInstanceDraws(*m_sceneInstanceManager, instanceRef);
+
+                m_instances.push_back(instanceRef);
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
 
@@ -578,6 +642,21 @@ private:
     desc.blending = &blending;
 
     return m_device->createRenderState(desc);
+  }
+
+
+  GfxImage createDepthImage(Extent2D imageExtent) {
+    m_device->waitIdle();
+
+    GfxImageDesc desc;
+    desc.debugName = "Depth image";
+    desc.type = GfxImageType::e2D;
+    desc.format = GfxFormat::eD32;
+    desc.usage = GfxUsage::eRenderTarget | GfxUsage::eShaderResource;
+    desc.extent = Extent3D(imageExtent, 1u);
+    desc.samples = 1;
+
+    return m_device->createImage(desc, GfxMemoryType::eAny);
   }
 
 
