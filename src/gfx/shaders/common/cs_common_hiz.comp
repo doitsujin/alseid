@@ -1,0 +1,646 @@
+// Hi-Z build shader. Writes up to 12 mip levels in a single dispatch,
+// and exports both the minimum and maximum value in the red and green
+// components of the destination image.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#include "../as_include_head.glsl"
+
+#define CS_WORKGROUP_SIZE (256u)
+
+layout(local_size_x = CS_WORKGROUP_SIZE) in;
+
+#define CS_MIPS_PER_PASS (6u)
+#define CS_MIP_PIXELS ((1u << CS_MIPS_PER_PASS) - 1u)
+
+#define CS_MAIN csMain
+
+// Source image. If this is the depth image, the x and y coordinates
+// must both return the raw depth value, since this may otherwise be
+// a mip level of the destination image.
+layout(set = 0, binding = 0)
+uniform texture2DArray rSrcImage;
+
+
+// Atomic counter buffer for workgroup counts, with one counter per
+// array layer. Each counter must be pre-initialized with the total
+// two-dimensional workgroup count.
+layout(set = 0, binding = 1, scalar)
+queuefamilycoherent buffer WorkgroupCount {
+  uint32_t layers[];
+} rWorkgroupCount;
+
+// Destination images. Marked as coherent since one of the mip
+// levels will be read by the last active workgroup.
+layout(set = 0, binding = 2, rg16ui)
+queuefamilycoherent uniform uimage2DArray rDstImages[CS_MIPS_PER_PASS * 2u];
+
+layout(push_constant)
+uniform PushData {
+  u32vec2   srcExtent;
+  uint32_t  mipCount;
+  uint32_t  layerCount;
+} globals;
+
+
+// Decodes a 6-bit morton code into a two-dimensiona coordinate.
+// The input does not need to be masked.
+u32vec2 csDecodeMortonCoord(
+        uint32_t                      tid) {
+  uint32_t coord = tid | (tid << 7u);
+  coord &= 0x1515u;
+  coord += coord & 0x0101u;
+  coord += coord & 0x0606u;
+
+  return u32vec2(
+    bitfieldExtract(coord,  2, 3),
+    bitfieldExtract(coord, 10, 3));
+}
+
+
+// Checks whether the size of a mip level is odd or even
+bvec2 csIsMipLevelOdd(
+        uint32_t                      srcMip) {
+  return bvec2(bitfieldExtract(globals.srcExtent, int(srcMip), 1));
+}
+
+
+// Computes the size of the given mip level, using the source
+// image extent as a starting point.
+u32vec2 csComputeImageMipSize(
+        uint32_t                      mip) {
+  return max(u32vec2(globals.srcExtent >> mip), u32vec2(1u));
+}
+
+
+// Helper function to compute the offset of the image region
+// that affects a given pixel in a higher mip level.
+u32vec2 csComputeImageReadOffset(
+        u32vec2                       dstLocation,
+        uint32_t                      dstMip,
+        uint32_t                      srcMip) {
+  return dstLocation << (dstMip - srcMip);
+}
+
+
+// Helper function to compute the size of the source image
+// region that affects any pixel in a higher mip level.
+u32vec2 csComputeImageReadSize(
+        uint32_t                      dstMip,
+        uint32_t                      srcMip) {
+  return ((1u << dstMip) | bitfieldExtract(globals.srcExtent, 0, int(dstMip))) >> srcMip;
+}
+
+
+// Helper function to compute the size of the store region relative to the
+// source image. This is meant to help reduce redundant stores to lower mip
+// levels.
+u32vec2 csComputeImageWriteSize(
+        u32vec2                       dstLocation,
+        uint32_t                      dstMip,
+        uint32_t                      srcMip) {
+  bvec2 isLastWorkgroup = equal(dstLocation, csComputeImageMipSize(dstMip) - 1u);
+  return mix(u32vec2(1u << (dstMip - srcMip)), csComputeImageReadSize(dstMip, srcMip), isLastWorkgroup);
+}
+
+
+// Helper to manually convert f32 to f16 with a defined rounding mode, while
+// also preserving denorms. Assumes that the input is >= 0.0 and <= 1.0.
+// This is needed because compilers will optimize away any float conversion
+// round-trips, and rounding modes are not well-defined.
+uint32_t csConvertToF16(
+        float                         sourceData,
+        bool                          roundUp) {
+  uint32_t sourceBits = floatBitsToUint(sourceData);
+
+  uint32_t exp32 = bitfieldExtract(sourceBits, 23, 8);
+  uint32_t frc32 = bitfieldExtract(sourceBits, 0, 23);
+  uint32_t exp16 = exp32 - 112u;
+  uint32_t frc16 = frc32 >> 13u;
+
+  uint32_t removedBits = 13u;
+
+  if (exp32 < 113u) {
+    // Handle numbers that produce f16 denorms or zero
+    uint32_t shift = min(113u - exp32, 11u);
+
+    exp16 = 0u;
+    frc16 = (0x400 | frc16) >> shift;
+
+    removedBits += shift;
+  }
+
+  uint32_t f16 = bitfieldInsert(frc16, exp16, 10, 5);
+
+  if (roundUp)
+    f16 += uint32_t(bitfieldExtract(frc32, 0, int(removedBits)) != 0u);
+
+  return f16;
+}
+
+
+// Helper to store image data for a given mip level.
+void csStoreImage(
+        uint32_t                      dstMip,
+        u32vec2                       dstLocation,
+        uint32_t                      layer,
+        u16vec2                       data) {
+  imageStore(rDstImages[dstMip - 1u],
+    ivec3(dstLocation, layer), data.xyxx);
+}
+
+
+// Performs initial reduction on source image data. Ideally, the first
+// mip level has an even size for this to be performant.
+u32vec2 csReduceSource(
+        u32vec2                       srcLocation,
+        uint32_t                      layer) {
+  ivec3 coord = ivec3(srcLocation, layer);
+  bvec2 odd = csIsMipLevelOdd(0u);
+
+  f32vec2 t00 = texelFetch(rSrcImage, coord, 0).xy;
+  f32vec2 t10 = texelFetchOffset(rSrcImage, coord, 0, ivec2(1, 0)).xy;
+  f32vec2 t01 = texelFetchOffset(rSrcImage, coord, 0, ivec2(0, 1)).xy;
+  f32vec2 t11 = texelFetchOffset(rSrcImage, coord, 0, ivec2(1, 1)).xy;
+
+  f32vec2 result = f32vec2(
+    asMin3(min(t00.x, t10.x), t01.x, t11.x),
+    asMax3(max(t00.y, t10.y), t01.y, t11.y));
+
+  if (odd.x || odd.y) {
+    if (odd.x) {
+      f32vec2 t20 = texelFetchOffset(rSrcImage, coord, 0, ivec2(2, 0)).xy;
+      f32vec2 t21 = texelFetchOffset(rSrcImage, coord, 0, ivec2(2, 1)).xy;
+
+      result = f32vec2(
+        asMin3(result.x, t20.x, t21.x),
+        asMax3(result.y, t20.y, t21.y));
+    }
+
+    if (odd.y) {
+      f32vec2 t02 = texelFetchOffset(rSrcImage, coord, 0, ivec2(0, 2)).xy;
+      f32vec2 t12 = texelFetchOffset(rSrcImage, coord, 0, ivec2(1, 2)).xy;
+
+      result = f32vec2(
+        asMin3(result.x, t02.x, t12.x),
+        asMax3(result.y, t02.y, t12.y));
+    }
+
+    if (odd.x && odd.y) {
+      f32vec2 t22 = texelFetchOffset(rSrcImage, coord, 0, ivec2(2, 2)).xy;
+
+      result = f32vec2(
+        min(result.x, t22.x),
+        max(result.y, t22.y));
+    }
+  }
+
+  return u32vec2(
+    csConvertToF16(result.x, false),
+    csConvertToF16(result.y, true));
+}
+
+
+// Performs initial reduction on an already processed mip level.
+u32vec2 csReduceTail(
+        u32vec2                       srcLocation,
+        uint32_t                      mip,
+        uint32_t                      layer) {
+  ivec3 coord = ivec3(srcLocation, layer);
+  bvec2 odd = csIsMipLevelOdd(mip);
+
+  // todo make dst images read uint16
+  u32vec2 t00 = imageLoad(rDstImages[mip - 1u], coord).xy;
+  u32vec2 t10 = imageLoad(rDstImages[mip - 1u], coord + ivec3(1, 0, 0)).xy;
+  u32vec2 t01 = imageLoad(rDstImages[mip - 1u], coord + ivec3(0, 1, 0)).xy;
+  u32vec2 t11 = imageLoad(rDstImages[mip - 1u], coord + ivec3(1, 1, 0)).xy;
+
+  u32vec2 result = u32vec2(
+    asMin3(min(t00.x, t10.x), t01.x, t11.x),
+    asMax3(max(t00.y, t10.y), t01.y, t11.y));
+
+  if (odd.x || odd.y) {
+    if (odd.x) {
+      u32vec2 t20 = imageLoad(rDstImages[mip - 1u], coord + ivec3(2, 0, 0)).xy;
+      u32vec2 t21 = imageLoad(rDstImages[mip - 1u], coord + ivec3(2, 1, 0)).xy;
+
+      result = u32vec2(
+        asMin3(result.x, t20.x, t21.x),
+        asMax3(result.y, t20.y, t21.y));
+    }
+
+    if (odd.y) {
+      u32vec2 t02 = imageLoad(rDstImages[mip - 1u], coord + ivec3(0, 2, 0)).xy;
+      u32vec2 t12 = imageLoad(rDstImages[mip - 1u], coord + ivec3(1, 2, 0)).xy;
+
+      result = u32vec2(
+        asMin3(result.x, t02.x, t12.x),
+        asMax3(result.y, t02.y, t12.y));
+    }
+
+    if (odd.x && odd.y) {
+      u32vec2 t22 = imageLoad(rDstImages[mip - 1u], coord + ivec3(2, 2, 0)).xy;
+
+      result = u32vec2(
+        min(result.x, t22.x),
+        max(result.y, t22.y));
+    }
+  }
+
+  return result;
+}
+
+
+// Performs reduction using either the source image, or an
+// already fully processed mip level.
+u32vec2 csReduceImage(
+        u32vec2                       dstOffset,
+        u32vec2                       dstCoord,
+        u32vec2                       dstReadSize,
+        u32vec2                       dstWriteSize,
+        uint32_t                      mip,
+        uint32_t                      layer) {
+  u32vec2 data = uvec2(0u);
+
+  if (all(lessThan(dstCoord, dstReadSize))) {
+    u32vec2 srcLocation = (dstOffset + dstCoord) * 2u;
+
+    if (mip == 0u)
+      data = csReduceSource(srcLocation, layer);
+    else
+      data = csReduceTail(srcLocation, mip, layer);
+
+    if (all(lessThan(dstCoord, dstWriteSize)))
+      csStoreImage(mip + 1u, dstOffset + dstCoord, layer, u16vec2(data));
+  }
+
+  return data;
+}
+
+
+// Shared data array containing reduced mip level data, and convenience
+// functions to acess it.
+shared u16vec2 csReducedMipsShared[CS_MIP_PIXELS][CS_MIP_PIXELS];
+
+void csStoreLds(
+        u32vec2                         coord,
+        u16vec2                         data) {
+  csReducedMipsShared[coord.y][coord.x] = data;
+}
+
+u16vec2 csLoadLds(
+        u32vec2                         coord) {
+  return csReducedMipsShared[coord.y][coord.x];
+}
+
+
+// Reduces a mip in shared memory. This must be used for all odd-sized
+// source mip levels, as well as once after reducing a full chain of
+// even mips.
+u32vec2 csReduceLdsMip(
+        uint32_t                        srcMip,
+        u32vec2                         srcSize,
+        u32vec2                         dstOffset,
+        u32vec2                         dstCoord,
+        u32vec2                         dstSize,
+        uint32_t                        layer) {
+  u32vec2 srcCoord = dstCoord * 2u;
+  u32vec2 result = u32vec2(0u);
+
+  if (all(lessThan(srcCoord, srcSize))) {
+    bvec2 odd = bvec2(srcSize & 1u);
+
+    u16vec2 t00 = csLoadLds(srcCoord + u32vec2(0u, 0u));
+    u16vec2 t10 = csLoadLds(srcCoord + u32vec2(1u, 0u));
+    u16vec2 t01 = csLoadLds(srcCoord + u32vec2(0u, 1u));
+    u16vec2 t11 = csLoadLds(srcCoord + u32vec2(1u, 1u));
+
+    result = u32vec2(
+      asMin3(min(t00.x, t10.x), t01.x, t11.x),
+      asMax3(max(t00.y, t10.y), t01.y, t11.y));
+
+    if (odd.x) {
+      u16vec2 t20 = csLoadLds(srcCoord + u32vec2(2u, 0u));
+      u16vec2 t21 = csLoadLds(srcCoord + u32vec2(2u, 1u));
+
+      result = u32vec2(
+        asMin3(result.x, t20.x, t21.x),
+        asMax3(result.y, t20.y, t21.y));
+    }
+
+    if (odd.y) {
+      u16vec2 t02 = csLoadLds(srcCoord + u32vec2(0u, 2u));
+      u16vec2 t12 = csLoadLds(srcCoord + u32vec2(1u, 2u));
+
+      result = u32vec2(
+        asMin3(result.x, t02.x, t12.x),
+        asMax3(result.y, t02.y, t12.y));
+    }
+
+    if (odd.x && odd.y) {
+      u16vec2 t22 = csLoadLds(srcCoord + u32vec2(2u, 2u));
+
+      result = u32vec2(
+        min(result.x, t22.x),
+        max(result.y, t22.y));
+    }
+
+    if (all(lessThan(dstCoord, dstSize)))
+      csStoreImage(srcMip + 1u, dstOffset + dstCoord, layer, u16vec2(result));
+  }
+
+  return result;
+}
+
+
+// Reduces up to 3 even-sized mip levels at once, using subgroup operations.
+// The final mip level will be written to LDS for subsequent iterations.
+// Returns the number of mip levels written.
+uint32_t csReduceEvenMips(
+        uint32_t                        tid,
+        uint32_t                        mipCount,
+        uint32_t                        srcMip,
+        u32vec2                         srcCoord,
+        u32vec2                         srcSize,
+        u32vec2                         srcOffset,
+        u32vec2                         dstSize,
+        uint32_t                        layer,
+        u32vec2                         data) {
+  bool storeLds = all(lessThan(srcCoord, srcSize));
+  bool storeMem = all(lessThan(srcCoord, dstSize));
+
+  uint32_t oddMipBits = srcSize.x | srcSize.y;
+  oddMipBits |= 1u << mipCount;
+
+  if (gl_SubgroupSize < 4u || asTest(oddMipBits, 1u)) {
+    if (storeLds)
+      csStoreLds(srcCoord, u16vec2(data));
+    return 0u;
+  }
+
+  data.x = subgroupClusteredMin(data.x, 4u);
+  data.y = subgroupClusteredMax(data.y, 4u);
+
+  bool elected = !asTest(tid, 0x3u);
+
+  if (storeMem && elected)
+    csStoreImage(srcMip + 1u, (srcOffset + srcCoord) >> 1u, layer, u16vec2(data));
+
+  if (gl_SubgroupSize < 16u || asTest(oddMipBits, 2u)) {
+    if (elected && storeLds)
+      csStoreLds(srcCoord >> 1u, u16vec2(data));
+    return 1u;
+  }
+
+  // Shuffling across a small number of lanes is generally fast,
+  // just read the data directly.
+  data.x = min(data.x, subgroupShuffleXor(data.x, 0x4));
+  data.y = max(data.y, subgroupShuffleXor(data.y, 0x4));
+  data.x = min(data.x, subgroupShuffleXor(data.x, 0x8));
+  data.y = max(data.y, subgroupShuffleXor(data.y, 0x8));
+
+  elected = !asTest(tid, 0xfu);
+
+  if (storeMem && elected)
+    csStoreImage(srcMip + 2u, (srcOffset + srcCoord) >> 2u, layer, u16vec2(data));
+
+  if (gl_SubgroupSize < 64u || asTest(oddMipBits, 4u)) {
+    if (elected && storeLds)
+      csStoreLds(srcCoord >> 2u, u16vec2(data));
+    return 2u;
+  }
+
+  data.x = min(data.x, subgroupShuffleXor(data.x, 0x10));
+  data.y = max(data.y, subgroupShuffleXor(data.y, 0x10));
+
+  if (gl_SubgroupSize == 64u) {
+    // We only need the correct result on the first lane, and
+    // this is faster than shuffling across 32 lanes on AMD.
+    data.x = min(data.x, subgroupBroadcast(data.x, 0x20));
+    data.y = max(data.y, subgroupBroadcast(data.y, 0x20));
+  } else {
+    data.x = min(data.x, subgroupShuffleXor(data.x, 0x20));
+    data.y = max(data.y, subgroupShuffleXor(data.y, 0x20));
+  }
+
+  elected = !asTest(tid, 0x3fu);
+
+  if (elected) {
+    if (storeMem)
+      csStoreImage(srcMip + 3u, (srcOffset + srcCoord) >> 3u, layer, u16vec2(data));
+
+    if (storeLds)
+      csStoreLds(srcCoord >> 3u, u16vec2(data));
+  }
+
+  return 3u;
+}
+
+
+// Reduces the last mip level and produces a 1x1 result. This takes
+// advantage of the limited input size of at most 3x3 pixels, and
+// does not write back the result to LDS since it will not be needed.
+shared u32vec2 csLastMipShared;
+
+void csReduceLastMip(
+        uint32_t                      tid,
+        uint32_t                      dstMip,
+        u32vec2                       dstOffset,
+        u32vec2                       srcSize,
+        uint32_t                      layer) {
+  // Initialize data with values that will not affect the result
+  u32vec2 data = u32vec2(0xffffu, 0x0000u);
+  u32vec2 coord = u32vec2(tid & 0x3u, tid >> 2u);
+
+  if (all(lessThan(coord, srcSize)))
+    data = u32vec2(csLoadLds(coord));
+
+  if (gl_SubgroupSize >= 16u) {
+    data.x = subgroupClusteredMin(data.x, 16u);
+    data.y = subgroupClusteredMax(data.y, 16u);
+  } else {
+    data.x = subgroupMin(data.x);
+    data.y = subgroupMax(data.y);
+
+    if (tid == 0u)
+      csLastMipShared = u32vec2(data);
+    barrier();
+
+    if (subgroupElect()) {
+      atomicMin(csLastMipShared.x, data.x);
+      atomicMax(csLastMipShared.y, data.y);
+    }
+
+    barrier();
+    data = csLastMipShared;
+  }
+
+  if (tid == 0u)
+    csStoreImage(dstMip, dstOffset, layer, u16vec2(data));
+}
+
+
+// Computes block count in each dimension for a given input size.
+// The z component returns the flattened block count.
+u32vec3 csComputeBlockTopology(
+        u32vec2                       srcSize) {
+  u32vec2 count = (srcSize + 7u) >> 3u;
+  return u32vec3(count, count.x * count.y);
+}
+
+
+// Computes pixel coordinate for the current thread relative to the
+// image region to write. Uses morton codes to efficiently lay out
+// data for arbitrary subgroup sizes.
+u32vec2 csComputeBlockCoord(
+        uint32_t                      tid,
+        u32vec3                       blockCount,
+        uint32_t                      blockIndex) {
+  uint32_t index = blockIndex + tid / 64u;
+
+  u32vec2 coord = approxIdiv(index, blockCount.x).yx;
+  coord *= 8u;
+  coord += csDecodeMortonCoord(tid);
+  return coord;
+}
+
+
+// Information about the read and write areas for a given mip level.
+struct CsMipArea {
+  u32vec2 readOffset;
+  u32vec2 readSize;
+  u32vec2 writeSize;
+};
+
+CsMipArea csComputeMipArea(
+        u32vec2                       dstLocation,
+        uint32_t                      dstMip,
+        uint32_t                      srcMip) {
+  CsMipArea area;
+  area.readOffset = csComputeImageReadOffset(dstLocation, dstMip, srcMip);
+  area.readSize = csComputeImageReadSize(dstMip, srcMip);
+  area.writeSize = csComputeImageWriteSize(dstLocation, dstMip, srcMip);
+  return area;
+}
+
+
+void csPerformPass(
+        uint32_t                      tid,
+        uint32_t                      baseMip,
+        u32vec2                       dstLocation,
+        uint32_t                      layer) {
+  // Compute properties of the 
+  uint32_t mipIndex = baseMip + 1u;
+
+  CsMipArea mipArea = csComputeMipArea(dstLocation, baseMip + CS_MIPS_PER_PASS, mipIndex);
+
+  // Total number of mipmaps to process in this pass
+  uint32_t mipCount = min(globals.mipCount - baseMip, CS_MIPS_PER_PASS);
+
+  // Number of mips to process, minus the 1x1 bit. This is relevant for
+  // the main loop that processes potentially odd mip levels later.
+  uint32_t mipCountNormal = min(mipCount, CS_MIPS_PER_PASS - 1u);
+
+  // Generate outputs in blocks of 8x8 pixels, needed for the subgroup path.
+  u32vec3 blocks = csComputeBlockTopology(mipArea.readSize);
+
+  for (uint32_t i = 0u; i < blocks.z; i += gl_WorkGroupSize.x / 64u) {
+    u32vec2 coord = csComputeBlockCoord(tid, blocks, i);
+
+    u32vec2 dstOffset = mipArea.readOffset + coord;
+
+    // Load first mip level from the source image and reduce it.
+    u32vec2 data = csReduceImage(mipArea.readOffset, coord,
+      mipArea.readSize, mipArea.writeSize, baseMip, layer);
+
+    // Produce output for the next set of even mips right away if possible
+    uint32_t evenMips = csReduceEvenMips(tid, mipCountNormal - 1u, baseMip + 1u,
+      coord, mipArea.readSize, mipArea.readOffset, mipArea.writeSize, layer, data);
+
+    // Adjust mip index on the first iteration only. This also means that
+    // we must not otherwise use this variable within this loop.
+    mipIndex += (i == 0u) ? evenMips : 0u;
+  }
+
+  barrier();
+
+  // After the initial pass, mipIndex will point to the mip level that was
+  // last written, and is now going to be read. The next mip must be read
+  // from LDS no matter what.
+  while ((mipIndex - baseMip) < mipCountNormal) {
+    CsMipArea srcMipArea = csComputeMipArea(dstLocation, baseMip + CS_MIPS_PER_PASS, mipIndex);
+    CsMipArea dstMipArea = csComputeMipArea(dstLocation, baseMip + CS_MIPS_PER_PASS, mipIndex + 1u);
+
+    // We might still produce outputs as large as 31x31 pixels here,
+    // so we still need to iterate over multiple blocks.
+    u32vec3 blocks = csComputeBlockTopology(mipArea.readSize >> 1u);
+
+    uint32_t mipsProcessed = 0u;
+
+    for (uint32_t i = 0u; i < blocks.z; i += gl_WorkGroupSize.x / 64u) {
+      u32vec2 coord = csComputeBlockCoord(tid, blocks, i);
+
+      // Reduce mip level currently stored in LDS and wait for reads
+      // to complete, so that we do not override any of the data.
+      u32vec2 data = csReduceLdsMip(mipIndex, srcMipArea.readSize,
+        dstMipArea.readOffset, coord, dstMipArea.writeSize, layer);
+
+      barrier();
+
+      // Now we can safely write to LDS even if there are multipe blocks,
+      // since the workgroup processes blocks in order.
+      uint32_t maxEvenMips = mipCountNormal - (mipIndex - baseMip) - 1u;
+      mipsProcessed = csReduceEvenMips(tid, maxEvenMips, mipIndex + 1u, coord,
+        dstMipArea.readSize, dstMipArea.readOffset, dstMipArea.writeSize, layer, data) + 1u;
+    }
+
+    mipIndex += mipsProcessed;
+
+    barrier();
+  }
+
+  // Use a special fast path for the 1x1 mip level, if there is one.
+  if (mipCount == CS_MIPS_PER_PASS) {
+    u32vec2 readSize = csComputeImageReadSize(baseMip + CS_MIPS_PER_PASS, baseMip + CS_MIPS_PER_PASS - 1u);
+    csReduceLastMip(tid, baseMip + CS_MIPS_PER_PASS, dstLocation, readSize, layer);
+  }
+}
+
+
+// Helper to broadcast the remaining workgroup count across the entire
+// workgroup. Relevant when processing the last set of mips.
+shared uint32_t csWorkgroupsShared;
+
+
+void csMain() {
+  uint32_t tid = IsFullSubgroup
+    ? gl_SubgroupInvocationID + gl_SubgroupSize * gl_SubgroupID
+    : gl_LocalInvocationIndex;
+
+  // Process first set of mips
+  u32vec2 dstLocation = gl_WorkGroupID.xy;
+  uint32_t layer = gl_WorkGroupID.z;
+
+  csPerformPass(tid, 0u, dstLocation, layer);
+
+  if (globals.mipCount <= CS_MIPS_PER_PASS)
+    return;
+
+  // If there are any mips left to process for this shader, only
+  // the last active workgroup can safely access all image data
+  if (tid == 0u) {
+    csWorkgroupsShared = atomicAdd(rWorkgroupCount.layers[layer], -1u,
+      gl_ScopeQueueFamily, gl_StorageSemanticsImage, gl_SemanticsAcquireRelease) - 1u;
+  }
+
+  barrier();
+
+  if (csWorkgroupsShared != 0u)
+    return;
+
+  // Process final set of mipmaps
+  csPerformPass(tid, CS_MIPS_PER_PASS, u32vec2(0u), layer);
+}
+
+#include "../as_include_tail.glsl"

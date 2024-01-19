@@ -59,6 +59,10 @@ const uint MsFlags = 0u;
 #define asMax3(a, b, c) max(max(a, b), c)
 
 
+// Convenience macro to test flags.
+#define asTest(a, b) ((a & b) != 0u)
+
+
 // Decodes three 10-bit signed normalized integers.
 // This is a useful data format for vertex normals.
 vec3 unpackSnorm3x10(uint32_t dword) {

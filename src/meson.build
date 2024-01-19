@@ -13,6 +13,9 @@ as_files = files([
   'gfx/gfx_submission.cpp',
   'gfx/gfx_transfer.cpp',
 
+  'gfx/common/gfx_common_hiz.cpp',
+  'gfx/common/gfx_common_pipelines.cpp',
+
   'gfx/debug/gfx_debug_device.cpp',
 
   'gfx/scene/gfx_scene_draw.cpp',
