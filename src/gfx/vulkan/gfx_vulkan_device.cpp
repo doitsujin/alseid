@@ -446,8 +446,10 @@ GfxImage GfxVulkanDevice::createImage(
   if (desc.type == GfxImageType::e3D && (desc.usage & GfxUsage::eRenderTarget))
     imageInfo.flags |= VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT;
 
-  if (imageFormatList.viewFormatCount > 1)
+  if (imageFormatList.viewFormatCount > 1) {
+    imageInfo.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
     imageInfo.pNext = &imageFormatList;
+  }
 
   if (desc.flags & GfxImageFlag::eSimultaneousAccess) {
     getQueueSharingInfo(
