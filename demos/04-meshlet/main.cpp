@@ -4,6 +4,9 @@
 #include "../../src/gfx/gfx_geometry.h"
 #include "../../src/gfx/gfx_transfer.h"
 
+#include "../../src/gfx/common/gfx_common_hiz.h"
+#include "../../src/gfx/common/gfx_common_pipelines.h"
+
 #include "../../src/gfx/scene/gfx_scene_draw.h"
 #include "../../src/gfx/scene/gfx_scene_instance.h"
 #include "../../src/gfx/scene/gfx_scene_material.h"
@@ -34,6 +37,19 @@ struct PushConstants {
 };
 
 
+struct TsPayload {
+  uint32_t instanceIndex;
+  uint32_t passIndex;
+  uint32_t drawIndex;
+  uint32_t skinningDataOffset;
+  GfxMeshInstance meshInstance;
+  QuatTransform transforms[2];
+  uint64_t meshletVa;
+  uint32_t meshletOffsets[64];
+  uint16_t meshletPayloads[64];
+};
+
+
 class MeshletApp {
 
 public:
@@ -44,7 +60,8 @@ public:
   , m_gfx   (GfxBackend::eDefault, m_wsi,
               GfxInstanceFlag::eApiValidation |
               GfxInstanceFlag::eDebugValidation |
-              GfxInstanceFlag::eDebugMarkers) {
+              GfxInstanceFlag::eDebugMarkers)
+  , m_jobs  (std::thread::hardware_concurrency()) {
     m_window = createWindow();
     m_device = createDevice();
     m_presenter = createPresenter();
@@ -74,6 +91,9 @@ public:
 
     GfxSceneMaterialManagerDesc materialManagerDesc = { };
     m_sceneMaterialManager = std::make_unique<GfxSceneMaterialManager>(m_device, materialManagerDesc);
+
+    m_commonPipelines = std::make_unique<GfxCommonPipelines>(m_device);
+    m_hizImage = std::make_unique<GfxCommonHizImage>(m_device);
 
     initScene();
     initContexts();
@@ -131,16 +151,16 @@ public:
       Vector3D yDir(0.0f, 1.0f, 0.0f);
       Vector3D xDir = cross(yDir, zDir);
 
-      m_eye += xDir * m_frameDelta * deltaX;
-      m_eye += yDir * m_frameDelta * deltaY;
-      m_eye += zDir * m_frameDelta * deltaZ;
+      m_eye += xDir * m_frameDelta * deltaX * 20.0f;
+      m_eye += yDir * m_frameDelta * deltaY * 20.0f;
+      m_eye += zDir * m_frameDelta * deltaZ * 20.0f;
 
       m_rotation += m_frameDelta;
 
       m_sceneNodeManager->updateNodeTransform(m_sceneInstanceNode,
         QuatTransform(computeRotationQuaternion(Vector4D(0.0f, 1.0f, 0.0f, 0.0f), m_rotation), Vector4D(0.0f)));
 
-      updateAnimation();
+      // updateAnimation();
 
       Vector3D up = Vector3D(0.0f, 1.0f, 0.0f);
 
@@ -148,6 +168,7 @@ public:
         computePerspectiveProjection(Vector2D(1280.0f, 720.0f), 2.0f, 0.001f));
       m_scenePassManager->updateRenderPassTransform(m_scenePassIndex,
         computeViewTransform(m_eye, normalize(m_dir), up), false);
+      m_scenePassManager->updateRenderPassViewDistance(m_scenePassIndex, 30.0f);
 
       m_sceneMaterialManager->updateDrawBuffer(context, *m_sceneDrawBuffer);
 
@@ -178,6 +199,7 @@ public:
 
       m_sceneInstanceManager->processPassGroupAnimations(context,
         *m_scenePipelines, *m_scenePassGroup, m_frameId);
+      m_scenePassGroup->resetUpdateLists(context, *m_scenePipelines);
       m_sceneInstanceManager->processPassGroupInstances(context,
         *m_scenePipelines, *m_sceneNodeManager, *m_scenePassGroup, m_frameId);
 
@@ -202,8 +224,15 @@ public:
         // Create depth image as necessary
         Extent2D extent(image->computeMipExtent(0));
 
-        if (m_depthImage == nullptr || Extent2D(m_depthImage->computeMipExtent(0)) != extent)
+        if (m_depthImage == nullptr || Extent2D(m_depthImage->computeMipExtent(0)) != extent) {
+          if (m_depthImage)
+            context->trackObject(m_depthImage);
+
           m_depthImage = createDepthImage(extent);
+        }
+
+        context->imageBarrier(m_depthImage, m_depthImage->getAvailableSubresources(),
+          0, 0, GfxUsage::eRenderTarget, 0, GfxBarrierFlag::eDiscard);
 
         // Create an image view for rendering
         GfxImageViewDesc viewDesc;
@@ -229,6 +258,24 @@ public:
 
         context->setRenderState(m_renderState);
 
+        TsPayload payload = { };
+        payload.instanceIndex = uint32_t(m_sceneInstanceRef.index);
+        payload.passIndex = m_scenePassIndex;
+        payload.drawIndex = 0;
+        payload.skinningDataOffset = m_geometry->meshes[0].info.skinDataOffset;
+        payload.meshInstance.transform = Vector4D(0.0f, 0.0f, 0.0f, 1.0f);
+        payload.meshInstance.translate = Vector3D(0.0f);
+        payload.transforms[0] = QuatTransform::identity();
+        payload.transforms[1] = QuatTransform::identity();
+        payload.meshletVa = m_geometryBuffer->getGpuAddress();
+        for (uint32_t i = 0; i < m_geometry->meshlets.size(); i++) {
+          payload.meshletOffsets[i] = m_geometry->meshlets[i].headerOffset;
+          payload.meshletPayloads[i] = 1 | (i << 6);
+        }
+
+        auto scratch = context->writeScratch(GfxUsage::eConstantBuffer, payload);
+        context->bindDescriptor(0, 0, scratch.getDescriptor(GfxUsage::eConstantBuffer));
+
         m_sceneMaterialManager->dispatchDraws(context,
           *m_scenePassManager, *m_sceneInstanceManager, *m_sceneNodeManager,
           *m_scenePassGroup, *m_sceneDrawBuffer, GfxScenePassType::eMainOpaque,
@@ -239,6 +286,14 @@ public:
         // Prepare the swap chain image for presentation
         context->imageBarrier(image, image->getAvailableSubresources(),
           GfxUsage::eRenderTarget, 0, GfxUsage::ePresent, 0, 0);
+        context->imageBarrier(m_depthImage, m_depthImage->getAvailableSubresources(),
+          GfxUsage::eRenderTarget, 0,
+          GfxUsage::eShaderResource, GfxShaderStage::eCompute, 0);
+
+        m_hizImage->generate(context, *m_commonPipelines, m_depthImage);
+
+        m_scenePassGroup->performOcclusionTest(context, *m_scenePipelines,
+          *m_hizImage, *m_sceneNodeManager, *m_scenePassManager, 0, m_frameId);
       });
     }
 
@@ -261,6 +316,7 @@ private:
   GfxRenderState        m_renderState;
 
   GfxBuffer             m_geometryBuffer;
+  GfxImage              m_colorImage;
   GfxImage              m_depthImage;
 
   float                 m_x = 0.0f;
@@ -297,9 +353,6 @@ private:
 
   std::shared_ptr<GfxGeometry>                m_geometry;
 
-  std::unique_ptr<GfxSceneNodeManager>        m_nodeManager;
-  std::unique_ptr<GfxSceneInstanceManager>    m_instanceManager;
-
   std::unique_ptr<GfxSceneNodeManager>        m_sceneNodeManager;
   std::unique_ptr<GfxScenePassManager>        m_scenePassManager;
   std::unique_ptr<GfxSceneInstanceManager>    m_sceneInstanceManager;
@@ -307,10 +360,15 @@ private:
   std::unique_ptr<GfxScenePipelines>          m_scenePipelines;
   std::unique_ptr<GfxSceneDrawBuffer>         m_sceneDrawBuffer;
   std::unique_ptr<GfxSceneMaterialManager>    m_sceneMaterialManager;
+  std::unique_ptr<GfxCommonPipelines>         m_commonPipelines;
+  std::unique_ptr<GfxCommonHizImage>          m_hizImage;
 
   uint32_t              m_sceneInstanceNode   = 0u;
   GfxSceneNodeRef       m_sceneInstanceRef    = { };
   GfxSceneNodeRef       m_sceneRootRef        = { };
+  std::vector<GfxSceneNodeRef> m_instances = { };
+
+  Jobs                  m_jobs;
 
   uint16_t              m_scenePassIndex      = { };
 
@@ -335,6 +393,20 @@ private:
 
     m_sceneInstanceManager->updateAnimationMetadata(m_sceneInstanceRef, animationMetadata);
     m_sceneInstanceManager->updateAnimationParameters(m_sceneInstanceRef, 0, animationParameters);
+
+    auto job = m_jobs->dispatch(m_jobs->create<BatchJob>(
+      [this, cAnimationParameters = animationParameters, &animation, &animationMetadata] (uint32_t i) {
+        GfxSceneAnimationParameters animationParameters = cAnimationParameters;
+        animationParameters.timestamp += 0.2741f * float(i);
+
+        float count = std::floor(animationParameters.timestamp / animation.duration);
+        animationParameters.timestamp -= animation.duration * count;
+
+        m_sceneInstanceManager->updateAnimationMetadata(m_instances[i], animationMetadata);
+        m_sceneInstanceManager->updateAnimationParameters(m_instances[i], 0, animationParameters);
+      }, m_instances.size(), 1024));
+
+    m_jobs->wait(job);
 
     if (d.count() >= animation.duration) {
       m_animationIndex = (m_animationIndex + 1) % m_geometry->animations.size();
@@ -450,6 +522,54 @@ private:
 
     m_scenePassIndex = m_scenePassManager->createRenderPass(passDesc);
     m_scenePassGroup->setPasses(1, &m_scenePassIndex);
+
+    uint32_t r = 0;
+
+    for (int32_t bz = -7; bz <= 7; bz++) {
+      for (int32_t by = -7; by <= 7; by++) {
+        for (int32_t bx = -7; bx <= 7; bx++) {
+          if (!bz && !by && !bx)
+            continue;
+
+          uint32_t bvhNode = m_sceneNodeManager->createNode();
+          bvhDesc.nodeIndex = bvhNode;
+          bvhDesc.aabb.min = Vector<float16_t, 3>(-3.0_f16, -2.0_f16, -3.0_f16);
+          bvhDesc.aabb.max = Vector<float16_t, 3>( 3.0_f16,  4.0_f16,  3.0_f16);
+
+          GfxSceneNodeRef bvhRef = m_sceneNodeManager->createBvhNode(bvhDesc);
+          m_sceneNodeManager->updateNodeReference(bvhNode, bvhRef);
+          m_sceneNodeManager->updateNodeTransform(bvhNode,
+            QuatTransform::translate(Vector3D(
+              float(5 * bx), float(5 * by), float(5 * bz))));
+
+          m_sceneNodeManager->attachNodesToBvh(rootRef, 1, &bvhRef);
+
+          for (int32_t z = -2; z <= 2; z++) {
+            for (int32_t y = -2; y <= 2; y++) {
+              for (int32_t x = -2; x <= 2; x++) {
+                uint32_t instanceNode = m_sceneNodeManager->createNode();
+                instanceDesc.nodeIndex = instanceNode;
+
+                GfxSceneNodeRef instanceRef = m_sceneInstanceManager->createInstance(instanceDesc);
+                m_sceneNodeManager->updateNodeParent(instanceNode, bvhNode, -1);
+                m_sceneNodeManager->updateNodeReference(instanceNode, instanceRef);
+                m_sceneNodeManager->updateNodeTransform(instanceNode, QuatTransform(
+                  computeRotationQuaternion(Vector3D(0.0f, 1.0f, 0.0f), float(r++)),
+                  Vector4D(float(x), float(y), float(z), 0.0f)));
+                m_sceneNodeManager->attachNodesToBvh(bvhRef, 1, &instanceRef);
+
+                m_sceneInstanceManager->updateResource(instanceRef, 0,
+                  GfxSceneInstanceResource::fromBufferAddress(m_geometryBuffer->getGpuAddress()));
+
+                m_sceneMaterialManager->addInstanceDraws(*m_sceneInstanceManager, instanceRef);
+
+                m_instances.push_back(instanceRef);
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
 
@@ -475,7 +595,7 @@ private:
     desc.debugName = "Depth image";
     desc.type = GfxImageType::e2D;
     desc.format = GfxFormat::eD32;
-    desc.usage = GfxUsage::eRenderTarget;
+    desc.usage = GfxUsage::eRenderTarget | GfxUsage::eShaderResource;
     desc.extent = Extent3D(imageExtent, 1u);
     desc.samples = 1;
 
