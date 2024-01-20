@@ -80,8 +80,8 @@ uint tsMain() {
     dataBuffer = geometryBuffers.buffers[lod.bufferIndex - 1u];
 
   // Load mesh instance and skinning-related properties
-  MeshInstance meshInstance = tsLoadMeshInstance(geometry, mesh,
-    uint32_t(draw.meshInstanceIndex) + context.invocation.localMeshInstance);
+  uint32_t meshInstanceIndex = uint32_t(draw.meshInstanceIndex) + context.invocation.localMeshInstance;
+  MeshInstance meshInstance = tsLoadMeshInstance(geometry, mesh, meshInstanceIndex);
 
   InstanceDataBufferIn instanceData = InstanceDataBufferIn(instanceNode.propertyBuffer);
   MeshSkinningRef meshSkinning = meshGetSkinningData(geometry, mesh);
@@ -218,7 +218,7 @@ uint tsMain() {
   uint32_t outputCount = bitCount(viewMask);
   uint32_t outputIndex = tsAllocateOutputs(outputCount);
 
-  tsPayloadInit(context.invocation, mesh, meshInstance, uint64_t(dataBuffer));
+  tsPayloadInit(context.invocation, mesh, meshInstanceIndex, uint64_t(dataBuffer));
   tsPayloadAddMeshlet(tid, meshletOffset, outputIndex, viewMask);
   return tsGetOutputCount();
 }

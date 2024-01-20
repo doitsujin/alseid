@@ -59,14 +59,15 @@ TsInvocationInfo tsGetInvocationInfo(
 void tsPayloadInit(
   in    TsInvocationInfo              invocationInfo,
   in    Mesh                          mesh,
-  in    MeshInstance                  meshInstance,
+        uint32_t                      meshInstance,
         uint64_t                      meshletBuffer) {
   if (gl_LocalInvocationIndex == 0u) {
     tsPayload.instanceIndex = invocationInfo.instanceIndex;
     tsPayload.passIndex = invocationInfo.passIndex;
     tsPayload.drawIndex = invocationInfo.drawIndex;
+    tsPayload.meshInstanceIndex = meshInstance;
+    tsPayload.instanceDataOffset = mesh.instanceDataOffset;
     tsPayload.skinningDataOffset = mesh.skinDataOffset;
-    tsPayload.meshInstance = meshInstance;
     tsPayload.meshletBuffer = meshletBuffer;
   }
 }

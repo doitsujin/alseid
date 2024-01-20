@@ -71,9 +71,9 @@ uvec2 msGetMeshletInfoForWorkgroup() {
 // Mesh shader invocation info. All properties are uniform within
 // the workgroup.
 struct MsInvocationInfo {
-  MeshInstance    meshInstance;
   InstanceNode    instanceNode;
   InstanceHeader  instanceInfo;
+  MeshInstance    meshInstance;
   uint64_t        nodeTransformVa;
   u32vec2         nodeTransformIndices;
   uint32_t        frameId;
@@ -94,7 +94,6 @@ MsInvocationInfo msGetInvocationInfo(
   SceneHeader scene = SceneHeaderIn(sceneVa).header;
 
   MsInvocationInfo result;
-  result.meshInstance = tsPayload.meshInstance;
 
   // Load instance node and instance properties from the buffer.
   result.instanceNode = InstanceNodeBufferIn(instanceNodeVa).nodes[tsPayload.instanceIndex];
@@ -102,6 +101,14 @@ MsInvocationInfo msGetInvocationInfo(
   result.nodeTransformVa = sceneVa + scene.nodeTransformOffset;
   result.nodeTransformIndices = nodeComputeTransformIndices(
     result.instanceNode.nodeIndex, scene.nodeCount, frameId);
+
+  // Load mesh instance data from geometry buffer
+  result.meshInstance = initMeshInstance();
+
+  if (tsPayload.instanceDataOffset != 0u) {
+    MeshInstanceRef instances = MeshInstanceRef(result.instanceInfo.geometryVa + tsPayload.instanceDataOffset);
+    result.meshInstance = instances.instances[tsPayload.meshInstanceIndex];
+  }
 
   // Copy some basic parameters
   result.frameId = frameId;

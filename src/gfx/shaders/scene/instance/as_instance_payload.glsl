@@ -16,12 +16,13 @@ struct TsPayload {
   // Draw index within the instance. Used to pull some data
   // such as the material parameter offset within the buffer.
   uint32_t            drawIndex;
+  // Mesh instance index for this draw.
+  uint32_t            meshInstanceIndex;
+  // Offset of mesh instance data relative to the geometry buffer,
+  // or 0 if no mesh instances are defined for this mesh.
+  uint32_t            instanceDataOffset;
   // Offset of joint indices relative to the geometry buffer.
   uint32_t            skinningDataOffset;
-
-  // Mesh instance properties, read from the geometry buffer
-  // based on the task shader workgroup ID.
-  MeshInstance        meshInstance;
 
   // Meshlet data buffer for the selected LOD
   uint64_t            meshletBuffer;
