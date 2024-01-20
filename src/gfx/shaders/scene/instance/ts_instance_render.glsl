@@ -39,44 +39,22 @@
 
 #define TS_MAIN tsMain
 
-// Node transforms for the current and previous frames. If the previous
-// frame's transform is not valid, the task shader will implicitly reuse
-// the current frame's transform in both fields.
-shared Transform tsNodeTransformsShared[2];
-
-void tsLoadNodeTransformsFromMemory(in TsContext context, uint32_t nodeIndex) {
-  uint32_t tid = gl_LocalInvocationIndex;
-
-  SceneHeader scene = SceneHeaderIn(context.sceneVa).header;
-  SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(context.sceneVa + scene.nodeTransformOffset);
-
-  if (tid < 2u) {
-    uint32_t invocationFrameId = context.frameId - tid;
-    uint32_t transformIndex = nodeComputeTransformIndices(nodeIndex, scene.nodeCount, invocationFrameId).x;
-
-    uint32_t updateFrameId = nodeTransforms.nodeTransforms[transformIndex].updateFrameId;
-
-    if (updateFrameId < invocationFrameId)
-      invocationFrameId = context.frameId;
-
-    transformIndex = nodeComputeTransformIndices(nodeIndex, scene.nodeCount, invocationFrameId).x;
-    tsNodeTransformsShared[tid] = nodeTransforms.nodeTransforms[transformIndex].absoluteTransform;
-  }
-
-  barrier();
-}
-
 
 uint tsMain() {
   uint32_t tid = gl_LocalInvocationIndex;
 
   TsContext context = tsGetInstanceContext();
 
+  // Load scene header
+  SceneHeader scene = SceneHeaderIn(context.sceneVa).header;
+  SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(context.sceneVa + scene.nodeTransformOffset);
+
   // Load instance node
   InstanceNodeBufferIn instanceNodes = InstanceNodeBufferIn(context.instanceVa);
   InstanceNode instanceNode = instanceNodes.nodes[context.invocation.instanceIndex];
 
-  tsLoadNodeTransformsFromMemory(context, instanceNode.nodeIndex);
+  uint32_t nodeTransformIndex = nodeComputeTransformIndices(instanceNode.nodeIndex, scene.nodeCount, context.frameId).x;
+  Transform nodeTransform = nodeTransforms.nodeTransforms[nodeTransformIndex].absoluteTransform;
 
   // Load draw parameters
   InstanceHeader instanceInfo = InstanceDataBufferIn(instanceNode.propertyBuffer).header;
@@ -145,7 +123,7 @@ uint tsMain() {
       }
 
       // Apply transforms from model to view space
-      meshletTransform = transChain(tsNodeTransformsShared[0], meshletTransform);
+      meshletTransform = transChain(nodeTransform, meshletTransform);
       meshletTransform = transChainNorm(pass.currTransform.transform, meshletTransform);
 
       // Check mirror mode, which has to be applied in mesh instance space
@@ -241,10 +219,6 @@ uint tsMain() {
   uint32_t outputIndex = tsAllocateOutputs(outputCount);
 
   tsPayloadInit(context.invocation, mesh, meshInstance, uint64_t(dataBuffer));
-
-  if (tid < 2u)
-    tsPayloadSetTransform(tid, tsNodeTransformsShared[tid]);
-
   tsPayloadAddMeshlet(tid, meshletOffset, outputIndex, viewMask);
   return tsGetOutputCount();
 }

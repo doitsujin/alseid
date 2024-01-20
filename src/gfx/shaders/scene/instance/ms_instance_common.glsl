@@ -74,6 +74,8 @@ struct MsInvocationInfo {
   MeshInstance    meshInstance;
   InstanceNode    instanceNode;
   InstanceHeader  instanceInfo;
+  uint64_t        nodeTransformVa;
+  u32vec2         nodeTransformIndices;
   uint32_t        frameId;
   uint32_t        passIndex;
   uint32_t        viewIndex;
@@ -87,13 +89,19 @@ struct MsInvocationInfo {
 // task shader payload and the instance node buffer as inputs.
 MsInvocationInfo msGetInvocationInfo(
         uint64_t                      instanceNodeVa,
+        uint64_t                      sceneVa,
         uint32_t                      frameId) {
+  SceneHeader scene = SceneHeaderIn(sceneVa).header;
+
   MsInvocationInfo result;
   result.meshInstance = tsPayload.meshInstance;
 
   // Load instance node and instance properties from the buffer.
   result.instanceNode = InstanceNodeBufferIn(instanceNodeVa).nodes[tsPayload.instanceIndex];
   result.instanceInfo = InstanceDataBufferIn(result.instanceNode.propertyBuffer).header;
+  result.nodeTransformVa = sceneVa + scene.nodeTransformOffset;
+  result.nodeTransformIndices = nodeComputeTransformIndices(
+    result.instanceNode.nodeIndex, scene.nodeCount, frameId);
 
   // Copy some basic parameters
   result.frameId = frameId;
@@ -115,8 +123,15 @@ MsInvocationInfo msGetInvocationInfo(
 
 
 // Convenience method to load node transforms from the task shader payload.
-Transform msLoadNodeTransform(bool currFrame) {
-  return tsPayload.transforms[currFrame ? 0u : 1u].absoluteTransform;
+Transform msLoadNodeTransform(
+  in    MsInvocationInfo              invocation,
+        bool                          currFrame) {
+  uint32_t transformIndex = currFrame
+    ? invocation.nodeTransformIndices.x
+    : invocation.nodeTransformIndices.y;
+
+  SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(invocation.nodeTransformVa);
+  return nodeTransforms.nodeTransforms[transformIndex].absoluteTransform;
 }
 
 

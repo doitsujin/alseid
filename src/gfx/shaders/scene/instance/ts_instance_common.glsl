@@ -80,12 +80,6 @@ void tsPayloadAddMeshlet(uint32_t tid, uint32_t offset, uint32_t index, uint32_t
 }
 
 
-// Stores absolute node transform with the payload.
-void tsPayloadSetTransform(uint32_t set, in Transform transform) {
-  tsPayload.transforms[set] = SceneNodeTransform(transform, 0u);
-}
-
-
 // Pre-processed meshlet culling info. All coordinates are given in local
 // mesh space, with mirroring already applied. The transform must be chained
 // with a model to view space transform for culling purposes.

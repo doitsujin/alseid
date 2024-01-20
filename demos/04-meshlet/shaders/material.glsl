@@ -103,7 +103,7 @@ struct MsVertexOut {
 
 MsContext msGetInstanceContext() {
   MsContext context;
-  context.invocation = msGetInvocationInfo(globals.instanceVa, globals.frameId);
+  context.invocation = msGetInvocationInfo(globals.instanceVa, globals.sceneVa, globals.frameId);
   context.flags = MS_CULL_FACE_CW_BIT;
 
   if (asGetMirrorMode(context.invocation.meshInstance.extra) != MESH_MIRROR_NONE)
@@ -143,7 +143,7 @@ MsVertexOut msComputeVertexOutput(
   in    MsVertexIn                    vertex,
   in    Transform                     jointTransform,
         bool                          currFrame) {
-  MsVertexOut result;
+  Transform nodeTransform = msLoadNodeTransform(context.invocation, currFrame);
 
   PassInfoBufferIn passInfoBuffer = PassInfoBufferIn(globals.passInfoVa);
 
@@ -155,13 +155,12 @@ MsVertexOut msComputeVertexOutput(
     ? passInfoBuffer.passes[context.invocation.passIndex].currTransform.transform
     : passInfoBuffer.passes[context.invocation.passIndex].prevTransform.transform;
 
-  Transform nodeTransform = msLoadNodeTransform(currFrame);
-
   finalTransform = transChain(jointTransform, finalTransform);
   finalTransform = transChain(nodeTransform, finalTransform);
   finalTransform = transChainNorm(passTransform, finalTransform);
   vec3 vertexPos = transApply(finalTransform, vec3(vertex.position.xyz));
 
+  MsVertexOut result;
   result.position = projApply(passInfoBuffer.passes[context.invocation.passIndex].projection, vertexPos);
 
   if (currFrame)

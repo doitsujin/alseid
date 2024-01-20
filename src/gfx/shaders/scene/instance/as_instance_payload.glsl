@@ -23,11 +23,6 @@ struct TsPayload {
   // based on the task shader workgroup ID.
   MeshInstance        meshInstance;
 
-  // Node transform for the current frame (index 0) and the
-  // previous frame (index 1). The task shader ensures that
-  // both transforms are valid.
-  SceneNodeTransform  transforms[2];
-
   // Meshlet data buffer for the selected LOD
   uint64_t            meshletBuffer;
   // List of meshlets. This encodes a byte offset to the meshlet
