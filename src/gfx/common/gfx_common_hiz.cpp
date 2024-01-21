@@ -14,7 +14,8 @@ GfxCommonHizImage::~GfxCommonHizImage() {
 }
 
 
-GfxImageView GfxCommonHizImage::getImageView() const {
+GfxImageView GfxCommonHizImage::getImageView(
+        uint32_t                      layer) const {
   if (!m_image)
     return GfxImageView();
 
@@ -22,7 +23,24 @@ GfxImageView GfxCommonHizImage::getImageView() const {
   viewDesc.type = GfxImageViewType::e2D;
   viewDesc.format = m_image->getDesc().format;
   viewDesc.usage = GfxUsage::eShaderResource;
-  viewDesc.subresource = m_image->getAvailableSubresources();
+  viewDesc.subresource = m_image->getAvailableSubresources().pickLayer(layer);
+  return m_image->createView(viewDesc);
+}
+
+
+GfxImageView GfxCommonHizImage::getImageMipView(
+        uint32_t                      mip,
+        uint32_t                      layer) const {
+  if (!m_image)
+    return GfxImageView();
+
+  GfxImageViewDesc viewDesc;
+  viewDesc.type = GfxImageViewType::e2D;
+  viewDesc.format = m_image->getDesc().format;
+  viewDesc.usage = GfxUsage::eShaderResource;
+  viewDesc.subresource = m_image->getAvailableSubresources().pickLayer(layer);
+  viewDesc.subresource.mipIndex = std::min(mip, viewDesc.subresource.mipCount - 1u);
+  viewDesc.subresource.mipCount = 1u;
   return m_image->createView(viewDesc);
 }
 

@@ -32,9 +32,25 @@ public:
    *
    * Returns a view that can be bound to shaders for reading.
    * May be \c nullptr if the image has not been generated yet.
+   * \param [in] layer Array layer to return the view for
    * \returns Image view object
    */
-  GfxImageView getImageView() const;
+  GfxImageView getImageView(
+          uint32_t                      layer) const;
+
+  /**
+   * \brief Retrieves image view for a specific mip level
+   *
+   * Returns a view that can be bound to shaders for reading.
+   * Only picks a specific mip level, or the highest available
+   * mip level if the mip index is invalid.
+   * \param [in] mip Mip level to return
+   * \param [in] layer Array layer to return the view for
+   * \returns Image view object
+   */
+  GfxImageView getImageMipView(
+          uint32_t                      mip,
+          uint32_t                      layer) const;
 
   /**
    * \brief Generates image
