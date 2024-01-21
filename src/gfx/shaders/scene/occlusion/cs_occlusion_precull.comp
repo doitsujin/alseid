@@ -1,0 +1,196 @@
+// First pass of BVH-level occlusion culling.
+//
+// Uses a hierarchical Z buffer to reject BVH nodes that cannot be visible,
+// and to accept bounding boxes that cannot be culled. Records a mesh shader
+// dispatch for BVHs whose bounding box is potentially visible.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#include "../../as_include_head.glsl"
+
+#include "../group/as_group.glsl"
+
+#include "../renderpass/as_renderpass.glsl"
+
+#include "../as_scene.glsl"
+
+#include "as_occlusion_test.glsl"
+
+#define CS_MAIN csPrecullBvhNodes
+
+layout(local_size_x = CS_OCCLUSION_BOX_COUNT) in;
+
+
+layout(set = 0, binding = 0)
+uniform texture2D rHizImage;
+
+
+vec4 csTransformAabbVertex(
+        vec3                          aabbVertex,
+  in    Transform                     transform,
+  in    PassInfo                      passInfo) {
+  vec3 vertex = transApply(transform, aabbVertex);
+
+  if ((passInfo.flags & RENDER_PASS_USES_MIRROR_PLANE_BIT) != 0u)
+    vertex = planeMirror(passInfo.currMirrorPlane, vertex);
+
+  vec4 result = projApply(passInfo.projection, vertex);
+
+  /* Need to invert y here since we would otherwise use
+   * negative viewport height to do the same. */
+  result.y = -result.y;
+
+  return vec4(result.xyz / result.w, result.w);
+}
+
+
+bool csPerformOcclusionTest(
+        PassGroupBvhVisibilityBuffer  bvhVisibility,
+        uint32_t                      bvhRef) {
+  PassGroupBufferOut groupBuffer = PassGroupBufferOut(globals.passGroupVa);
+
+  // Exit early if the BVH node has occlusion testing disabled for this pass
+  uint32_t passBit = 1u << globals.passIndex;
+
+  uint32_t bvhIndex = getNodeIndexFromRef(bvhRef);
+  uint32_t testMask = bvhVisibility.bvhs[bvhIndex].testFailMask;
+
+  if (!asTest(testMask, passBit))
+    return false;
+
+  // Load render pass and BVH node data needed for further processing
+  SceneHeader scene = SceneHeaderIn(globals.sceneVa).header;
+  SceneBvhNodeBuffer bvhNodes = SceneBvhNodeBuffer(globals.sceneVa + scene.bvhOffset);
+  SceneNodeTransformBufferIn sceneTransforms = SceneNodeTransformBufferIn(globals.sceneVa + scene.nodeTransformOffset);
+
+  SceneBvhNode bvhNode = bvhNodes.nodes[bvhIndex];
+  Aabb aabb = Aabb(bvhNode.aabb.lo, bvhNode.aabb.hi);
+
+  uint32_t passIndex = passGroupGetPassIndex(globals.passGroupVa, globals.passIndex);
+  PassInfo passInfo = PassInfoBufferIn(globals.passInfoVa).passes[passIndex];
+
+  uint32_t transformIndex = nodeComputeTransformIndices(
+    bvhNode.nodeIndex, scene.nodeCount, globals.frameId).x;
+
+  Transform transform = sceneTransforms.nodeTransforms[transformIndex].absoluteTransform;
+  transform = transChainNorm(passInfo.currTransform.transform, transform);
+
+  // Compute conservative screen-space bounding box for the BVH
+  // bounding box. This will be used for texture lookups later.
+  vec4 firstVertex = csTransformAabbVertex(
+    aabbComputeVertex(aabb, 0u), transform, passInfo);
+
+  vec4 minCoord = firstVertex;
+  vec4 maxCoord = firstVertex;
+
+  for (uint32_t i = 1; i < 8; i++) {
+    vec4 vertex = csTransformAabbVertex(
+      aabbComputeVertex(aabb, i), transform, passInfo);
+
+    minCoord = min(minCoord, vertex);
+    maxCoord = max(maxCoord, vertex);
+  }
+
+  // Give up if any part of the bounding box is too close to or behind
+  // the camera and let the mesh shader path deal with it.
+  if (minCoord.w < 0.0005f)
+    return true;
+
+  // Compute base level texture coordinates for the projected AABB
+  vec2 texSize = vec2(textureSize(rHizImage, 0));
+
+  minCoord.xy = clamp(texSize * (minCoord.xy * 0.5f + 0.5f), vec2(0.0f), texSize - 1.0f);
+  maxCoord.xy = clamp(texSize * (maxCoord.xy * 0.5f + 0.5f), maxCoord.xy + 1.0f, texSize);
+
+  // Select lowest LOD for which the region size is one pixel or less
+  int32_t texLods = textureQueryLevels(rHizImage);
+
+  float w = max(maxCoord.x - minCoord.x, maxCoord.y - minCoord.y);
+  int32_t wman = int32_t(bitfieldExtract(floatBitsToUint(w), 0, 23));
+  int32_t wexp = int32_t(bitfieldExtract(floatBitsToUint(w), 23, 8)) - 127;
+
+  int32_t lod = clamp(wexp + (wman != 0 ? 1 : 0), 0, texLods - 1);
+
+  // Fetch texture LOD
+  ivec2 coord = i32vec2(minCoord.xy) >> lod;
+
+  vec2 z00 = texelFetch(rHizImage, coord, lod).xy;
+  vec2 z10 = texelFetchOffset(rHizImage, coord, lod, ivec2(1, 0)).xy;
+  vec2 z01 = texelFetchOffset(rHizImage, coord, lod, ivec2(0, 1)).xy;
+  vec2 z11 = texelFetchOffset(rHizImage, coord, lod, ivec2(1, 1)).xy;
+
+  float minz = min(min(z00.x, z10.x), min(z01.x, z11.x));
+  float maxz = max(max(z00.y, z10.y), max(z01.y, z11.y));
+
+  // Cull the node if no part of the bounding box is closer than the
+  // farthest depth value retrieved from the Hi-Z texture.
+  if (maxCoord.z < minz)
+    return false;
+
+  // If any point of the bounding box is closer than the closest depth value,
+  // accept the node without needing to render. This is going to be common.
+  if (maxCoord.z >= maxz) {
+    atomicAnd(bvhVisibility.bvhs[bvhIndex].testFailMask, ~passBit);
+    return false;
+  }
+
+  // Otherwise, the node might be visible, dispatch a draw to find out.
+  return true;
+}
+
+
+void csPrecullBvhNodes() {
+  uint32_t gid = gl_GlobalInvocationID.x;
+
+  PassGroupBufferOut groupBuffer = PassGroupBufferOut(globals.passGroupVa);
+  PassGroupBvhListIn bvhList = PassGroupBvhListIn(globals.passGroupVa + groupBuffer.bvhListOffset);
+  PassGroupBvhVisibilityBuffer bvhVisibility = PassGroupBvhVisibilityBuffer(globals.passGroupVa + groupBuffer.bvhVisibilityOffset);
+
+  // Load BVH reference from BVH node
+  uint32_t bvhRef = 0u;
+
+  if (gid < bvhList.header.totalNodeCount) {
+    uint32_t bvhRefLocal = bvhList.items[gid].nodeRef;
+
+    if (csPerformOcclusionTest(bvhVisibility, bvhRefLocal))
+      bvhRef = bvhRefLocal;
+  }
+
+  // Mark occlusion test results for the given pass as valid
+  // for the next frame.
+  if (gid == 0u)
+    atomicAnd(groupBuffer.ignoreOcclusionTestMask, ~(1u << globals.passIndex));
+
+  // Add BVH reference to the temporary node list.
+  PassGroupUpdateList nodeList = PassGroupUpdateList(globals.nodeListVa);
+  u32vec4 ballot = subgroupBallot(bvhRef != 0u);
+
+  uint32_t entryCount = subgroupBallotBitCount(ballot);
+  uint32_t entryIndex = subgroupBallotExclusiveBitCount(ballot);
+
+  if (entryCount == 0u)
+    return;
+
+  uint32_t offset;
+
+  if (subgroupElect())
+    offset = atomicAdd(nodeList.header.entryCount, entryCount);
+
+  offset = subgroupBroadcastFirst(offset);
+  entryIndex += offset;
+
+  if (bvhRef != 0u)
+    nodeList.nodeRefs[entryIndex] = bvhRef;
+
+  // Have the thread with the highest index update the dispatch
+  if (gl_SubgroupInvocationID == subgroupBallotFindMSB(ballot)) {
+    atomicMax(nodeList.header.dispatch.x,
+      (entryIndex / MS_OCCLUSION_BOX_COUNT) + 1u);
+
+    if (offset == 0u)
+      nodeList.header.dispatch.yz = uvec2(1u);
+  }
+}
+
+#include "../../as_include_tail.glsl"

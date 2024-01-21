@@ -3,6 +3,8 @@
 
 #include "../as_scene.glsl"
 
+#include "as_group_visibility.glsl"
+
 #define PASS_GROUP_PASS_COUNT                     (32u)
 #define PASS_GROUP_WORKGROUP_SIZE                 (128u)
 
@@ -25,7 +27,7 @@ readonly buffer PassGroupBuffer {
 };
 
 layout(buffer_reference, buffer_reference_align = 16, scalar)
-readonly buffer PassGroupBufferOut {
+buffer PassGroupBufferOut {
   uint32_t  passCount;
   uint32_t  ignoreOcclusionTestMask;
   uint32_t  bvhListOffset;
@@ -354,10 +356,10 @@ void bvhListCommitArgs(
     list.header.args[nextIndex].dispatchReset.x = entryCount == 0u ? 1u : 0u;
     list.header.args[nextIndex].entryIndex = entryIndex;
 
-    uint32_t tsDispatchSize = asComputeWorkgroupCount1D(entryIndex + entryCount, TsWorkgroupSize);
+    uint32_t csDispatchSize = asComputeWorkgroupCount1D(entryIndex + entryCount, CS_OCCLUSION_BOX_COUNT);
 
     list.header.totalNodeCount = entryIndex + entryCount;
-    list.header.dispatchOcclusionTest.x = tsDispatchSize;
+    list.header.dispatchOcclusionTest.x = csDispatchSize;
   }
 }
 

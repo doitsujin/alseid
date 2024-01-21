@@ -1,6 +1,4 @@
 // Fragment shader for occlusion testing.
-//
-// 
 #version 460
 
 #extension GL_GOOGLE_include_directive : enable
@@ -12,10 +10,8 @@
 
 #define FS_MAIN fsMain
 
-// Need to explicitly opt into early fragment tests since
-// the shader has side effects.
-layout(early_fragment_tests) in;
-
+layout(set = 0, binding = 0)
+uniform texture2D rHizImage;
 
 void fsUpdateVisibility(FsUniform fsUniform, uint32_t index) {
   PassGroupBvhVisibilityBufferCoherent bvhVisibility = PassGroupBvhVisibilityBufferCoherent(fsUniform.bvhBufferVa);
@@ -28,6 +24,11 @@ void fsUpdateVisibility(FsUniform fsUniform, uint32_t index) {
 
 
 void fsMain(FsUniform fsUniform) {
+  float minZ = texelFetch(rHizImage, ivec2(gl_FragCoord.xy), 0).x;
+
+  if (gl_FragCoord.z < minZ)
+    discard;
+
   if (!helperInvocationEXT()) {
     bool elected = false;
 
