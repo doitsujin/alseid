@@ -344,8 +344,11 @@ void GfxVulkanContext::beginRendering(
       info.pDepthAttachment = &depth;
 
     if (formatInfo.aspects & GfxImageAspect::eStencil)
-      info.pDepthAttachment = &stencil;
+      info.pStencilAttachment = &stencil;
   }
+
+  if (!info.colorAttachmentCount && !info.pDepthAttachment && !info.pStencilAttachment)
+    info.layerCount = 1;
 
   vk.vkCmdBeginRendering(m_cmd, &info);
 
