@@ -523,7 +523,11 @@ void GfxVulkanRenderState::setupStencilTest(
 void GfxVulkanRenderState::setupMultisampling(
         GfxVulkanPipelineManager&     mgr,
   const GfxMultisampling&             desc) {
+  m_msMask = desc.sampleMask;
 
+  m_msState.rasterizationSamples = VkSampleCountFlagBits(desc.sampleCount);
+  m_msState.pSampleMask = &m_msMask;
+  m_msState.alphaToCoverageEnable = desc.enableAlphaToCoverage;
 }
 
 
