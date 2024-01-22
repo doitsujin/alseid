@@ -77,6 +77,8 @@ void GfxCommonHizImage::generate(
   }
 
   // Always initialize the image since we override all of it anyway
+  context->beginDebugLabel("Generate Hi-Z image", 0xff753228);
+
   context->imageBarrier(m_image, m_image->getAvailableSubresources(),
     GfxUsage::eShaderStorage, GfxShaderStage::eCompute,
     GfxUsage::eShaderStorage, GfxShaderStage::eCompute,
@@ -171,6 +173,8 @@ void GfxCommonHizImage::generate(
   context->imageBarrier(m_image, dstSubresource,
     GfxUsage::eShaderStorage, GfxShaderStage::eCompute,
     GfxUsage::eShaderResource, GfxShaderStage::eCompute, 0);
+
+  context->endDebugLabel();
 }
 
 }
