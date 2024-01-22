@@ -214,6 +214,12 @@ struct GfxScenePassGroupHeader {
   /** Offset of persistent BVH visibility buffer. Stores masks of which
    *  passes performed and passed occlusion testing for any given BVH node. */
   uint32_t bvhVisibilityOffset;
+  /** Offset to BVH occlusion test data. */
+  uint32_t bvhOcclusionTestOffset;
+  /** Reserved for future use. */
+  uint32_t reserved0;
+  uint32_t reserved1;
+  uint32_t reserved2;
   /** Render pass indices. */
   std::array<uint16_t, GfxMaxPassesPerGroup> passes;
   /** Offset of each set of typed node lists, except for BVHs and abstract nodes. */
@@ -221,7 +227,7 @@ struct GfxScenePassGroupHeader {
     size_t(GfxSceneNodeType::eCount) - size_t(GfxSceneNodeType::eBuiltInCount)> listOffsets;
 };
 
-static_assert(sizeof(GfxScenePassGroupHeader) == 320);
+static_assert(sizeof(GfxScenePassGroupHeader) == 336);
 
 
 /**
@@ -249,15 +255,32 @@ struct GfxSceneBvhListHeader {
   /** Total number of BVH nodes in the list. Must be initialized to the number
    *  of root BVH nodes when the first set of node parameters is written. */
   uint32_t totalNodeCount;
-  /** Dispatch arguments to use when performing occlusion tests. */
-  GfxDispatchArgs dispatchOcclusionTest;
   /** Double-buffered dispatch arguments for BVH traversal. The traversal shader
    *  will consume one list and generate another, as well as increment the total
    *  node count so it can be used to generate occlusion test draws. */
   std::array<GfxSceneBvhListArgs, 2> args;
 };
 
-static_assert(sizeof(GfxSceneBvhListHeader) == 80);
+static_assert(sizeof(GfxSceneBvhListHeader) == 68);
+
+
+/**
+ * \brief Occlusion test header
+ *
+ * Stores info about a compute dispatch which uses the processed BVH
+ * node list as an input, and is immediately followed by a node list.
+ */
+struct GfxSceneBvhOcclusionTestHeader {
+  /** Compute shader dispatch arguments. Uses the BVH list. */
+  GfxDispatchArgs csDispatch;
+  /** Mesh shader dispatch arguments. Must be initialized to 0
+   *  before dispatching the compute shader. */
+  GfxDispatchArgs msDispatch;
+  /** Number of nodes for the mesh shader to process */
+  uint32_t        msNodeCount;
+};
+
+static_assert(sizeof(GfxSceneBvhOcclusionTestHeader) == 28);
 
 
 /**
@@ -319,11 +342,12 @@ public:
   /**
    * \brief Queries occlusion test dispatch descriptor
    *
-   * Expects the task shader to run at the regular task shader
-   * workgroup size.
+   * \param [in] stage Selects whether to return the compute
+   *    shader or mesh shader descriptor.
    * \returns Descriptor for occlusion testing
    */
-  GfxDescriptor getOcclusionTestDispatchDescriptor() const;
+  GfxDescriptor getOcclusionTestDispatchDescriptor(
+          GfxShaderStage                stage) const;
 
   /**
    * \brief Sets passes for the given pass group

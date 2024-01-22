@@ -50,6 +50,9 @@ void csInitPassBuffer() {
   if (gl_WorkGroupID.x == 0u) {
     bvhListInit(bvhList, nodeCount, gid);
     nodeListInit(groupBuffer, gid);
+
+    if (gid == 0u)
+      bvhOcclusionTestInit(groupBuffer);
   }
 
   // Copy all root nodes to the first BVH node list, while making no

@@ -51,20 +51,19 @@ void msMain() {
 
   // Load pointer to visibility, only used later.
   PassGroupBufferOut groupBuffer = PassGroupBufferOut(globals.passGroupVa);
+  PassGroupBvhOcclusionTestBufferIn occlusionTest = PassGroupBvhOcclusionTestBufferIn(globals.passGroupVa + groupBuffer.bvhOcclusionOffset);
   uint64_t bvhVisibilityVa = globals.passGroupVa + groupBuffer.bvhVisibilityOffset;
 
   // Locate BVH node list inside the scene buffer
   SceneHeader sceneBuffer = SceneHeaderIn(globals.sceneVa).header;
   SceneNodeTransformBufferIn sceneTransforms = SceneNodeTransformBufferIn(globals.sceneVa + sceneBuffer.nodeTransformOffset);
 
-  PassGroupUpdateListIn nodeList = PassGroupUpdateListIn(globals.nodeListVa);
-
   // Figure out which BVH nodes the current workgroup is working
   // on, as well as the local vertex and primitive indices.
   SceneBvhNodeBuffer bvhNodes = SceneBvhNodeBuffer(globals.sceneVa + sceneBuffer.bvhOffset);
 
   uint32_t boxIndex = gl_WorkGroupID.x * MS_OCCLUSION_BOX_COUNT;
-  uint32_t boxCount = nodeList.header.entryCount;
+  uint32_t boxCount = occlusionTest.msNodeCount;
 
   uint32_t localCount = min(boxCount - boxIndex, MS_OCCLUSION_BOX_COUNT);
 
@@ -82,7 +81,7 @@ void msMain() {
 
   // Load relevant BVH properties into LDS
   if (boxIndex + tid < boxCount && tid < localCount) {
-    uint32_t bvhIndex = getNodeIndexFromRef(nodeList.nodeRefs[boxIndex + tid]);
+    uint32_t bvhIndex = getNodeIndexFromRef(occlusionTest.nodeRefs[boxIndex + tid]);
     uint32_t bvhNode = bvhNodes.nodes[bvhIndex].nodeIndex;
 
     uint32_t transformIndex = nodeComputeTransformIndices(

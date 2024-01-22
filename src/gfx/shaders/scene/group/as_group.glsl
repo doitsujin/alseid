@@ -22,6 +22,8 @@ readonly buffer PassGroupBuffer {
   uint32_t  ignoreOcclusionTestMask;
   uint32_t  bvhListOffset;
   uint32_t  bvhVisibilityOffset;
+  uint32_t  bvhOcclusionOffset;
+  u32vec3   reserved;
   uint16_t  passIndices[PASS_GROUP_PASS_COUNT];
   PassTypedNodeListOffsets nodeListOffsets[];
 };
@@ -32,6 +34,7 @@ buffer PassGroupBufferOut {
   uint32_t  ignoreOcclusionTestMask;
   uint32_t  bvhListOffset;
   uint32_t  bvhVisibilityOffset;
+  uint32_t  bvhOcclusionOffset;
   uint16_t  passIndices[PASS_GROUP_PASS_COUNT];
   PassTypedNodeListOffsets nodeListOffsets[];
 };
@@ -266,7 +269,6 @@ struct PassGroupBvhListArgs {
 // the traversal shader can consume one while producing the other.
 struct PassGroupBvhListHeader {
   uint32_t                totalNodeCount;
-  u32vec3                 dispatchOcclusionTest;
   PassGroupBvhListArgs    args[2];
 };
 
@@ -278,6 +280,77 @@ buffer PassGroupBvhList {
   PassGroupBvhListHeader  header;
   PassGroupNodeListItem   items[];
 };
+
+
+// BVH occlusion test data.
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+buffer PassGroupBvhOcclusionTestBuffer {
+  u32vec3     csDispatch;
+  u32vec3     msDispatch;
+  uint32_t    msNodeCount;
+  uint32_t    nodeRefs[];
+};
+
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+readonly buffer PassGroupBvhOcclusionTestBufferIn {
+  u32vec3     csDispatch;
+  u32vec3     msDispatch;
+  uint32_t    msNodeCount;
+  uint32_t    nodeRefs[];
+};
+
+
+// Initializes all dispatch info for occlusion test processing.
+void bvhOcclusionTestInit(uint64_t passGroupVa) {
+  PassGroupBuffer groupBuffer = PassGroupBuffer(passGroupVa);
+
+  PassGroupBvhOcclusionTestBuffer occlusionTest = PassGroupBvhOcclusionTestBuffer(passGroupVa + groupBuffer.bvhOcclusionOffset);
+  occlusionTest.csDispatch = u32vec3(0u, 1u, 1u);
+  occlusionTest.msDispatch = u32vec3(0u, 1u, 1u);
+  occlusionTest.msNodeCount = 0u;
+}
+
+
+// Resets mesh shader dispatch info for occlusion test processing.
+void bvhOcclusionTestReset(uint64_t passGroupVa) {
+  PassGroupBuffer groupBuffer = PassGroupBuffer(passGroupVa);
+
+  PassGroupBvhOcclusionTestBuffer occlusionTest = PassGroupBvhOcclusionTestBuffer(passGroupVa + groupBuffer.bvhOcclusionOffset);
+  occlusionTest.msDispatch = u32vec3(0u, 1u, 1u);
+  occlusionTest.msNodeCount = 0u;
+}
+
+
+// Adds BVH node reference to occlusion test list
+void bvhOcclisionTestAddNode(uint64_t passGroupVa, uint32_t bvhRef) {
+  PassGroupBuffer groupBuffer = PassGroupBuffer(passGroupVa);
+  PassGroupBvhOcclusionTestBuffer occlusionTest = PassGroupBvhOcclusionTestBuffer(passGroupVa + groupBuffer.bvhOcclusionOffset);
+
+  u32vec4 ballot = subgroupBallot(bvhRef != 0u);
+
+  uint32_t entryCount = subgroupBallotBitCount(ballot);
+  uint32_t entryIndex = subgroupBallotExclusiveBitCount(ballot);
+
+  if (entryCount == 0u)
+    return;
+
+  uint32_t offset;
+
+  if (subgroupElect())
+    offset = atomicAdd(occlusionTest.msNodeCount, entryCount);
+
+  offset = subgroupBroadcastFirst(offset);
+  entryIndex += offset;
+
+  if (bvhRef != 0u)
+    occlusionTest.nodeRefs[entryIndex] = bvhRef;
+
+  // Have the thread with the highest index update the dispatch
+  if (gl_SubgroupInvocationID == subgroupBallotFindMSB(ballot)) {
+    atomicMax(occlusionTest.msDispatch.x,
+      (entryIndex / MS_OCCLUSION_BOX_COUNT) + 1u);
+  }
+}
 
 
 // Initializes BVH list. Sets the entry count for the root layer to the
@@ -295,10 +368,8 @@ void bvhListInit(
       entryCount, 0u);
   }
 
-  if (tid == 0u) {
+  if (tid == 0u)
     list.header.totalNodeCount = rootCount;
-    list.header.dispatchOcclusionTest = u32vec3(0u, 1u, 1u);
-  }
 }
 
 
@@ -341,6 +412,7 @@ void bvhListAddItem(
 // all prior writes have completed.
 void bvhListCommitArgs(
         PassGroupBvhList                list,
+        PassGroupBvhOcclusionTestBuffer occlusion,
         uint32_t                        bvhLayer) {
   uint32_t currIndex = bvhLayer & 1u;
   uint32_t remaining = atomicAdd(list.header.args[currIndex].entryCount, -1u,
@@ -356,10 +428,10 @@ void bvhListCommitArgs(
     list.header.args[nextIndex].dispatchReset.x = entryCount == 0u ? 1u : 0u;
     list.header.args[nextIndex].entryIndex = entryIndex;
 
-    uint32_t csDispatchSize = asComputeWorkgroupCount1D(entryIndex + entryCount, CS_OCCLUSION_BOX_COUNT);
-
     list.header.totalNodeCount = entryIndex + entryCount;
-    list.header.dispatchOcclusionTest.x = csDispatchSize;
+
+    uint32_t csDispatchSize = asComputeWorkgroupCount1D(entryIndex + entryCount, CS_OCCLUSION_BOX_COUNT);
+    occlusion.csDispatch = u32vec3(csDispatchSize, 1u, 1u);
   }
 }
 

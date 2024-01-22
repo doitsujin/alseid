@@ -12,7 +12,6 @@ uniform PushData {
   uint64_t passInfoVa;
   uint64_t passGroupVa;
   uint64_t sceneVa;
-  uint64_t nodeListVa;
   uint32_t passIndex;
   uint32_t frameId;
 } globals;

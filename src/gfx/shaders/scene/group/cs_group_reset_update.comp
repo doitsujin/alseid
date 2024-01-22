@@ -23,6 +23,9 @@ uniform CsPushData {
 
 void csResetUpdateListMain() {
   nodeListResetUpdate(globals.groupBufferVa, gl_GlobalInvocationID.x);
+
+  if (gl_GlobalInvocationID.x == 0u)
+    bvhOcclusionTestReset(globals.groupBufferVa);
 }
 
 #include "../../as_include_tail.glsl"

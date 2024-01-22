@@ -51,13 +51,25 @@ std::pair<GfxDescriptor, GfxDescriptor> GfxScenePassGroupBuffer::getDispatchDesc
 }
 
 
-GfxDescriptor GfxScenePassGroupBuffer::getOcclusionTestDispatchDescriptor() const {
+GfxDescriptor GfxScenePassGroupBuffer::getOcclusionTestDispatchDescriptor(
+        GfxShaderStage                stage) const {
   if (!m_buffer)
     return GfxDescriptor();
 
-  return m_buffer->getDescriptor(GfxUsage::eParameterBuffer,
-    m_header.bvhListOffset + offsetof(GfxSceneBvhListHeader, dispatchOcclusionTest),
-    sizeof(GfxDispatchArgs));
+  uint32_t offset = m_header.bvhOcclusionTestOffset;
+  
+  switch (stage) {
+    case GfxShaderStage::eCompute:
+      offset += offsetof(GfxSceneBvhOcclusionTestHeader, csDispatch);
+      break;
+    case GfxShaderStage::eMesh:
+      offset += offsetof(GfxSceneBvhOcclusionTestHeader, msDispatch);
+      break;
+    default:
+      return GfxDescriptor();
+  }
+
+  return m_buffer->getDescriptor(GfxUsage::eParameterBuffer, offset, sizeof(GfxDispatchArgs));
 }
 
 
@@ -140,6 +152,10 @@ bool GfxScenePassGroupBuffer::resizeBuffer(
 
   m_header.bvhVisibilityOffset = allocStorage(allocator,
     sizeof(GfxSceneBvhVisibility) * maxBvhNodes);
+
+  m_header.bvhOcclusionTestOffset = allocStorage(allocator,
+    sizeof(GfxSceneBvhOcclusionTestHeader) +
+    sizeof(GfxSceneNodeRef) * maxBvhNodes);
 
   // Keep the offset for any unused node type at zero. This also allows
   // us to ignore certain node types for certain pass groups entirely,

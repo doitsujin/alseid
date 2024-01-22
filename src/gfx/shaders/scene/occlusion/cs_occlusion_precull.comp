@@ -163,34 +163,7 @@ void csPrecullBvhNodes() {
     atomicAnd(groupBuffer.ignoreOcclusionTestMask, ~(1u << globals.passIndex));
 
   // Add BVH reference to the temporary node list.
-  PassGroupUpdateList nodeList = PassGroupUpdateList(globals.nodeListVa);
-  u32vec4 ballot = subgroupBallot(bvhRef != 0u);
-
-  uint32_t entryCount = subgroupBallotBitCount(ballot);
-  uint32_t entryIndex = subgroupBallotExclusiveBitCount(ballot);
-
-  if (entryCount == 0u)
-    return;
-
-  uint32_t offset;
-
-  if (subgroupElect())
-    offset = atomicAdd(nodeList.header.entryCount, entryCount);
-
-  offset = subgroupBroadcastFirst(offset);
-  entryIndex += offset;
-
-  if (bvhRef != 0u)
-    nodeList.nodeRefs[entryIndex] = bvhRef;
-
-  // Have the thread with the highest index update the dispatch
-  if (gl_SubgroupInvocationID == subgroupBallotFindMSB(ballot)) {
-    atomicMax(nodeList.header.dispatch.x,
-      (entryIndex / MS_OCCLUSION_BOX_COUNT) + 1u);
-
-    if (offset == 0u)
-      nodeList.header.dispatch.yz = uvec2(1u);
-  }
+  bvhOcclisionTestAddNode(globals.passGroupVa, bvhRef);
 }
 
 #include "../../as_include_tail.glsl"

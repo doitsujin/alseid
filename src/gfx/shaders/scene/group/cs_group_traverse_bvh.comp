@@ -450,6 +450,7 @@ void csTraverseBvh() {
   // generating a list for the next iteration.
   PassGroupBuffer group = PassGroupBuffer(groupBuffer);
   PassGroupBvhList bvhList = PassGroupBvhList(groupBuffer + group.bvhListOffset);
+  PassGroupBvhOcclusionTestBuffer bvhOcclusion = PassGroupBvhOcclusionTestBuffer(groupBuffer + group.bvhOcclusionOffset);
   PassGroupBvhVisibilityBuffer bvhVisibilityBuffer = PassGroupBvhVisibilityBuffer(groupBuffer + group.bvhVisibilityOffset);
 
   uint32_t groupPassCount = group.passCount;
@@ -615,7 +616,7 @@ void csTraverseBvh() {
     gl_StorageSemanticsBuffer, gl_SemanticsAcquireRelease);
 
   if (tid == 0u)
-    bvhListCommitArgs(bvhList, bvhLayer);
+    bvhListCommitArgs(bvhList, bvhOcclusion, bvhLayer);
 }
 
 #include "../../as_include_tail.glsl"
