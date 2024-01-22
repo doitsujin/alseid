@@ -1,9 +1,13 @@
 #pragma once
 
+#include "../common/gfx_common_hiz.h"
+
 #include "gfx_scene_node.h"
 #include "gfx_scene_pipelines.h"
 
 namespace as {
+
+class GfxScenePassManager;
 
 /**
  * \brief Maximum number of passes per pass group
@@ -374,6 +378,41 @@ public:
   void commitUpdates(
     const GfxContext&                   context,
     const GfxSceneNodeManager&          nodeManager);
+
+  /**
+   * \brief Resets update lists
+   *
+   * Dispatches a compute shader workgroup to reset update lists and
+   * occlusion test node lists, and emits the necessary barrier. Must
+   * be called between compute passes that access these lists.
+   * \param [in] context Context object
+   * \param [in] pipelines Update pipelines
+   */
+  void resetUpdateLists(
+    const GfxContext&                   context,
+    const GfxScenePipelines&            pipelines);
+
+  /**
+   * \brief Performs BVH occlusion testing for a given render pass
+   *
+   * Computes BVH visibility for the next frame, using the hierarchical
+   * depth buffer as an input. Must be executed on the graphics queue.
+   * \param [in] context Context object
+   * \param [in] pipelines Update pipelines
+   * \param [in] hizImage Hierarchical depth image
+   * \param [in] nodeManager Scene node manager
+   * \param [in] passManager Render pass manager
+   * \param [in] passIndex Pass index within the pass group
+   * \param [in] frameId Current frame ID
+   */
+  void performOcclusionTest(
+    const GfxContext&                   context,
+    const GfxScenePipelines&            pipelines,
+    const GfxCommonHizImage&            hizImage,
+    const GfxSceneNodeManager&          nodeManager,
+    const GfxScenePassManager&          passManager,
+          uint32_t                      passIndex,
+          uint32_t                      frameId);
 
 private:
 

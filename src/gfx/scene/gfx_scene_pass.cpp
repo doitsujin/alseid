@@ -115,6 +115,82 @@ void GfxScenePassGroupBuffer::commitUpdates(
 }
 
 
+void GfxScenePassGroupBuffer::resetUpdateLists(
+  const GfxContext&                   context,
+  const GfxScenePipelines&            pipelines) {
+  context->beginDebugLabel("Reset lists", 0xff7d9cd5);
+
+  pipelines.resetUpdateLists(context, getGpuAddress());
+
+  context->memoryBarrier(
+    GfxUsage::eShaderStorage | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
+    GfxUsage::eShaderStorage | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
+
+  context->endDebugLabel();
+}
+
+
+void GfxScenePassGroupBuffer::performOcclusionTest(
+  const GfxContext&                   context,
+  const GfxScenePipelines&            pipelines,
+  const GfxCommonHizImage&            hizImage,
+  const GfxSceneNodeManager&          nodeManager,
+  const GfxScenePassManager&          passManager,
+        uint32_t                      passIndex,
+        uint32_t                      frameId) {
+  context->beginDebugLabel("BVH occlusion test", 0xff841b67);
+
+  // Reset mesh shader dispatch parameters
+  context->beginDebugLabel("Reset parameters", 0xff7d9cd5);
+  pipelines.resetUpdateLists(context, getGpuAddress());
+
+  context->memoryBarrier(
+    GfxUsage::eShaderStorage, GfxShaderStage::eCompute,
+    GfxUsage::eShaderStorage | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
+  context->endDebugLabel();
+
+  // First pass: Use the Hi-Z buffer to quickly reject or accept nodes.
+  context->beginDebugLabel("Pre-cull BVH nodes", 0xffd79dc7);
+
+  GfxSceneOcclusionTestArgs args = { };
+  args.passInfoVa = passManager.getGpuAddress();
+  args.passGroupVa = getGpuAddress();
+  args.sceneVa = nodeManager.getGpuAddress();
+  args.passIndex = passIndex;
+  args.frameId = frameId;
+
+  pipelines.precullBvhOcclusion(context, hizImage.getImageView(0),
+    getOcclusionTestDispatchDescriptor(GfxShaderStage::eCompute),
+    args);
+
+  context->memoryBarrier(
+    GfxUsage::eShaderStorage, GfxShaderStage::eCompute,
+    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer,
+    GfxShaderStage::eMesh | GfxShaderStage::eFragment);
+  context->endDebugLabel();
+
+  // Second pass: Render nodes and compare against a fixed mip level of the
+  // Hi-Z buffer, which is 1/16th the size of the original render resolution
+  // in either dimension. We do this to reduce the number of FS invocations,
+  // and this is generally expected to be reliable due to conservative
+  // rasterization being used for rendering.
+  context->beginDebugLabel("Render BVH nodes", 0xffd79dc7);
+
+  pipelines.testBvhOcclusion(context, hizImage.getImageMipView(3, 0),
+    getOcclusionTestDispatchDescriptor(GfxShaderStage::eMesh),
+    args);
+
+  context->memoryBarrier(
+    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer,
+    GfxShaderStage::eMesh | GfxShaderStage::eFragment,
+    GfxUsage::eShaderStorage | GfxUsage::eShaderResource,
+    GfxShaderStage::eCompute);
+  context->endDebugLabel();
+
+  context->endDebugLabel();
+}
+
+
 bool GfxScenePassGroupBuffer::resizeBuffer(
   const GfxContext&                   context,
   const GfxSceneNodeManager&          nodeManager) {

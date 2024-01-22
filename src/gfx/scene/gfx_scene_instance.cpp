@@ -475,12 +475,6 @@ void GfxSceneInstanceManager::processPassGroupAnimations(
     GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
     GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
 
-  pipelines.resetUpdateLists(context, groupBuffer.getGpuAddress());
-
-  context->memoryBarrier(
-    GfxUsage::eShaderStorage | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
-    GfxUsage::eShaderStorage | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
-
   context->endDebugLabel();
   context->endDebugLabel();
 }
