@@ -218,7 +218,7 @@ readonly buffer MeshletMetadataRef {
 //
 // Stores vertex data as well as morph target data
 // relevant for rendering the meshlet in question.
-#define MESHLET_LOCAL_JOINT_COUNT       (32u)
+#define MESHLET_LOCAL_JOINT_COUNT       (16u)
 
 #define MESHLET_DUAL_INDEX_BIT          (1u << 0)
 #define MESHLET_LOCAL_JOINTS_BIT        (1u << 1)
