@@ -222,9 +222,11 @@ bool GfxScenePassGroupBuffer::resizeBuffer(
   uint32_t allocator = 0u;
   allocStorage(allocator, sizeof(m_header));
 
+  // Allocate two traversal list items per BVH node since
+  // we may need to revisit nodes after occlusion testing.
   m_header.bvhListOffset = allocStorage(allocator,
     sizeof(GfxSceneBvhListHeader) +
-    sizeof(GfxSceneNodeListEntry) * maxBvhNodes);
+    sizeof(GfxSceneBvhListEntry) * maxBvhNodes * 2u);
 
   m_header.bvhVisibilityOffset = allocStorage(allocator,
     sizeof(GfxSceneBvhVisibility) * maxBvhNodes);

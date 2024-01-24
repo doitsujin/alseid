@@ -273,12 +273,20 @@ struct PassGroupBvhListHeader {
 };
 
 
+// BVH list item. Stores the BVH node reference and the visibility
+// mask of the parent BVH node.
+struct PassGroupBvhListItem {
+  uint32_t                nodeRef;
+  uint32_t                visibilityMask;
+};
+
+
 // BVH list buffer type.
 layout(buffer_reference, buffer_reference_align = 16, scalar)
 buffer PassGroupBvhList {
   queuefamilycoherent
   PassGroupBvhListHeader  header;
-  PassGroupNodeListItem   items[];
+  PassGroupBvhListItem    items[];
 };
 
 
@@ -383,7 +391,7 @@ void bvhListInit(
 void bvhListAddItem(
         PassGroupBvhList                list,
         uint32_t                        bvhLayer,
-  in    PassGroupNodeListItem           item) {
+  in    PassGroupBvhListItem            item) {
   uint32_t nodeType = getNodeTypeFromRef(item.nodeRef);
 
   u32vec4 ballot = subgroupBallot(nodeType == NODE_TYPE_BVH);
@@ -454,7 +462,7 @@ void bvhListResetArgs(
 layout(buffer_reference, buffer_reference_align = 16, scalar)
 readonly buffer PassGroupBvhListIn {
   PassGroupBvhListHeader  header;
-  PassGroupNodeListItem   items[];
+  PassGroupBvhListItem    items[];
 };
 
 #endif /* AS_GROUP_H */
