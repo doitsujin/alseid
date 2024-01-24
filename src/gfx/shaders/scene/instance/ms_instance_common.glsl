@@ -129,19 +129,6 @@ MsInvocationInfo msGetInvocationInfo(
 }
 
 
-// Convenience method to load node transforms from the task shader payload.
-Transform msLoadNodeTransform(
-  in    MsInvocationInfo              invocation,
-        bool                          currFrame) {
-  uint32_t transformIndex = currFrame
-    ? invocation.nodeTransformIndices.x
-    : invocation.nodeTransformIndices.y;
-
-  SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(invocation.nodeTransformVa);
-  return nodeTransforms.nodeTransforms[transformIndex].absoluteTransform;
-}
-
-
 // Draw parameters. Contains offsets to relevant parameter
 // structures, relative to the instance property buffer.
 struct MsDrawParameters {

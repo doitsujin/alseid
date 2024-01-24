@@ -90,6 +90,8 @@
 //
 //    struct MsVertexOut {
 //      vec4  position;             /* mandatory */
+//      vec3  oldPosition;          /* mandatory for motion vectors,
+//                                   * stores xyw components only. */
 //      float clip[MS_CLIP_PLANES]; /* if MS_CLIP_PLANES is set */
 //      ...
 //    };
@@ -158,9 +160,9 @@
 //      in      MsContext   context,    /* Context object */
 //              uint        index,      /* Vertex index */
 //      in      MsVertexIn  vertex,     /* Morphed input data */
-//      in      Transform   transform,  /* Joint transform */
-//              bool        currFrame); /* true for current frame,
-//                                         false for previous frame. */
+//      in      MsVertexIn  vertexOld,  /* Previous frame's morphed input data */
+//      in      Transform   transform,; /* Joint transform */
+//      in      Transform   transformOld); /* Previous frame's joint transform */
 //
 //
 // Computes fragment shader inputs. The parameters passed to
@@ -173,7 +175,6 @@
 //              uint        vertexIndex, /* Vertex index */
 //      in      MsVertexIn  vertexIn,   /* if MS_NO_VERTEX_DATA is not set */
 //      in      MsVertexOut vertexOut,  /* Final vertex position, etc. */
-//              vec2        motionVector, /* if MS_NO_MOTION_VECTORS is not set */
 //      in      MsShadingIn shadingIn,  /* if MS_NO_SHADING_DATA is not set */
 //      in      MsUniformOut uniformOut); /* if MS_NO_UNIFORM_OUTPUT is not set */
 #ifndef MS_INSTANCE_RENDER_H
@@ -362,10 +363,20 @@ JointInfluenceRef msGetJointInfluenceData(in MsContext context, in Meshlet meshl
 }
 
 
+// If motion vectors are enabled, we need to store two sets of joints,
+// one for the current frame and one for the previous frame.
+#ifndef MS_NO_MOTION_VECTORS
+#define MESHLET_LOCAL_JOINT_BUFFER_SIZE (MESHLET_LOCAL_JOINT_COUNT * 2u)
+#else
+#define MESHLET_LOCAL_JOINT_BUFFER_SIZE (MESHLET_LOCAL_JOINT_COUNT)
+#endif
+
+
 // Buffer that stores dual quaternions for each local joint. If
 // local joints are enabled for a meshlet, we can use this to
 // avoid having to laod and convert the transform multiple times.
-shared DualQuat msJointDualQuatShared[MESHLET_LOCAL_JOINT_COUNT];
+shared vec4 msJointDualQuatSharedR[MESHLET_LOCAL_JOINT_BUFFER_SIZE];
+shared vec4 msJointDualQuatSharedD[MESHLET_LOCAL_JOINT_BUFFER_SIZE];
 
 // Loads a joint transform from memory
 Transform msLoadJointTransform(in MsContext context, uint32_t jointSet, uint32_t jointIndex) {
@@ -385,14 +396,24 @@ DualQuat msLoadJointDualQuatFromMemory(in MsContext context, uint32_t jointSet, 
 }
 
 // Loads a joint's dual-quaternion from LDS
-DualQuat msLoadJointDualQuat(in Meshlet meshlet, uint joint) {
-  return msJointDualQuatShared[joint];
+DualQuat msLoadJointDualQuat(uint32_t joint, uint32_t jointSet) {
+  return DualQuat(
+    msJointDualQuatSharedR[joint + jointSet * MESHLET_LOCAL_JOINT_COUNT],
+    msJointDualQuatSharedD[joint + jointSet * MESHLET_LOCAL_JOINT_COUNT]);
+}
+
+
+// Loads raw transform from LDS
+Transform msLoadJointRawTransform(uint32_t jointSet) {
+  return Transform(
+    msJointDualQuatSharedR[jointSet],
+    msJointDualQuatSharedD[jointSet].xyz);
 }
 
 
 // Loads joint indices either into shared memory, or into a global
 // register which can be accessed like an array via subgroup ops.
-bool MsJointIndicesUseSubgroupPath = (gl_SubgroupSize == MESHLET_LOCAL_JOINT_COUNT);
+bool MsJointIndicesUseSubgroupPath = (gl_SubgroupSize >= MESHLET_LOCAL_JOINT_COUNT);
 
 shared uint16_t msJointIndicesShared[MESHLET_LOCAL_JOINT_COUNT];
 
@@ -454,32 +475,41 @@ uint32_t msGetLocalJointIndex(uint32_t jointIndex) {
 // Loads local joints into shared memory.
 void msLoadLocalJointsFromMemory(
   in    MsContext                       context,
-  in    Meshlet                         meshlet,
-        uint32_t                        jointSet) {
+  in    Meshlet                         meshlet) {
+  uint32_t tid = gl_LocalInvocationIndex;
+  uint32_t jointSetCount = MESHLET_LOCAL_JOINT_BUFFER_SIZE / MESHLET_LOCAL_JOINT_COUNT;
+
   if (meshlet.jointIndex < 0xffffu) {
     // If there's only one joint active for the entire meshlet, we do not need
     // to convert it into the dual-quaternion representation since there will
     // be no interpolation.
-    if (gl_LocalInvocationIndex == 0) {
+    if (tid < jointSetCount) {
       Transform transform = transIdentity();
 
       if (msJointIndexMeshletGlobal < context.invocation.instanceInfo.jointCount)
-        transform = msLoadJointTransform(context, jointSet, msJointIndexMeshletGlobal);
+        transform = msLoadJointTransform(context, tid, msJointIndexMeshletGlobal);
 
-      msJointDualQuatShared[0] = DualQuat(transform.rot, vec4(transform.pos, 0.0f));
+      msJointDualQuatSharedR[tid] = transform.rot;
+      msJointDualQuatSharedD[tid].xyz = transform.pos;
     }
   } else {
     uint jointCount = min(uint(meshlet.jointCount), MESHLET_LOCAL_JOINT_COUNT);
 
-    MS_LOOP_WORKGROUP(index, jointCount, MESHLET_LOCAL_JOINT_COUNT) {
-      uint32_t jointIndex = msGetLocalJointIndex(index);
+    MS_LOOP_WORKGROUP(index, MESHLET_LOCAL_JOINT_BUFFER_SIZE, MESHLET_LOCAL_JOINT_BUFFER_SIZE) {
+      uint32_t localSet = index / MESHLET_LOCAL_JOINT_COUNT;
+      uint32_t localIndex = index % MESHLET_LOCAL_JOINT_COUNT;
 
-      DualQuat dq = dualQuatIdentity();
+      if (localIndex < jointCount) {
+        uint32_t jointIndex = msGetLocalJointIndex(localIndex);
 
-      if (jointIndex < context.invocation.instanceInfo.jointCount)
-        dq = msLoadJointDualQuatFromMemory(context, jointSet, jointIndex);
+        DualQuat dq = dualQuatIdentity();
 
-      msJointDualQuatShared[index] = dq;
+        if (jointIndex < context.invocation.instanceInfo.jointCount)
+          dq = msLoadJointDualQuatFromMemory(context, localSet, jointIndex);
+
+        msJointDualQuatSharedR[index] = dq.r;
+        msJointDualQuatSharedD[index] = dq.d;
+      }
     }
   }
 }
@@ -487,14 +517,16 @@ void msLoadLocalJointsFromMemory(
 // Accumulates all joint transforms for the given vertex. This will
 // essentially iterate over the per-vertex list of joint influences
 // and interpolate the dual quaternions using the joint weights.
-Transform msComputeJointTransform(in MsContext context, in Meshlet meshlet, in JointInfluenceRef jointData, uint vertexIndex) {
+Transform msComputeJointTransform(
+  in    MsContext                     context,
+  in    Meshlet                       meshlet,
+  in    JointInfluenceRef             jointData,
+        uint32_t                      jointSet,
+        uint32_t                      vertexIndex) {
   if (uint32_t(meshlet.jointIndex) < 0xffffu) {
     // We stored the raw transform for this joint in shared memory
     // without conversion, so just load it as-is.
-    Transform result;
-    result.rot = msJointDualQuatShared[0].r;
-    result.pos = msJointDualQuatShared[0].d.xyz;
-    return result;
+    return msLoadJointRawTransform(jointSet);
   } else {
     // If the weight of the first joint is zero, the vertex is not
     // attached to any joints. This works because joint influences
@@ -507,7 +539,7 @@ Transform msComputeJointTransform(in MsContext context, in Meshlet meshlet, in J
     if (joint.weight > 0.0f) {
       // Load first joint and skip all the expensive code below if
       // vertices in this meshlet are only influenced by one joint.
-      DualQuat accum = msLoadJointDualQuat(meshlet, joint.index);
+      DualQuat accum = msLoadJointDualQuat(joint.index, jointSet);
 
       if (meshlet.jointCountPerVertex > 1) {
         accum.r *= joint.weight;
@@ -520,7 +552,7 @@ Transform msComputeJointTransform(in MsContext context, in Meshlet meshlet, in J
           if (joint.weight == 0.0f)
             break;
 
-          DualQuat dq = msLoadJointDualQuat(meshlet, joint.index);
+          DualQuat dq = msLoadJointDualQuat(joint.index, jointSet);
           accum.r = fma(dq.r, vec4(joint.weight), accum.r);
           accum.d = fma(dq.d, vec4(joint.weight), accum.d);
         }
@@ -807,19 +839,27 @@ MS_DEFINE_MORPH_FUNCTION(msMorphCombinedData, MsCombinedIn, msMorphCombined)
 
 
 #ifndef MS_NO_MOTION_VECTORS
-// Shared motion vectors, as packed normalized signed integers. A value
-// of 1.0 indicates a motion from the very edge of the negative side of
-// the viewport to the very edge of the positive side.
-shared vec3 msPrevFrameVertexPosShared[MAX_VERT_COUNT];
-
 // Checks whether motion vectors can be used for the current instance.
 // This is the case if the instance has been updated in the current
 // frame and does not have the flag to explicitly disable them.
 bool msInstanceUsesMotionVectors(in MsContext context) {
-  return (context.flags & MS_NO_MOTION_VECTORS_BIT) == 0u
-      && (context.invocation.instanceNode.flags & INSTANCE_NO_MOTION_VECTORS_BIT) == 0u;
+  return !asTest(context.flags, MS_NO_MOTION_VECTORS_BIT)
+      && !asTest(context.invocation.instanceNode.flags, INSTANCE_NO_MOTION_VECTORS_BIT);
 }
 #endif // MS_NO_MOTION_VECTORS
+
+
+// Convenience method to load node transforms from memory.
+Transform msLoadNodeTransform(
+  in    MsContext                     context,
+        uint32_t                      transformSet) {
+  uint32_t transformIndex = transformSet == 0u
+    ? context.invocation.nodeTransformIndices.x
+    : context.invocation.nodeTransformIndices.y;
+
+  SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(context.invocation.nodeTransformVa);
+  return nodeTransforms.nodeTransforms[transformIndex].absoluteTransform;
+}
 
 
 // Shared index data array. When written, this is already in output
@@ -912,77 +952,83 @@ void msMain() {
   // all joints into shared memory so we can reuse them later on.
   JointInfluenceRef jointData = msGetJointInfluenceData(context, meshlet);
   msLoadLocalJointIndicesFromMemory(context, meshlet);
-#endif // MS_NO_SKINNING
-
-#ifndef MS_NO_MOTION_VECTORS
-  // Check whether the instance or render pass have motion vectors
-  // disabled for the current frame for whatever reason.
-  bool useMotionVectors = msInstanceUsesMotionVectors(context);
-  
-  // If motion vectors are enabled, start by using the previous frame's
-  // set of joints, and compute vertex positions in the same way we would
-  // for the current frame.
-  if (useMotionVectors) {
-#ifndef MS_NO_SKINNING
-    msLoadLocalJointsFromMemory(context, meshlet, 1u);
-    barrier();
-#endif // MS_NO_SKINNING
-
-    MS_LOOP_WORKGROUP(index, outputVertexCount, MAX_VERT_COUNT) {
-      uint inputIndex = index;
-
-      if (hasUnpackedVertexOutputs)
-        inputIndex = msGetDualVertexIndex(index).x;
-
-      MsVertexIn vertexIn = msVertexInputShared[inputIndex];
-#ifndef MS_NO_MORPH_DATA
-      msMorphVertexData(context, meshlet, vertexIn, index, morphTargetCount, 1u);
-#endif // MS_NO_MORPH_DATA
-
-#ifndef MS_NO_SKINNING
-      Transform jointTransform = msComputeJointTransform(context, meshlet, jointData, inputIndex);
-#endif // MS_NO_SKINNING
-
-      msPrevFrameVertexPosShared[index] = msComputeVertexOutput(context
-        , index, vertexIn
-#ifndef MS_NO_SKINNING
-        , jointTransform
-#endif // MS_NO_SKINNING
-        , false).position.xyw;
-    }
-  }
-
+  msLoadLocalJointsFromMemory(context, meshlet);
   barrier();
-#endif // MS_NO_MOTION_VECTORS
-
-#ifndef MS_NO_SKINNING
-  // Load the current frame's joints into shared memors
-  msLoadLocalJointsFromMemory(context, meshlet, 0u);
-  barrier();
-#endif
+#endif // MS_NO_SKINNING
 
   // Compute vertex positions and write the results to shared memory
+  bool useMotionVectors = msInstanceUsesMotionVectors(context);
+
   MS_LOOP_WORKGROUP(index, outputVertexCount, MAX_VERT_COUNT) {
     uint inputIndex = index;
 
     if (hasUnpackedVertexOutputs)
       inputIndex = msGetDualVertexIndex(index).x;
 
-    MsVertexIn vertexIn = msVertexInputShared[inputIndex];
+    // Load vertex input and apply morph targets as necessary
+    MsVertexIn vertexInCurr = msVertexInputShared[inputIndex];
 #ifndef MS_NO_MORPH_DATA
-    msMorphVertexData(context, meshlet, vertexIn, index, morphTargetCount, 0u);
+    msMorphVertexData(context, meshlet,
+      vertexInCurr, index, morphTargetCount, 0u);
 #endif // MS_NO_MORPH_DATA
 
 #ifndef MS_NO_SKINNING
-    Transform jointTransform = msComputeJointTransform(context, meshlet, jointData, inputIndex);
-#endif
-
-    MsVertexOut newVertex = msComputeVertexOutput(context
-      , index, vertexIn
-#ifndef MS_NO_SKINNING
-      , jointTransform
+    // Compute current frame's joint transform
+    Transform jointTransformCurr = msComputeJointTransform(
+      context, meshlet, jointData, 0u, inputIndex);
 #endif // MS_NO_SKINNING
-      , true);
+
+    Transform nodeTransformCurr = msLoadNodeTransform(context, 0u);
+
+#ifndef MS_NO_MOTION_VECTORS
+    // Pre-initialize data for the previous frame with the
+    // same values as for the current frame, in case motion
+    // vectors are disabled for the instance for this frame.
+#ifndef MS_NO_MORPH_DATA
+    MsVertexIn vertexInPrev = vertexInCurr;
+#endif // MS_NO_MORPH_DATA
+
+#ifndef MS_NO_SKINNING
+    Transform jointTransformPrev = jointTransformCurr;
+#endif // MS_NO_SKINNING
+
+    Transform nodeTransformPrev = nodeTransformCurr;
+
+    if (useMotionVectors) {
+#ifndef MS_NO_MORPH_DATA
+      // Morph vertex data using previous frame's weights
+      vertexInPrev = msVertexInputShared[inputIndex];
+      msMorphVertexData(context, meshlet,
+        vertexInPrev, index, morphTargetCount, 1u);
+#endif // MS_NO_MORPH_DATA
+
+      // Load previous frame's node transform from memory
+      nodeTransformPrev = msLoadNodeTransform(context, 1u);
+
+#ifndef MS_NO_SKINNING
+      // Compute previous frame's joint transforms
+      jointTransformPrev = msComputeJointTransform(
+        context, meshlet, jointData, 1u, inputIndex);
+#endif // MS_NO_SKINNING
+    }
+#endif // MS_NO_MOTION_VECTORS
+
+    MsVertexOut newVertex = msComputeVertexOutput(context, index
+      , vertexInCurr
+      , nodeTransformCurr
+#ifndef MS_NO_SKINNING
+      , jointTransformCurr
+#endif // MS_NO_SKINNING
+#ifndef MS_NO_MOTION_VECTORS
+#ifndef MS_NO_MORPH_DATA
+      , vertexInPrev
+#endif // MS_NO_MORPH_DATA
+      , nodeTransformPrev
+#ifndef MS_NO_SKINNING
+      , jointTransformPrev
+#endif // MS_NO_SKINNING
+#endif // MS_NO_MOTION_VECTORS
+      );
 
     msVertexDataShared[index] = newVertex;
   }
@@ -1084,22 +1130,12 @@ void msMain() {
 #endif // MS_NO_MORPH_DATA
 #endif // MS_COMBINED_DATA
 
-#ifndef MS_NO_MOTION_VECTORS
-    vec3 prevFrameVertexPos = vertexOut.position.xyw;
-
-    if (useMotionVectors)
-      prevFrameVertexPos = msPrevFrameVertexPosShared[outputIndex];
-#endif // MS_NO_MOTION_VECTORS
-
     FsInput fsInput = msComputeFsInput(context
       , outputIndex
 #ifndef MS_NO_VERTEX_DATA
       , vertexIn.vertex
 #endif // MS_NO_VERTEX_DATA
       , vertexOut
-#ifndef MS_NO_MOTION_VECTORS
-      , prevFrameVertexPos
-#endif
 #ifndef MS_NO_SHADING_DATA
       , vertexIn.shading
 #endif // MS_NO_SHADING_DATA

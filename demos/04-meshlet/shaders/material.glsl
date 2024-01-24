@@ -98,6 +98,7 @@ struct MsMorphIn {
 
 struct MsVertexOut {
   vec4 position;
+  vec3 oldPosition;
 };
 
 
@@ -141,30 +142,48 @@ MsVertexOut msComputeVertexOutput(
   in    MsContext                     context,
         uint                          vertexIndex,
   in    MsVertexIn                    vertex,
+  in    Transform                     nodeTransform,
   in    Transform                     jointTransform,
-        bool                          currFrame) {
-  Transform nodeTransform = msLoadNodeTransform(context.invocation, currFrame);
-
+  in    MsVertexIn                    oldVertex,
+  in    Transform                     oldNodeTransform,
+  in    Transform                     oldJointTransform) {
   PassInfoBufferIn passInfoBuffer = PassInfoBufferIn(globals.passInfoVa);
 
-  Transform finalTransform = Transform(
+  Transform currPassTransform = passInfoBuffer.passes[context.invocation.passIndex].currTransform.transform;
+
+  Transform worldTransform = Transform(
     vec4(context.invocation.meshInstance.transform),
     vec3(context.invocation.meshInstance.translate));
 
-  Transform passTransform = currFrame
-    ? passInfoBuffer.passes[context.invocation.passIndex].currTransform.transform
-    : passInfoBuffer.passes[context.invocation.passIndex].prevTransform.transform;
+  worldTransform = transChain(jointTransform, worldTransform);
+  worldTransform = transChain(nodeTransform, worldTransform);
 
-  finalTransform = transChain(jointTransform, finalTransform);
-  finalTransform = transChain(nodeTransform, finalTransform);
-  finalTransform = transChainNorm(passTransform, finalTransform);
-  vec3 vertexPos = transApply(finalTransform, vec3(vertex.position.xyz));
+  Transform currTransform = transChainNorm(currPassTransform, worldTransform);
+  vec3 currVertexPos = transApply(currTransform, vec3(vertex.position.xyz));
+
+  rotations[vertexIndex] = f16vec4(currTransform.rot);
 
   MsVertexOut result;
-  result.position = projApply(passInfoBuffer.passes[context.invocation.passIndex].projection, vertexPos);
+  result.position = projApply(passInfoBuffer.passes[context.invocation.passIndex].projection, currVertexPos);
+  result.oldPosition = result.position.xyw;
 
-  if (currFrame)
-    rotations[vertexIndex] = f16vec4(finalTransform.rot);
+  if (!asTest(context.flags, MS_NO_MOTION_VECTORS_BIT)) {
+    Transform prevPassTransform = passInfoBuffer.passes[context.invocation.passIndex].prevTransform.transform;
+
+    if (!asTest(context.invocation.instanceNode.flags, INSTANCE_NO_MOTION_VECTORS_BIT)) {
+      worldTransform = Transform(
+        vec4(context.invocation.meshInstance.transform),
+        vec3(context.invocation.meshInstance.translate));
+
+      worldTransform = transChain(oldJointTransform, worldTransform);
+      worldTransform = transChain(oldNodeTransform, worldTransform);
+    }
+
+    Transform prevTransform = transChainNorm(prevPassTransform, worldTransform);
+    vec3 prevVertexPos = transApply(prevTransform, vec3(vertex.position.xyz));
+
+    result.oldPosition = projApply(passInfoBuffer.passes[context.invocation.passIndex].projection, prevVertexPos).xyw;
+  }
 
   return result;
 }
@@ -175,14 +194,13 @@ FsInput msComputeFsInput(
         uint                          vertexIndex,
   in    MsVertexIn                    vertexIn,
   in    MsVertexOut                   vertexOut,
-        vec3                          vertexPosOld,
   in    MsShadingIn                   shadingIn,
   in    MsUniformOut                  uniformOut) {
   vec4 transform = vec4(rotations[vertexIndex]);
 
   FsInput result;
   result.normal = normalize(quatApplyNorm(transform, unpackSnorm3x10(shadingIn.normal)));
-  result.prevFramePos = vertexPosOld;
+  result.prevFramePos = vertexOut.oldPosition;
   result.currFramePos = vertexOut.position.xyw;
   return result;
 }
