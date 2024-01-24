@@ -30,7 +30,7 @@ FS_UNIFORM
 // BVH properties stored in shared memory so that we can easily access
 // it when processing primitives and vertices.
 shared uint32_t csBvhIndicesShared[MS_OCCLUSION_BOX_COUNT];
-shared Aabb16 csBvhAabbShared[MS_OCCLUSION_BOX_COUNT];
+shared Aabb csBvhAabbShared[MS_OCCLUSION_BOX_COUNT];
 shared Transform csBvhTransformsShared[MS_OCCLUSION_BOX_COUNT];
 
 
@@ -70,36 +70,35 @@ void msMain() {
   uint32_t vertCount = localCount * 8u;
   uint32_t primCount = localCount * 12u;
 
-  uint32_t localVertBox = tid >> 3u;
-  uint32_t localVertIdx = tid & 0x7u;
-  uint32_t localPrimBox = tid / 12u;
-  uint32_t localPrimIdx = tid - 12u * localPrimBox;
-
   // Allocate output storage as well while we're at it. No point
   // in exiting early since the local count cannot be 0.
   msSetMeshOutputs(vertCount, primCount);
 
   // Load relevant BVH properties into LDS
-  if (boxIndex + tid < boxCount && tid < localCount) {
+  if (tid < localCount) {
     uint32_t bvhIndex = getNodeIndexFromRef(occlusionTest.nodeRefs[boxIndex + tid]);
     uint32_t bvhNode = bvhNodes.nodes[bvhIndex].nodeIndex;
 
     uint32_t transformIndex = nodeComputeTransformIndices(
       bvhNode, sceneBuffer.nodeCount, globals.frameId).x;
 
+    // Nvidia does not like us storing the 16-bit AABB
+    // in LDS, so just convert it here.
+    Aabb16 aabb = bvhNodes.nodes[bvhIndex].aabb;
+
     csBvhIndicesShared[tid] = bvhIndex;
-    csBvhAabbShared[tid] = bvhNodes.nodes[bvhIndex].aabb;
+    csBvhAabbShared[tid] = Aabb(aabb.lo, aabb.hi);
     csBvhTransformsShared[tid] = sceneTransforms.nodeTransforms[transformIndex].absoluteTransform;
   }
 
   barrier();
 
   MS_LOOP_WORKGROUP(index, vertCount, 8 * MS_OCCLUSION_BOX_COUNT) {
-    Transform transform = csBvhTransformsShared[localVertBox];
+    uint32_t localVertBox = index >> 3u;
+    uint32_t localVertIdx = index & 0x7u;
 
-    // Load bounding box and convert into a useful format
-    Aabb16 aabb16 = csBvhAabbShared[localVertBox];
-    Aabb aabb = Aabb(vec3(aabb16.lo), vec3(aabb16.hi));
+    Transform transform = csBvhTransformsShared[localVertBox];
+    Aabb aabb = csBvhAabbShared[localVertBox];
 
     // Transform vertex into view space and apply further pass transforms
     transform = transChainNorm(passInfo.currTransform.transform, transform);
@@ -114,6 +113,9 @@ void msMain() {
   }
 
   MS_LOOP_WORKGROUP(index, primCount, 12 * MS_OCCLUSION_BOX_COUNT) {
+    uint32_t localPrimBox = index / 12u;
+    uint32_t localPrimIdx = index - 12u * localPrimBox;
+
     fs_bvhBufferVa[index] = bvhVisibilityVa;
     fs_bvhIndex[index] = csBvhIndicesShared[localPrimBox];
     fs_passIndex[index] = globals.passIndex;
