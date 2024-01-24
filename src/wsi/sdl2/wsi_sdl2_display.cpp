@@ -30,10 +30,10 @@ WsiSdl2Display::WsiSdl2Display(
   std::sort(m_availableModes.begin(), m_availableModes.end(),
     [] (const WsiDisplayMode& a, const WsiDisplayMode& b) {
       if (a.resolution.at<0>() > b.resolution.at<0>()) return true;
-      if (a.resolution.at<0>() < b.resolution.at<0>()) return true;
+      if (a.resolution.at<0>() < b.resolution.at<0>()) return false;
 
       if (a.resolution.at<1>() > b.resolution.at<1>()) return true;
-      if (a.resolution.at<1>() < b.resolution.at<1>()) return true;
+      if (a.resolution.at<1>() < b.resolution.at<1>()) return false;
 
       return a.refreshRate > b.refreshRate;
     });
