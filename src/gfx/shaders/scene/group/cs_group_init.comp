@@ -71,10 +71,9 @@ void csInitPassBuffer() {
         uint32_t(nodeIndex), scene.nodeCount, frameId);
     }
 
-    PassGroupNodeListItem item;
+    PassGroupBvhListItem item;
     item.nodeRef = nodeRef;
-    item.partialVisibilityMask = (2u << (passes.passCount - 1u)) - 1u;
-    item.fullVisibilityMask = 0u;
+    item.visibilityMask = (2u << (passes.passCount - 1u)) - 1u;
 
     bvhList.items[gid] = item;
   }

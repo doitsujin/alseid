@@ -459,7 +459,7 @@ void csTraverseBvh() {
   // Load info about the BVH node that the current workgroup processes.
   uint32_t itemIndex = bvhList.header.args[bvhLayer & 1u].entryIndex + uint32_t(gl_WorkGroupID.x);
 
-  PassGroupNodeListItem bvhNodeItem = bvhList.items[itemIndex];
+  PassGroupBvhListItem bvhNodeItem = bvhList.items[itemIndex];
 
   uint32_t bvhIndex = getNodeIndexFromRef(bvhNodeItem.nodeRef);
   uint32_t bvhNode = bvhNodes.nodes[bvhIndex].nodeIndex;
@@ -486,7 +486,7 @@ void csTraverseBvh() {
   bool bvhAabbValid = all(lessThan(bvhAabb.lo, bvhAabb.hi));
   bool isInside = false;
 
-  uint32_t visibility = (bvhNodeItem.partialVisibilityMask & (1u << tid)) != 0u
+  uint32_t visibility = (bvhNodeItem.visibilityMask & (1u << tid)) != 0u
     ? (bvhAabbValid ? NODE_VISIBILITY_FULL : NODE_VISIBILITY_PART)
     : (NODE_VISIBILITY_NONE);
 
@@ -601,9 +601,14 @@ void csTraverseBvh() {
         item.nodeRef = nodeInfos.nodeInfos[childNode].nodeRef;
       }
 
+      // Get BVH item from node item
+      PassGroupBvhListItem bvhItem;
+      bvhItem.nodeRef = item.nodeRef;
+      bvhItem.visibilityMask = item.partialVisibilityMask;
+
       // These functions will filter out any unwanted nodes on their own,
       // but they have to run within subgroup-uniform control flow.
-      bvhListAddItem(bvhList, bvhLayer, item);
+      bvhListAddItem(bvhList, bvhLayer, bvhItem);
       nodeListAddItem(groupBuffer, item, PASS_GROUP_WORKGROUP_SIZE);
 
       nextChain = bvhNodes.nodes[nextIndex].chainedNode;

@@ -269,6 +269,23 @@ static_assert(sizeof(GfxSceneBvhListHeader) == 68);
 
 
 /**
+ * \brief List entry for BVH nodes within a pass group
+ *
+ * Stores the node reference, as well as a mask of passes for which the
+ * bounding box of the BVH lies within the view frustum and view distance
+ * limits.
+ */
+struct GfxSceneBvhListEntry {
+  /** Node reference. */
+  GfxSceneNodeRef nodeRef;
+  /** Pass mask where the node is potentially visible. */
+  uint32_t visibilityMask;
+};
+
+static_assert(sizeof(GfxSceneBvhListEntry) == 8);
+
+
+/**
  * \brief Occlusion test header
  *
  * Stores info about a compute dispatch which uses the processed BVH
