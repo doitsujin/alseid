@@ -53,8 +53,9 @@ uint32_t passGroupGetPassIndex(
 // masks that influence culling and rendering behaviour for each pass.
 struct PassGroupNodeListItem {
   uint32_t  nodeRef;
-  uint32_t  partialVisibilityMask;
-  uint32_t  fullVisibilityMask;
+  uint32_t  bvhRef;
+  uint32_t  visibilityMask;
+  uint32_t  renderPassMask;
 };
 
 

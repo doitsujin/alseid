@@ -58,7 +58,7 @@ vec3 csTransformVertex(
         vec3                          vertex) {
   vertex = transApply(transform, vertex);
 
-  if ((passInfo.flags & RENDER_PASS_USES_MIRROR_PLANE_BIT) != 0u)
+  if (asTest(passInfo.flags, RENDER_PASS_USES_MIRROR_PLANE_BIT))
     vertex = planeMirror(passInfo.currMirrorPlane, vertex);
 
   return vertex;
@@ -82,7 +82,7 @@ bool csTestViewDistance(
   Transform inverseTransform = transInverse(transform);
   vec3 pos = inverseTransform.pos;
 
-  if ((passInfo.flags & RENDER_PASS_USES_MIRROR_PLANE_BIT) != 0u) {
+  if (asTest(passInfo.flags, RENDER_PASS_USES_MIRROR_PLANE_BIT)) {
     // If the pass is mirrored, we need to do reverse the mirroring
     // first by essentially mirroring a null vector, and then
     // apply the inverse transform to it.
@@ -314,14 +314,17 @@ void csGenerateDraws() {
 
   PassGroupBuffer group = PassGroupBuffer(globals.passGroupVa);
 
-  PassGroupNodeListIn nodeList = PassGroupNodeListIn(globals.passGroupVa +
+  PassGroupNodeList nodeList = PassGroupNodeList(globals.passGroupVa +
     group.nodeListOffsets[NODE_TYPE_INSTANCE - NODE_TYPE_BUILTIN_COUNT].nodeList);
+  PassGroupBvhVisibilityBuffer bvhVisibilityBuffer = PassGroupBvhVisibilityBuffer(
+    globals.passGroupVa + group.bvhVisibilityOffset);
 
   csInitDrawInfo();
 
   if (gid < nodeList.header.entryCount) {
     PassGroupNodeListItem nodeItem = nodeList.items[gid];
     instanceDrawInfo.instanceIndex = getNodeIndexFromRef(nodeItem.nodeRef);
+    instanceDrawInfo.passMask = 0u;
 
     InstanceNode instance = csLoadInstanceNode(instanceDrawInfo.instanceIndex);
     InstanceHeader instanceInfo = InstanceDataBufferIn(instance.propertyBuffer).header;
@@ -329,19 +332,20 @@ void csGenerateDraws() {
     SceneHeader scene = SceneHeaderIn(globals.sceneVa).header;
 
     if (instanceInfo.geometryVa != 0ul) {
+      PassGroupBvhVisibility bvhVisibility = bvhVisibilityBuffer.bvhs[
+        getNodeIndexFromRef(nodeItem.bvhRef)];
+
       uint32_t transformIndex = nodeComputeTransformIndices(instance.nodeIndex, scene.nodeCount, globals.frameId).x;
 
       SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(globals.sceneVa + scene.nodeTransformOffset);
       Transform worldTransform = nodeTransforms.nodeTransforms[transformIndex].absoluteTransform;
 
-      // Start with passes where the instance is known to be fully visible already.
-      instanceDrawInfo.passMask = globals.passMask & nodeItem.fullVisibilityMask;
-
       // Compute mask of passes for which we need to test visibility, and scalarize
       // it for greater efficiency. Pass masks are not expected to diverge heavily
       // within a workgroup due to the way BVH traversal is implemented.
-      uint32_t passMaskUniform = globals.passMask &
-        subgroupOr(nodeItem.partialVisibilityMask & ~nodeItem.fullVisibilityMask);
+      // TODO: Apply BVH occlusion test results
+      uint32_t visibilityMask = nodeItem.visibilityMask;
+      uint32_t passMaskUniform = globals.passMask & subgroupOr(visibilityMask);
 
       while (passMaskUniform != 0u) {
         uint32_t passIndex = findLSB(passMaskUniform);
@@ -351,10 +355,11 @@ void csGenerateDraws() {
         passIndex = passGroupGetPassIndex(globals.passGroupVa, passIndex);
         PassInfo passInfo = PassInfoBufferIn(globals.passInfoVa).passes[passIndex];
 
-        // Ignore the instance if BVH-level visibility tests already failed for the current pass.
-        bool isVisible = (nodeItem.partialVisibilityMask & passBit) != 0u;
+        // Ignore the instance if BVH-level visibility tests already failed for
+        // the current pass, or if the instance has already been drawn.
+        bool isVisible = asTest(nodeItem.visibilityMask & ~nodeItem.renderPassMask, passBit);
 
-        if (isVisible && (instanceDrawInfo.passMask & passBit) == 0u) {
+        if (isVisible) {
           // If the bounding box is empty, ignore it and always render the instance.
           // This essentially assumes that the instance is infinitely large.
           Aabb aabb = Aabb(
@@ -369,7 +374,7 @@ void csGenerateDraws() {
             // the bounding box against the view frustum for non-cube map passes. Control
             // flow is expected to be relatively uniform up until this point; do not try
             // to parallelize instance-level culling any further.
-            if ((passInfo.flags & RENDER_PASS_IS_CUBE_MAP_BIT) == 0u) {
+            if (!asTest(passInfo.flags, RENDER_PASS_IS_CUBE_MAP_BIT)) {
               vec3 v0 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(aabb, 0));
               vec3 v1 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(aabb, 1));
               vec3 v2 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(aabb, 2));
@@ -415,6 +420,10 @@ void csGenerateDraws() {
         instanceDrawInfo.drawCount = instanceInfo.drawCount;
         instanceDrawInfo.viewDistanceSq = csComputeLodDistance(
           instanceInfo.geometryVa, worldTransform);
+
+        // Write back rendered pass mask
+        nodeList.items[gid].renderPassMask =
+          nodeItem.renderPassMask | instanceDrawInfo.passMask;
       }
     }
   }

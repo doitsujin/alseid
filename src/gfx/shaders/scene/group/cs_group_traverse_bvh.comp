@@ -383,36 +383,29 @@ uint32_t csTestViewDistance(
 
 // Computes pass masks for partial and full visibility given the
 // visibility status of a node for each thread representing a pass.
-shared uvec2 csVisibilityMaskShared;
+shared uint32_t csVisibilityMaskShared;
 
-uvec2 csComputeVisibilityMask(uint32_t tid, uint32_t visibility) {
-  uvec2 mask;
+uint32_t csComputeVisibilityMask(uint32_t tid, uint32_t visibility) {
+  uint32_t mask;
 
-  bool part = visibility >= NODE_VISIBILITY_PART;
-  bool full = visibility >= NODE_VISIBILITY_FULL;
+  bool result = visibility > NODE_VISIBILITY_NONE;
 
   if (IsFullSubgroup) {
-    mask = uvec2(
-      subgroupBallot(part).x,
-      subgroupBallot(full).x);
+    mask = subgroupBallot(result).x;
 
     if (!IsSingleSubgroup)
       mask <<= gl_SubgroupID * gl_SubgroupSize;
   } else {
-    mask = subgroupOr(uvec2(
-      part ? 1u << tid : 0u,
-      full ? 1u << tid : 0u));
+    mask = subgroupOr(result ? 1u << tid : 0u);
   }
 
   if (!IsSingleSubgroup) {
     if (tid == 0u)
-      csVisibilityMaskShared = uvec2(0u);
+      csVisibilityMaskShared = 0u;
     barrier();
 
-    if (subgroupElect()) {
-      atomicOr(csVisibilityMaskShared.x, mask.x);
-      atomicOr(csVisibilityMaskShared.y, mask.y);
-    }
+    if (subgroupElect())
+      atomicOr(csVisibilityMaskShared, mask);
 
     barrier();
 
@@ -531,7 +524,7 @@ void csTraverseBvh() {
   }
 
   // Compute workgroup-uniform visibility mask from the two state flags
-  u32vec2 visibilityMask = csComputeVisibilityMask(tid, visibility);
+  uint32_t visibilityMask = csComputeVisibilityMask(tid, visibility);
 
   // Combine visibility with occlusion test results from the previous frame,
   // and write back occlusion test properties for the current frame. Ensure
@@ -573,12 +566,9 @@ void csTraverseBvh() {
     bvhVisibilityBuffer.bvhs[bvhIndex] = bvhVisibility;
   }
 
-  // Do not further process nodes for which occlusion testing failed
-  visibilityMask &= ~occlusionTestFailMask;
-
   // If the BVH is partially visible in any enabled pass, process child nodes,
   // update their absolute transform, and make them resident as necessary.
-  if (visibilityMask.x != 0u) {
+  if ((visibilityMask.x & ~occlusionTestFailMask) != 0u) {
     uint32_t nextChain = makeNodeRef(NODE_TYPE_BVH, bvhIndex);
 
     while (getNodeTypeFromRef(nextChain) == NODE_TYPE_BVH) {
@@ -587,8 +577,9 @@ void csTraverseBvh() {
 
       PassGroupNodeListItem item;
       item.nodeRef = 0u;
-      item.partialVisibilityMask = visibilityMask.x;
-      item.fullVisibilityMask = visibilityMask.y;
+      item.bvhRef = bvhNodeItem.nodeRef;
+      item.visibilityMask = visibilityMask.x;
+      item.renderPassMask = 0u;
 
       if (tid < childCount) {
         uint32_t childNode = uint32_t(bvhNodes.nodes[nextIndex].childNodes[tid]);
@@ -604,7 +595,7 @@ void csTraverseBvh() {
       // Get BVH item from node item
       PassGroupBvhListItem bvhItem;
       bvhItem.nodeRef = item.nodeRef;
-      bvhItem.visibilityMask = item.partialVisibilityMask;
+      bvhItem.visibilityMask = item.visibilityMask;
 
       // These functions will filter out any unwanted nodes on their own,
       // but they have to run within subgroup-uniform control flow.

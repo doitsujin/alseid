@@ -97,16 +97,20 @@ static_assert(sizeof(GfxSceneNodeListHeader) == 16);
 struct GfxSceneNodeListEntry {
   /** Typed node reference. */
   GfxSceneNodeRef nodeRef;
-  /** Mask of passes where the node is partially visible. On input,
-   *  this is equal to the parent BVH node's partial visibility mask. */
-  uint32_t partialVisibilityMask;
-  /** Mask of passes where the node is fully visible. On input, this is
-   *  equal to the parent BVH node's full visibility mask. Can be used to
-   *  skip expensive computations for fully visible nodes. */
-  uint32_t fullVisibilityMask;
+  /** Node reference to the containing BVH node. Used to update
+   *  visibility information after performing occlusion tests. */
+  GfxSceneNodeRef bvhRef;
+  /** Mask of passes where the node lies within the view frustum and
+   *  view distance limits, and is therefore potentially visible. Will
+   *  be initialized with the BVH's visibility mask. */
+  uint32_t visibilityMask;
+  /** Mask of passes for which the node has already been added to a
+   *  draw list. Useful to generate delta draw lists for passes that
+   *  rely on occlusion testing. */
+  uint32_t renderPassMask;
 };
 
-static_assert(sizeof(GfxSceneNodeListEntry) == 12);
+static_assert(sizeof(GfxSceneNodeListEntry) == 16);
 
 
 /**
