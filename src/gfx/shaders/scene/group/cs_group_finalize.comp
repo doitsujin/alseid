@@ -1,0 +1,42 @@
+// Pass buffer finalization shader.
+//
+// Run after BVH traversal in order to reset the list headers.
+// Allows subsequent passes to safely append more BVH nodes.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csFinalizePassBuffer
+
+// Fixed number of threads that matches the layer depth.
+#define CS_WORKGROUP_SIZE   (32)
+
+layout(local_size_x = CS_WORKGROUP_SIZE) in;
+
+#include "../../as_include_head.glsl"
+
+#include "../as_scene.glsl"
+#include "../as_scene_node_transform.glsl"
+
+#include "as_group.glsl"
+
+layout(push_constant)
+uniform PushData {
+  uint64_t  passGroupVa;
+} globals;
+
+void csFinalizePassBuffer() {
+  uint32_t gid = gl_GlobalInvocationID.x;
+
+  PassGroupBuffer groupBuffer = PassGroupBuffer(globals.passGroupVa);
+  PassGroupBvhList bvhList = PassGroupBvhList(globals.passGroupVa + groupBuffer.bvhListOffset);
+
+  if (gid < 2u) {
+    bvhList.header.args[gid].dispatchTraverse.x = 0u;
+    bvhList.header.args[gid].dispatchReset.x = 1u;
+    bvhList.header.args[gid].entryCount = 0u;
+    bvhList.header.args[gid].entryIndex = bvhList.header.totalNodeCount;
+  }
+}
+
+#include "../../as_include_tail.glsl"

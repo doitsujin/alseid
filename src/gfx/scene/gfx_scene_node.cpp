@@ -437,9 +437,17 @@ void GfxSceneNodeManager::traverseBvh(
     context->endDebugLabel();
   }
 
+  // Run finalization pass, but do not insert a barrier afterwards since
+  // we'll be doing other things before appending more BVH nodes anyway.
+  context->beginDebugLabel("Finalization", 0xffa0e0ff);
+
   context->memoryBarrier(
     GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
     GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
+
+  pipelines.finalizePassGroupBuffer(context, groupBuffer.getGpuAddress());
+
+  context->endDebugLabel();
 
   context->endDebugLabel();
 }

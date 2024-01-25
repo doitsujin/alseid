@@ -5,6 +5,7 @@
 #include "../gfx.h"
 
 #include "gfx_scene_common.h"
+#include <cstdint>
 
 namespace as {
 
@@ -276,6 +277,17 @@ public:
     const GfxSceneNodeRef*              rootNodes) const;
 
   /**
+   * \brief Finalizes pass group buffer
+   *
+   * Should be run immediately after BVH traversal.
+   * \param [in] context Context object
+   * \param [in] passGroupVa Address of pass group buffer
+   */
+  void finalizePassGroupBuffer(
+    const GfxContext&                   context,
+          uint64_t                      passGroupVa) const;
+
+  /**
    * \brief Traverses scene BVH
    *
    * Processes a single layer of the scene BVH for a given pass group. Callers
@@ -503,6 +515,7 @@ private:
   GfxComputePipeline  m_csDrawListInit;
   GfxComputePipeline  m_csDrawListGenerate;
 
+  GfxComputePipeline  m_csGroupFinalize;
   GfxComputePipeline  m_csGroupInit;
   GfxComputePipeline  m_csGroupResetUpdate;
   GfxComputePipeline  m_csGroupTraverseBvh;
