@@ -46,9 +46,11 @@ vec4 csTransformAabbVertex(
 
 
 bool csPerformOcclusionTest(
+        PassGroupBufferOut            passGroup,
+        PassGroupBvhList              bvhList,
         PassGroupBvhVisibilityBuffer  bvhVisibilityBuffer,
         uint32_t                      bvhRef) {
-  PassGroupBufferOut groupBuffer = PassGroupBufferOut(globals.passGroupVa);
+  uint32_t passCount = passGroup.passCount;
 
   uint32_t passBit = 1u << globals.passIndex;
   uint32_t bvhIndex = getNodeIndexFromRef(bvhRef);
@@ -126,8 +128,11 @@ bool csPerformOcclusionTest(
   // If any point of the bounding box is closer than the closest depth value,
   // accept the node without needing to render. This is going to be common.
   if (maxCoord.z >= maxz) {
-    if (!asTest(bvhVisibility.visibilityMask, passBit))
-      bvhVisibilityBuffer.bvhs[bvhIndex].visibilityMask = bvhVisibility.visibilityMask | passBit;
+    PassGroupBvhListItem bvhItem;
+    bvhItem.nodeRef = bvhRef;
+    bvhItem.visibilityMask = (2u << (passCount - 1u)) - 1u;
+
+    bvhMarkVisible(bvhList, bvhVisibilityBuffer, bvhVisibility, passBit, bvhItem);
     return false;
   }
 
@@ -150,7 +155,7 @@ void csPrecullBvhNodes() {
   uint32_t gid = gl_GlobalInvocationID.x;
 
   PassGroupBufferOut groupBuffer = PassGroupBufferOut(globals.passGroupVa);
-  PassGroupBvhListIn bvhList = PassGroupBvhListIn(globals.passGroupVa + groupBuffer.bvhListOffset);
+  PassGroupBvhList bvhList = PassGroupBvhList(globals.passGroupVa + groupBuffer.bvhListOffset);
   PassGroupBvhVisibilityBuffer bvhVisibility = PassGroupBvhVisibilityBuffer(globals.passGroupVa + groupBuffer.bvhVisibilityOffset);
 
   // Load BVH reference from BVH node
@@ -159,7 +164,7 @@ void csPrecullBvhNodes() {
   if (gid < bvhList.header.totalNodeCount) {
     uint32_t bvhRefLocal = bvhList.items[gid].nodeRef;
 
-    if (csPerformOcclusionTest(bvhVisibility, bvhRefLocal))
+    if (csPerformOcclusionTest(groupBuffer, bvhList, bvhVisibility, bvhRefLocal))
       bvhRef = bvhRefLocal;
   }
 

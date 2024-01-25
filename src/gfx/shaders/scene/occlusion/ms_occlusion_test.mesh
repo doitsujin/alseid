@@ -116,7 +116,6 @@ void msMain() {
     uint32_t localPrimBox = index / 12u;
     uint32_t localPrimIdx = index - 12u * localPrimBox;
 
-    fs_bvhBufferVa[index] = bvhVisibilityVa;
     fs_bvhIndex[index] = csBvhIndicesShared[localPrimBox];
     fs_passIndex[index] = globals.passIndex;
 

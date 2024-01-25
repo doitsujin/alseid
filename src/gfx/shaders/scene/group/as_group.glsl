@@ -5,41 +5,6 @@
 
 #include "as_group_visibility.glsl"
 
-#define PASS_GROUP_PASS_COUNT                     (32u)
-#define PASS_GROUP_WORKGROUP_SIZE                 (128u)
-
-// Pair of node list offsets within the pass group
-struct PassTypedNodeListOffsets {
-  uint32_t  nodeList;
-  uint32_t  updateList;
-};
-
-
-// Pass group buffer type. Used as input for BVH traversal.
-layout(buffer_reference, buffer_reference_align = 16, scalar)
-readonly buffer PassGroupBuffer {
-  uint32_t  passCount;
-  uint32_t  ignoreOcclusionTestMask;
-  uint32_t  bvhListOffset;
-  uint32_t  bvhVisibilityOffset;
-  uint32_t  bvhOcclusionOffset;
-  u32vec3   reserved;
-  uint16_t  passIndices[PASS_GROUP_PASS_COUNT];
-  PassTypedNodeListOffsets nodeListOffsets[];
-};
-
-layout(buffer_reference, buffer_reference_align = 16, scalar)
-buffer PassGroupBufferOut {
-  uint32_t  passCount;
-  uint32_t  ignoreOcclusionTestMask;
-  uint32_t  bvhListOffset;
-  uint32_t  bvhVisibilityOffset;
-  uint32_t  bvhOcclusionOffset;
-  uint16_t  passIndices[PASS_GROUP_PASS_COUNT];
-  PassTypedNodeListOffsets nodeListOffsets[];
-};
-
-
 // Convenience method to remap a group-local pass index to a global
 // index using the lookup table from the pass group header.
 uint32_t passGroupGetPassIndex(
@@ -256,41 +221,6 @@ PassGroupUpdateListIn getNodeTypeUpdateList(
     group.nodeListOffsets[nodeType - NODE_TYPE_BUILTIN_COUNT].updateList);
 }
 
-// BVH list dispatch arguments. Also stores the index at which the
-// first BVH node for the current dispath is stored within the list.
-struct PassGroupBvhListArgs {
-  u32vec3   dispatchTraverse;
-  u32vec3   dispatchReset;
-  uint32_t  entryCount;
-  uint32_t  entryIndex;
-};
-
-
-// BVH list header. Stores two sets of dispatch arguments so that
-// the traversal shader can consume one while producing the other.
-struct PassGroupBvhListHeader {
-  uint32_t                totalNodeCount;
-  PassGroupBvhListArgs    args[2];
-};
-
-
-// BVH list item. Stores the BVH node reference and the visibility
-// mask of the parent BVH node.
-struct PassGroupBvhListItem {
-  uint32_t                nodeRef;
-  uint32_t                visibilityMask;
-};
-
-
-// BVH list buffer type.
-layout(buffer_reference, buffer_reference_align = 16, scalar)
-buffer PassGroupBvhList {
-  queuefamilycoherent
-  PassGroupBvhListHeader  header;
-  PassGroupBvhListItem    items[];
-};
-
-
 // BVH occlusion test data.
 layout(buffer_reference, buffer_reference_align = 16, scalar)
 buffer PassGroupBvhOcclusionTestBuffer {
@@ -456,14 +386,5 @@ void bvhListResetArgs(
   list.header.args[nextIndex].dispatchTraverse.x = 0u;
   list.header.args[nextIndex].dispatchReset.x = 1u;
 }
-
-
-// BVH list buffer type. Used as input when generating a tight
-// list of BVH nodes to perform occlusion testing on.
-layout(buffer_reference, buffer_reference_align = 16, scalar)
-readonly buffer PassGroupBvhListIn {
-  PassGroupBvhListHeader  header;
-  PassGroupBvhListItem    items[];
-};
 
 #endif /* AS_GROUP_H */
