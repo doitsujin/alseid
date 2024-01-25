@@ -1,4 +1,5 @@
 #include "gfx_scene_material.h"
+#include <cstdint>
 
 namespace as {
 
@@ -143,11 +144,11 @@ void GfxSceneMaterialManager::dispatchDraws(
   const GfxSceneInstanceManager&      instanceManager,
   const GfxSceneNodeManager&          nodeManager,
   const GfxScenePassGroupBuffer&      passGroup,
-  const GfxSceneDrawBuffer&           drawBuffer,
+        uint32_t                      drawBufferCount,
+  const GfxSceneDrawBuffer**          drawBuffers,
         GfxScenePassType              passType,
         uint32_t                      frameId) const {
   GfxSceneMaterialDrawArgs args = { };
-  args.drawListVa = drawBuffer.getGpuAddress();
   args.passInfoVa = passManager.getGpuAddress();
   args.passGroupVa = passGroup.getGpuAddress();
   args.instanceVa = instanceManager.getGpuAddress();
@@ -155,6 +156,8 @@ void GfxSceneMaterialManager::dispatchDraws(
   args.frameId = frameId;
 
   for (uint32_t i = 0; i < uint32_t(m_drawCounts.size()); i++) {
+    args.drawGroup = i;
+
     if (!m_drawCounts[i])
       continue;
 
@@ -162,14 +165,17 @@ void GfxSceneMaterialManager::dispatchDraws(
         m_desc.materialAssetDescriptorSet))
       continue;
 
-    args.drawGroup = i;
+    for (uint32_t j = 0; j < drawBufferCount; j++) {
+      args.drawListVa = drawBuffers[j]->getGpuAddress();
 
-    context->setShaderConstants(0, args);
+      context->setShaderConstants(0, args);
 
-    context->drawMeshIndirect(
-      drawBuffer.getDrawParameterDescriptor(i),
-      drawBuffer.getDrawCountDescriptor(i),
-      m_drawCounts[i]);
+      context->drawMeshIndirect(
+        drawBuffers[j]->getDrawParameterDescriptor(i),
+        drawBuffers[j]->getDrawCountDescriptor(i),
+        m_drawCounts[i]);
+
+    }
 
     m_materials[i].end(context);
   }
