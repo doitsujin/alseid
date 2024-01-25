@@ -45,6 +45,7 @@ as_shader_builtins = [
   [ 'scene/draw/cs_draw_list_init.comp', 'cs' ],
   [ 'scene/draw/cs_draw_list_generate.comp', 'cs' ],
 
+  [ 'scene/group/cs_group_finalize.comp', 'cs' ],
   [ 'scene/group/cs_group_init.comp', 'cs' ],
   [ 'scene/group/cs_group_reset_update.comp', 'cs' ],
   [ 'scene/group/cs_group_traverse_bvh.comp', 'cs' ],

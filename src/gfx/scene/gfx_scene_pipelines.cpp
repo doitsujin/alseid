@@ -10,6 +10,7 @@
 #include <cs_animation_prepare.h>
 #include <cs_animation_process.h>
 
+#include <cs_group_finalize.h>
 #include <cs_group_init.h>
 #include <cs_group_reset_update.h>
 #include <cs_group_traverse_bvh.h>
@@ -40,6 +41,7 @@ GfxScenePipelines::GfxScenePipelines(
 , m_csAnimationProcess      (createComputePipeline("cs_animation_process", cs_animation_process))
 , m_csDrawListInit          (createComputePipeline("cs_draw_list_init", cs_draw_list_init))
 , m_csDrawListGenerate      (createComputePipeline("cs_draw_list_generate", cs_draw_list_generate))
+, m_csGroupFinalize         (createComputePipeline("cs_group_finalize", cs_group_finalize))
 , m_csGroupInit             (createComputePipeline("cs_group_init", cs_group_init))
 , m_csGroupResetUpdate      (createComputePipeline("cs_group_reset_update", cs_group_reset_update))
 , m_csGroupTraverseBvh      (createComputePipeline("cs_group_traverse_bvh", cs_group_traverse_bvh))
@@ -75,6 +77,15 @@ void GfxScenePipelines::initPassGroupBuffer(
   context->bindDescriptor(0, 0, scratch.getDescriptor(GfxUsage::eShaderResource));
   context->setShaderConstants(0, args);
   context->dispatch(m_csGroupInit->computeWorkgroupCount(Extent3D(args.nodeCount, 1u, 1u)));
+}
+
+
+void GfxScenePipelines::finalizePassGroupBuffer(
+  const GfxContext&                   context,
+        uint64_t                      passGroupVa) const {
+  context->bindPipeline(m_csGroupFinalize);
+  context->setShaderConstants(0, passGroupVa);
+  context->dispatch(Extent3D(1u, 1u, 1u));
 }
 
 
