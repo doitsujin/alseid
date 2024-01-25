@@ -276,9 +276,11 @@ public:
         auto scratch = context->writeScratch(GfxUsage::eConstantBuffer, payload);
         context->bindDescriptor(0, 0, scratch.getDescriptor(GfxUsage::eConstantBuffer));
 
+        const GfxSceneDrawBuffer* drawBuffer = m_sceneDrawBuffer.get();
+
         m_sceneMaterialManager->dispatchDraws(context,
           *m_scenePassManager, *m_sceneInstanceManager, *m_sceneNodeManager,
-          *m_scenePassGroup, *m_sceneDrawBuffer, GfxScenePassType::eMainOpaque,
+          *m_scenePassGroup, 1, &drawBuffer, GfxScenePassType::eMainOpaque,
           m_frameId);
 
         context->endRendering();

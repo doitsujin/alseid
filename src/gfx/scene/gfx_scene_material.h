@@ -256,13 +256,16 @@ public:
    * \brief Dispatches draws for a given pass
    *
    * Sets up render state for the given pass type and then iterates
-   * over all supported materials to dispatch draw calls.
+   * over all supported materials to dispatch draw calls. Draw sets
+   * from multiple draw buffers can be batched in order to reduce
+   * the number of render state changes between draw calls.
    * \param [in] context Context object
    * \param [in] passManager Render pass manager
    * \param [in] instanceManager Instance manager
    * \param [in] nodeManager Node manager
    * \param [in] passGroup Pass group object
-   * \param [in] drawBuffer Draw buffer object
+   * \param [in] drawBufferCount Number of draw buffers
+   * \param [in] drawBuffers Draw buffer objects
    * \param [in] passType Render pass type
    * \param [in] frameId Current frame number
    */
@@ -272,7 +275,8 @@ public:
     const GfxSceneInstanceManager&      instanceManager,
     const GfxSceneNodeManager&          nodeManager,
     const GfxScenePassGroupBuffer&      passGroup,
-    const GfxSceneDrawBuffer&           drawBuffer,
+          uint32_t                      drawBufferCount,
+    const GfxSceneDrawBuffer**          drawBuffers,
           GfxScenePassType              passType,
           uint32_t                      frameId) const;
 
