@@ -13,13 +13,19 @@
 layout(set = 0, binding = 0)
 uniform texture2D rHizImage;
 
-void fsUpdateVisibility(FsUniform fsUniform, uint32_t index) {
-  PassGroupBvhVisibilityBufferCoherent bvhVisibility = PassGroupBvhVisibilityBufferCoherent(fsUniform.bvhBufferVa);
-  uint32_t visibility = bvhVisibility.bvhs[index].visibilityMask;
-  uint32_t passBit = 1u << fsUniform.passIndex;
 
-  if (!asTest(visibility, passBit))
-    bvhVisibility.bvhs[index].visibilityMask = visibility | passBit;
+void fsUpdateVisibility(FsUniform fsUniform) {
+  PassGroupBuffer passGroup = PassGroupBuffer(globals.passGroupVa);
+  PassGroupBvhList bvhList = PassGroupBvhList(globals.passGroupVa + passGroup.bvhListOffset);
+  PassGroupBvhVisibilityBufferCoherent bvhVisibilityBuffer = PassGroupBvhVisibilityBufferCoherent(globals.passGroupVa + passGroup.bvhVisibilityOffset);
+  PassGroupBvhVisibility bvhVisibility = bvhVisibilityBuffer.bvhs[fsUniform.bvhIndex];
+
+  PassGroupBvhListItem bvhItem;
+  bvhItem.nodeRef = makeNodeRef(NODE_TYPE_BVH, fsUniform.bvhIndex);
+  bvhItem.visibilityMask = (2u << (passGroup.passCount - 1u)) - 1u;
+
+  bvhMarkVisible(bvhList, bvhVisibilityBuffer, bvhVisibility,
+    1u << fsUniform.passIndex, bvhItem);
 }
 
 
@@ -37,7 +43,7 @@ void fsMain(FsUniform fsUniform) {
     }
 
     if (elected)
-      fsUpdateVisibility(fsUniform, fsUniform.bvhIndex);
+      fsUpdateVisibility(fsUniform);
   }
 }
 
