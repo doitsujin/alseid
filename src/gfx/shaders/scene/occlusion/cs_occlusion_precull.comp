@@ -46,17 +46,17 @@ vec4 csTransformAabbVertex(
 
 
 bool csPerformOcclusionTest(
-        PassGroupBvhVisibilityBuffer  bvhVisibility,
+        PassGroupBvhVisibilityBuffer  bvhVisibilityBuffer,
         uint32_t                      bvhRef) {
   PassGroupBufferOut groupBuffer = PassGroupBufferOut(globals.passGroupVa);
 
-  // Exit early if the BVH node has occlusion testing disabled for this pass
   uint32_t passBit = 1u << globals.passIndex;
-
   uint32_t bvhIndex = getNodeIndexFromRef(bvhRef);
-  uint32_t testMask = bvhVisibility.bvhs[bvhIndex].testFailMask;
 
-  if (!asTest(testMask, passBit))
+  // Exit early if the BVH node has occlusion testing disabled for this pass
+  PassGroupBvhVisibility bvhVisibility = bvhVisibilityBuffer.bvhs[bvhIndex];
+
+  if (!asTest(bvhVisibility.occlusionTestMask, passBit))
     return false;
 
   // Load render pass and BVH node data needed for further processing
@@ -123,17 +123,23 @@ bool csPerformOcclusionTest(
   float minz = min(min(z00.x, z10.x), min(z01.x, z11.x));
   float maxz = max(max(z00.y, z10.y), max(z01.y, z11.y));
 
+  // If any point of the bounding box is closer than the closest depth value,
+  // accept the node without needing to render. This is going to be common.
+  if (maxCoord.z >= maxz) {
+    if (!asTest(bvhVisibility.visibilityMask, passBit))
+      bvhVisibilityBuffer.bvhs[bvhIndex].visibilityMask = bvhVisibility.visibilityMask | passBit;
+    return false;
+  }
+
+  // Mark BVH node as invisible for the current pass. If subsequent testing
+  // does not pass, this will persist until the next frame.
+  if (asTest(bvhVisibility.visibilityMask, passBit))
+    bvhVisibilityBuffer.bvhs[bvhIndex].visibilityMask = bvhVisibility.visibilityMask & ~passBit;
+
   // Cull the node if no part of the bounding box is closer than the
   // farthest depth value retrieved from the Hi-Z texture.
   if (maxCoord.z < minz)
     return false;
-
-  // If any point of the bounding box is closer than the closest depth value,
-  // accept the node without needing to render. This is going to be common.
-  if (maxCoord.z >= maxz) {
-    atomicAnd(bvhVisibility.bvhs[bvhIndex].testFailMask, ~passBit);
-    return false;
-  }
 
   // Otherwise, the node might be visible, dispatch a draw to find out.
   return true;
@@ -163,7 +169,7 @@ void csPrecullBvhNodes() {
     atomicAnd(groupBuffer.ignoreOcclusionTestMask, ~(1u << globals.passIndex));
 
   // Add BVH reference to the temporary node list.
-  bvhOcclisionTestAddNode(globals.passGroupVa, bvhRef);
+  bvhOcclusionTestAddNode(globals.passGroupVa, bvhRef);
 }
 
 #include "../../as_include_tail.glsl"

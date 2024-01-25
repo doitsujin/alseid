@@ -331,7 +331,7 @@ void bvhOcclusionTestReset(uint64_t passGroupVa) {
 
 
 // Adds BVH node reference to occlusion test list
-void bvhOcclisionTestAddNode(uint64_t passGroupVa, uint32_t bvhRef) {
+void bvhOcclusionTestAddNode(uint64_t passGroupVa, uint32_t bvhRef) {
   PassGroupBuffer groupBuffer = PassGroupBuffer(passGroupVa);
   PassGroupBvhOcclusionTestBuffer occlusionTest = PassGroupBvhOcclusionTestBuffer(passGroupVa + groupBuffer.bvhOcclusionOffset);
 

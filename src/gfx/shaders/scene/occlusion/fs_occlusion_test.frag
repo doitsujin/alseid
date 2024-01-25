@@ -15,11 +15,11 @@ uniform texture2D rHizImage;
 
 void fsUpdateVisibility(FsUniform fsUniform, uint32_t index) {
   PassGroupBvhVisibilityBufferCoherent bvhVisibility = PassGroupBvhVisibilityBufferCoherent(fsUniform.bvhBufferVa);
-  uint32_t visibility = bvhVisibility.bvhs[index].testFailMask;
+  uint32_t visibility = bvhVisibility.bvhs[index].visibilityMask;
   uint32_t passBit = 1u << fsUniform.passIndex;
 
-  if ((visibility & passBit) == passBit)
-    bvhVisibility.bvhs[index].testFailMask = visibility - passBit;
+  if (!asTest(visibility, passBit))
+    bvhVisibility.bvhs[index].visibilityMask = visibility | passBit;
 }
 
 

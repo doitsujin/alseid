@@ -474,6 +474,9 @@ void csTraverseBvh() {
   if (tid < groupPassCount)
     passInfo = csLoadPassInfoFromMemory(groupPassIndex, bvhTransform);
 
+  // Load current visibility info for the BVH node
+  PassGroupBvhVisibility bvhVisibility = bvhVisibilityBuffer.bvhs[bvhIndex];
+
   // Initialize visible pass mask with a subset of passes that the parent
   // node was visible in, and cull passes from that list from there.
   bool bvhAabbValid = all(lessThan(bvhAabb.lo, bvhAabb.hi));
@@ -531,7 +534,7 @@ void csTraverseBvh() {
   // that we perform the occlusion test even if the test failed in previous
   // frames, or otherwise nodes will stay invisible indefinitely.
   uint32_t occlusionTestPerformMask = 0u;
-  uint32_t occlusionTestFailMask = 0u;
+  uint32_t occlusionTestPassMask = visibilityMask;
 
   if (bvhAabbValid) {
     // Process occlusion test results of the previous frame, and compute
@@ -546,29 +549,31 @@ void csTraverseBvh() {
     uint32_t occlusionTestCheckMask = occlusionTestPerformMask &
       ~(occlusionTestIgnoreMask | group.ignoreOcclusionTestMask);
 
-    if ((visibilityMask.x & occlusionTestCheckMask) != 0u) {
-      PassGroupBvhVisibility bvhVisibility = bvhVisibilityBuffer.bvhs[bvhIndex];
-
-      occlusionTestFailMask = (bvhVisibility.prevFrameId + 1u == frameId)
-        ? bvhVisibility.testFailMask & occlusionTestCheckMask
-        : 0u;
+    // Only consider occlusion test results from the current or previous frame
+    if ((visibilityMask & occlusionTestCheckMask) != 0u) {
+      occlusionTestPassMask = (bvhVisibility.updateFrameId + 1u >= frameId)
+        ? bvhVisibility.visibilityMask | ~occlusionTestCheckMask
+        : visibilityMask;
     }
   }
 
   // Write back new visibility status. This is needed even if the node does
   // not have a valid bounding box, since otherwise the occlusion test task
   // shader could read stale data for this node.
-  if (tid == 0u) {
-    PassGroupBvhVisibility bvhVisibility;
-    bvhVisibility.prevFrameId = frameId;
-    bvhVisibility.testFailMask = visibilityMask.x & occlusionTestPerformMask;
+  bool isVisible = (visibilityMask & occlusionTestPassMask) != 0u;
+
+  if (tid == 0u && bvhVisibility.updateFrameId != frameId) {
+    bvhVisibility.updateFrameId = frameId;
+    bvhVisibility.flags = isVisible ? BVH_DISPATCHED_CHILD_NODES_BIT : 0u;
+    bvhVisibility.visibilityMask = visibilityMask & occlusionTestPassMask;
+    bvhVisibility.occlusionTestMask = visibilityMask & occlusionTestPerformMask;
 
     bvhVisibilityBuffer.bvhs[bvhIndex] = bvhVisibility;
   }
 
   // If the BVH is partially visible in any enabled pass, process child nodes,
   // update their absolute transform, and make them resident as necessary.
-  if ((visibilityMask.x & ~occlusionTestFailMask) != 0u) {
+  if (isVisible) {
     uint32_t nextChain = makeNodeRef(NODE_TYPE_BVH, bvhIndex);
 
     while (getNodeTypeFromRef(nextChain) == NODE_TYPE_BVH) {
@@ -578,7 +583,7 @@ void csTraverseBvh() {
       PassGroupNodeListItem item;
       item.nodeRef = 0u;
       item.bvhRef = bvhNodeItem.nodeRef;
-      item.visibilityMask = visibilityMask.x;
+      item.visibilityMask = visibilityMask;
       item.renderPassMask = 0u;
 
       if (tid < childCount) {

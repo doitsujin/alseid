@@ -343,8 +343,7 @@ void csGenerateDraws() {
       // Compute mask of passes for which we need to test visibility, and scalarize
       // it for greater efficiency. Pass masks are not expected to diverge heavily
       // within a workgroup due to the way BVH traversal is implemented.
-      // TODO: Apply BVH occlusion test results
-      uint32_t visibilityMask = nodeItem.visibilityMask;
+      uint32_t visibilityMask = nodeItem.visibilityMask & bvhVisibility.visibilityMask;
       uint32_t passMaskUniform = globals.passMask & subgroupOr(visibilityMask);
 
       while (passMaskUniform != 0u) {
