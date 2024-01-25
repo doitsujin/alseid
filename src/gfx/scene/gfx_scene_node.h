@@ -194,6 +194,19 @@ static_assert(sizeof(GfxSceneBvhInfo) == 128);
 
 
 /**
+ * \brief Bounding volume visibility flag
+ */
+enum class GfxSceneBvhVisibilityFlag : uint32_t {
+  /** Child nodes have been dispatched for traversal */
+  eDispatchedChildNodes         = (1u << 0),
+
+  eFlagEnum                     = 0
+};
+
+using GfxSceneBvhVisibilityFlags = Flags<GfxSceneBvhVisibilityFlag>;
+
+
+/**
  * \brief Bounding volume visibility info
  *
  * Stores persistent visibility information for a BVH node for a render
@@ -201,17 +214,19 @@ static_assert(sizeof(GfxSceneBvhInfo) == 128);
  * the BVH node index.
  */
 struct GfxSceneBvhVisibility {
-  /** Frame ID when occlusion testing was last performed for this BVH.
-   *  Occlusion tests should be discarded if this is older than one frame. */
-  uint32_t prevFrameId;
-  /** Bit mask of passes where occlusion testing was performed and failed.
-   *  Set for each pass that has occlusion testing enabled when processing
-   *  the BVH node, then occlusion testing itself must reset bits for each
-   *  pass where the bounding volume is visible. */
-  uint32_t testFailMask;
+  /** Frame ID when the visibility status has last been updated. Occlusion
+   *  test results should be discarded if this is older than one frame. */
+  uint32_t updateFrameId;
+  /** Visibility flags, managed by the shader. */
+  GfxSceneBvhVisibilityFlags flags;
+  /** Bit mask of passes where the BVH node is visible in the current
+   *  frame, including any available occlusion test results. */
+  uint32_t visibilityMask;
+  /** Bit mask of passes for which to perform occlusion tests. */
+  uint32_t occlusionTestMask;
 };
 
-static_assert(sizeof(GfxSceneBvhVisibility) == 8);
+static_assert(sizeof(GfxSceneBvhVisibility) == 16);
 
 
 /**

@@ -6,10 +6,24 @@
 #define MS_OCCLUSION_BOX_COUNT (10u)
 
 
-// BVH visibility status
+#define BVH_DISPATCHED_CHILD_NODES_BIT (1u << 0)
+
+
+// BVH visibility status.
 struct PassGroupBvhVisibility {
-  uint32_t  prevFrameId;
-  uint32_t  testFailMask;
+  // Frame ID of when the visibility status has last been updated Used to
+  // discard outdated occlusion test results.
+  uint32_t updateFrameId;
+  // BVH visibility flags. Stores whether child nodes have been dispatched
+  // for traversal in the current frame. If the node is made visible with
+  // the flag not set, it must be dispatched for traversal.
+  uint32_t flags;
+  // Visibility mask for the BVH node, including results from occlusion
+  // testing. May be updated during a frame if occlusion tests succeed.
+  uint32_t visibilityMask;
+  // Bit mask of passes for which occlusion testing has to be performed
+  // in the current frame.
+  uint32_t occlusionTestMask;
 };
 
 
