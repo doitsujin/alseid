@@ -1,6 +1,7 @@
 demo_04_shaders = [
   [ 'shaders/material.glsl',  [ 'ms', 'fs' ] ],
   [ 'shaders/render.task',    [ 'ts' ] ],
+  [ 'shaders/present.comp',   [ 'cs' ] ],
 ]
 
 demo_04_meshlet_spv = []

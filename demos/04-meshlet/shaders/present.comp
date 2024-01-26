@@ -1,0 +1,46 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csMain
+
+#include "as_include_head.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0)
+uniform writeonly image2D rDstImage;
+
+layout(set = 0, binding = 1)
+uniform texture2D rSrcImage;
+
+void csMain() {
+  ivec2 dstSize = imageSize(rDstImage);
+  ivec2 srcSize = textureSize(rSrcImage, 0);
+
+  ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+
+  if (all(lessThan(coord, dstSize))) {
+    if (all(equal(dstSize, srcSize))) {
+      vec3 color = texelFetch(rSrcImage, coord, 0).xyz;
+      imageStore(rDstImage, coord, vec4(color, 1.0f));
+    } else {
+      vec2 srcCoordF = (vec2(coord) * vec2(srcSize)) / vec2(dstSize);
+      ivec2 srcCoord = ivec2(srcCoordF);
+      vec2 srcBlend = srcCoordF - vec2(srcCoord);
+
+      vec3 t00 = texelFetch(rSrcImage, srcCoord, 0).xyz;
+      vec3 t10 = texelFetchOffset(rSrcImage, srcCoord, 0, ivec2(1, 0)).xyz;
+      vec3 t01 = texelFetchOffset(rSrcImage, srcCoord, 0, ivec2(0, 1)).xyz;
+      vec3 t11 = texelFetchOffset(rSrcImage, srcCoord, 0, ivec2(1, 1)).xyz;
+
+      vec3 r0 = mix(t00, t10, srcBlend.x);
+      vec3 r1 = mix(t01, t11, srcBlend.x);
+
+      vec3 p = mix(r0, r1, srcBlend.y);
+      imageStore(rDstImage, coord, vec4(p, 1.0f));
+    }
+  }
+}
+
+#include "as_include_tail.glsl"
