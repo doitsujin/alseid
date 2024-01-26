@@ -409,7 +409,7 @@ void GfxSceneNodeManager::traverseBvh(
   initArgs.nodeCount = groupInfo.rootNodeCount;
   initArgs.frameId = frameId;
 
-  pipelines.initPassGroupBuffer(context, initArgs, groupInfo.rootNodes);
+  pipelines.initBvhTraversal(context, initArgs, groupInfo.rootNodes);
 
   context->endDebugLabel();
 
@@ -445,7 +445,7 @@ void GfxSceneNodeManager::traverseBvh(
     GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
     GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
 
-  pipelines.finalizePassGroupBuffer(context, groupBuffer.getGpuAddress());
+  pipelines.finalizeBvhTraversal(context, groupBuffer.getGpuAddress());
 
   context->endDebugLabel();
 

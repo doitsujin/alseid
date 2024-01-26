@@ -17,7 +17,7 @@ uniform texture2D rHizImage;
 void fsUpdateVisibility(FsUniform fsUniform) {
   PassGroupBuffer passGroup = PassGroupBuffer(globals.passGroupVa);
   PassGroupBvhList bvhList = PassGroupBvhList(globals.passGroupVa + passGroup.bvhListOffset);
-  PassGroupBvhVisibilityBufferCoherent bvhVisibilityBuffer = PassGroupBvhVisibilityBufferCoherent(globals.passGroupVa + passGroup.bvhVisibilityOffset);
+  PassGroupBvhVisibilityBuffer bvhVisibilityBuffer = PassGroupBvhVisibilityBuffer(globals.passGroupVa + passGroup.bvhVisibilityOffset);
   PassGroupBvhVisibility bvhVisibility = bvhVisibilityBuffer.bvhs[fsUniform.bvhIndex];
 
   PassGroupBvhListItem bvhItem;

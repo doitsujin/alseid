@@ -1,0 +1,48 @@
+// Update list reset shader.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csCommitTraverseArgs
+
+// Prefer small workgroups, since we're not expecting
+// to have a large number of root BVH nodes anyway.
+#define CS_WORKGROUP_SIZE   (32)
+
+layout(local_size_x = CS_WORKGROUP_SIZE) in;
+
+#include "../../as_include_head.glsl"
+
+#include "as_group.glsl"
+
+layout(push_constant)
+uniform CsPushData {
+  uint64_t  passGroupVa;
+} globals;
+
+
+void csCommitTraverseArgs() {
+  uint32_t gid = gl_GlobalInvocationID.x;
+
+  // Set up the BVH traversal dispatch and adjust the total node count.
+  PassGroupBuffer passes = PassGroupBuffer(globals.passGroupVa);
+  PassGroupBvhList bvhList = PassGroupBvhList(globals.passGroupVa + passes.bvhListOffset);
+
+  uint32_t entryCount = bvhList.header.args[0].entryCount;
+  uint32_t totalCount = bvhList.header.totalNodeCount;
+
+  if (gid < 2u) {
+    uint32_t count = gid == 0u ? entryCount : 0u;
+    uint32_t reset = count == 0u ? 1u : 0u;
+
+    bvhList.header.args[gid].dispatchTraverse.x = count;
+    bvhList.header.args[gid].dispatchReset.x = reset;
+  }
+
+  if (gid == 0u)
+    bvhList.header.totalNodeCount += totalCount + entryCount;
+
+  // TODO prepare lists
+}
+
+#include "../../as_include_tail.glsl"
