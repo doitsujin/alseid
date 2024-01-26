@@ -87,13 +87,20 @@ public:
     m_sceneInstanceManager = std::make_unique<GfxSceneInstanceManager>(m_device);
     m_scenePassGroup = std::make_unique<GfxScenePassGroupBuffer>(m_device);
     m_scenePipelines = std::make_unique<GfxScenePipelines>(m_device);
-    m_sceneDrawBuffer = std::make_unique<GfxSceneDrawBuffer>(m_device);
+    m_sceneDrawBufferPrimary = std::make_unique<GfxSceneDrawBuffer>(m_device);
+    m_sceneDrawBufferSecondary = std::make_unique<GfxSceneDrawBuffer>(m_device);
 
     GfxSceneMaterialManagerDesc materialManagerDesc = { };
     m_sceneMaterialManager = std::make_unique<GfxSceneMaterialManager>(m_device, materialManagerDesc);
 
     m_commonPipelines = std::make_unique<GfxCommonPipelines>(m_device);
     m_hizImage = std::make_unique<GfxCommonHizImage>(m_device);
+
+    GfxComputePipelineDesc presentPipelineDesc;
+    presentPipelineDesc.debugName = "Present blit";
+    presentPipelineDesc.compute = findShader("cs_present");
+
+    m_presentPipeline = m_device->createComputePipeline(presentPipelineDesc);
 
     initScene();
     initContexts();
@@ -111,6 +118,9 @@ public:
 
     while (!quit) {
       GfxContext context = getNextContext();
+
+      if (!m_colorImage)
+        createRenderTargets(context, m_window->getCurrentProperties().extent);
 
       m_presenter->synchronize(1);
 
@@ -170,7 +180,8 @@ public:
         computeViewTransform(m_eye, normalize(m_dir), up), false);
       m_scenePassManager->updateRenderPassViewDistance(m_scenePassIndex, 30.0f);
 
-      m_sceneMaterialManager->updateDrawBuffer(context, *m_sceneDrawBuffer);
+      m_sceneMaterialManager->updateDrawBuffer(context, *m_sceneDrawBufferPrimary);
+      m_sceneMaterialManager->updateDrawBuffer(context, *m_sceneDrawBufferSecondary);
 
       // Update scene buffers appropriately
       m_sceneNodeManager->commitUpdates(context,
@@ -189,6 +200,7 @@ public:
       m_scenePassManager->processPasses(context,
         *m_scenePipelines, *m_sceneNodeManager, m_frameId);
 
+      // Perform initial BVH traversal pass
       m_sceneNodeManager->traverseBvh(context, *m_scenePipelines,
         *m_scenePassManager, *m_scenePassGroup, 1, &m_sceneRootRef,
         m_frameId, 0);
@@ -199,99 +211,147 @@ public:
       m_sceneInstanceManager->processPassGroupInstances(context,
         *m_scenePipelines, *m_sceneNodeManager, *m_scenePassGroup, m_frameId);
 
-      m_sceneDrawBuffer->generateDraws(context, *m_scenePipelines,
-        m_scenePassManager->getGpuAddress(), *m_sceneNodeManager, *m_sceneInstanceManager, *m_scenePassGroup,
-        m_frameId, 0x1, 0);
+      // Generate initial set of draws
+      m_sceneDrawBufferPrimary->generateDraws(context, *m_scenePipelines,
+        m_scenePassManager->getGpuAddress(), *m_sceneNodeManager, *m_sceneInstanceManager,
+        *m_scenePassGroup, m_frameId, 0x1, 0);
 
+      // Perform initial render pass with objects visible in the previous frame.
+      const GfxSceneDrawBuffer* drawBuffer = m_sceneDrawBufferPrimary.get();
+
+      initRenderTargets(context);
+
+      GfxImageViewDesc viewDesc;
+      viewDesc.type = GfxImageViewType::e2D;
+      viewDesc.format = m_colorImage->getDesc().format;
+      viewDesc.subresource = m_colorImage->getAvailableSubresources();
+      viewDesc.usage = GfxUsage::eRenderTarget;
+
+      GfxRenderingInfo renderInfo;
+      renderInfo.color[0].op = GfxRenderTargetOp::eClear;
+      renderInfo.color[0].view = m_colorImage->createView(viewDesc);
+      renderInfo.color[0].clearValue = GfxColorValue(1.0f, 1.0f, 1.0f, 1.0f);
+
+      viewDesc.format = m_depthImage->getDesc().format;
+      viewDesc.subresource = m_depthImage->getAvailableSubresources();
+
+      renderInfo.depthStencil.depthOp = GfxRenderTargetOp::eClear;
+      renderInfo.depthStencil.view = m_depthImage->createView(viewDesc);
+      renderInfo.depthStencil.clearValue = GfxDepthStencilValue(0.0f, 0);
+
+      context->beginRendering(renderInfo, 0);
+      context->setViewport(GfxViewport(Offset2D(0, 0),
+        Extent2D(m_colorImage->getDesc().extent)));
+
+      context->setRenderState(m_renderState);
+
+      m_sceneMaterialManager->dispatchDraws(context,
+        *m_scenePassManager, *m_sceneInstanceManager, *m_sceneNodeManager,
+        *m_scenePassGroup, 1, &drawBuffer, GfxScenePassType::eMainOpaque,
+        m_frameId);
+
+      context->endRendering();
+
+      // Transition depth buffer and generate the Hi-Z image for occlusion testing
+      context->imageBarrier(m_depthImage, m_depthImage->getAvailableSubresources(),
+        GfxUsage::eRenderTarget, 0, GfxUsage::eShaderResource, GfxShaderStage::eCompute, 0);
+
+      m_hizImage->generate(context, *m_commonPipelines, m_depthImage);
+
+      // Perform occlusion tests and add any previously invisible
+      // BVH nodes to the traversal week 
+      m_scenePassGroup->performOcclusionTest(context, *m_scenePipelines,
+        *m_hizImage, *m_sceneNodeManager, *m_scenePassManager, 0, m_frameId);
+
+      // Traverse nodes made visible by the occlusion tests.
+      m_sceneNodeManager->traverseBvh(context, *m_scenePipelines,
+        *m_scenePassManager, *m_scenePassGroup, 0, nullptr, m_frameId, 0);
+
+      // Process instances made visible by the secondary traversal pass
+      m_sceneInstanceManager->processPassGroupAnimations(context,
+        *m_scenePipelines, *m_scenePassGroup, m_frameId);
+      m_scenePassGroup->resetUpdateLists(context, *m_scenePipelines);
+      m_sceneInstanceManager->processPassGroupInstances(context,
+        *m_scenePipelines, *m_sceneNodeManager, *m_scenePassGroup, m_frameId);
+
+      // Generate secondary list of draws
+      m_sceneDrawBufferSecondary->generateDraws(context, *m_scenePipelines,
+        m_scenePassManager->getGpuAddress(), *m_sceneNodeManager, *m_sceneInstanceManager,
+        *m_scenePassGroup, m_frameId, 0x1, 0);
+
+      // Perform secondary render pass with objects that became visible this frame
+      context->imageBarrier(m_depthImage, m_depthImage->getAvailableSubresources(),
+        GfxUsage::eShaderResource, GfxShaderStage::eCompute, GfxUsage::eRenderTarget, 0, 0);
+
+      renderInfo.color[0].op = GfxRenderTargetOp::eLoad;
+      renderInfo.depthStencil.depthOp = GfxRenderTargetOp::eLoad;
+
+      context->beginRendering(renderInfo, 0);
+      context->setViewport(GfxViewport(Offset2D(0, 0),
+        Extent2D(m_colorImage->getDesc().extent)));
+
+      context->setRenderState(m_renderState);
+
+      drawBuffer = m_sceneDrawBufferSecondary.get();
+
+      m_sceneMaterialManager->dispatchDraws(context,
+        *m_scenePassManager, *m_sceneInstanceManager, *m_sceneNodeManager,
+        *m_scenePassGroup, 1, &drawBuffer, GfxScenePassType::eMainOpaque,
+        m_frameId);
+
+      context->endRendering();
+
+      // Transition rendered image so that we can read it in a shader
+      context->imageBarrier(m_colorImage, m_colorImage->getAvailableSubresources(),
+        GfxUsage::eRenderTarget, 0, GfxUsage::eShaderResource, GfxShaderStage::eCompute, 0);
+
+      // Submit command list containing all the rendering work
       GfxCommandSubmission submission;
       submission.addSignalSemaphore(m_semaphore, m_frameId);
       submission.addCommandList(context->endCommandList());
 
       m_device->submit(GfxQueue::eGraphics, std::move(submission));
 
+      // Present rendered frame
       m_presenter->present([this] (const GfxPresenterContext& args) {
         GfxContext context = args.getContext();
         GfxImage image = args.getImage();
 
         // Initialize swap chain image and prepare it for rendering
         context->imageBarrier(image, image->getAvailableSubresources(),
-          0, 0, GfxUsage::eRenderTarget, 0, GfxBarrierFlag::eDiscard);
+          0, 0, GfxUsage::eShaderStorage, GfxShaderStage::eCompute,
+          GfxBarrierFlag::eDiscard);
 
         // Create depth image as necessary
         Extent2D extent(image->computeMipExtent(0));
 
-        if (m_depthImage == nullptr || Extent2D(m_depthImage->computeMipExtent(0)) != extent) {
-          if (m_depthImage)
-            context->trackObject(m_depthImage);
-
-          m_depthImage = createDepthImage(extent);
-        }
-
-        context->imageBarrier(m_depthImage, m_depthImage->getAvailableSubresources(),
-          0, 0, GfxUsage::eRenderTarget, 0, GfxBarrierFlag::eDiscard);
-
-        // Create an image view for rendering
         GfxImageViewDesc viewDesc;
         viewDesc.type = GfxImageViewType::e2D;
         viewDesc.format = image->getDesc().format;
         viewDesc.subresource = image->getAvailableSubresources();
-        viewDesc.usage = GfxUsage::eRenderTarget;
+        viewDesc.usage = GfxUsage::eShaderStorage;
 
-        GfxRenderingInfo renderInfo;
-        renderInfo.color[0].op = GfxRenderTargetOp::eClear;
-        renderInfo.color[0].view = image->createView(viewDesc);
-        renderInfo.color[0].clearValue = GfxColorValue(1.0f, 1.0f, 1.0f, 1.0f);
+        GfxImageView dstView = image->createView(viewDesc);
 
-        viewDesc.format = m_depthImage->getDesc().format;
-        viewDesc.subresource = m_depthImage->getAvailableSubresources();
+        viewDesc.format = m_colorImage->getDesc().format;
+        viewDesc.subresource = m_colorImage->getAvailableSubresources();
+        viewDesc.usage = GfxUsage::eShaderResource;
 
-        renderInfo.depthStencil.depthOp = GfxRenderTargetOp::eClear;
-        renderInfo.depthStencil.view = m_depthImage->createView(viewDesc);
-        renderInfo.depthStencil.clearValue = GfxDepthStencilValue(0.0f, 0);
+        GfxImageView srcView = m_colorImage->createView(viewDesc);
 
-        context->beginRendering(renderInfo, 0);
-        context->setViewport(GfxViewport(Offset2D(0, 0), extent));
+        context->bindPipeline(m_presentPipeline);
 
-        context->setRenderState(m_renderState);
+        context->bindDescriptor(0, 0, dstView->getDescriptor());
+        context->bindDescriptor(0, 1, srcView->getDescriptor());
 
-        TsPayload payload = { };
-        payload.instanceIndex = uint32_t(m_sceneInstanceRef.index);
-        payload.passIndex = m_scenePassIndex;
-        payload.drawIndex = 0;
-        payload.skinningDataOffset = m_geometry->meshes[0].info.skinDataOffset;
-        payload.meshInstance.transform = Vector4D(0.0f, 0.0f, 0.0f, 1.0f);
-        payload.meshInstance.translate = Vector3D(0.0f);
-        payload.transforms[0] = QuatTransform::identity();
-        payload.transforms[1] = QuatTransform::identity();
-        payload.meshletVa = m_geometryBuffer->getGpuAddress();
-        for (uint32_t i = 0; i < m_geometry->meshlets.size(); i++) {
-          payload.meshletOffsets[i] = m_geometry->meshlets[i].headerOffset;
-          payload.meshletPayloads[i] = 1 | (i << 6);
-        }
-
-        auto scratch = context->writeScratch(GfxUsage::eConstantBuffer, payload);
-        context->bindDescriptor(0, 0, scratch.getDescriptor(GfxUsage::eConstantBuffer));
-
-        const GfxSceneDrawBuffer* drawBuffer = m_sceneDrawBuffer.get();
-
-        m_sceneMaterialManager->dispatchDraws(context,
-          *m_scenePassManager, *m_sceneInstanceManager, *m_sceneNodeManager,
-          *m_scenePassGroup, 1, &drawBuffer, GfxScenePassType::eMainOpaque,
-          m_frameId);
-
-        context->endRendering();
+        context->dispatch(m_presentPipeline->computeWorkgroupCount(Extent3D(extent, 1u)));
 
         // Prepare the swap chain image for presentation
         context->imageBarrier(image, image->getAvailableSubresources(),
-          GfxUsage::eRenderTarget, 0, GfxUsage::ePresent, 0, 0);
-        context->imageBarrier(m_depthImage, m_depthImage->getAvailableSubresources(),
-          GfxUsage::eRenderTarget, 0,
-          GfxUsage::eShaderResource, GfxShaderStage::eCompute, 0);
+          GfxUsage::eShaderStorage, GfxShaderStage::eCompute,
+          GfxUsage::ePresent, 0, 0);
 
-        m_hizImage->generate(context, *m_commonPipelines, m_depthImage);
-
-        m_scenePassGroup->performOcclusionTest(context, *m_scenePipelines,
-          *m_hizImage, *m_sceneNodeManager, *m_scenePassManager, 0, m_frameId);
+        createRenderTargets(context, extent);
       });
     }
 
@@ -310,6 +370,8 @@ private:
 
   GfxPresenter          m_presenter;
   GfxTransferManager    m_transfer;
+
+  GfxComputePipeline    m_presentPipeline;
 
   GfxRenderState        m_renderState;
 
@@ -356,7 +418,8 @@ private:
   std::unique_ptr<GfxSceneInstanceManager>    m_sceneInstanceManager;
   std::unique_ptr<GfxScenePassGroupBuffer>    m_scenePassGroup;
   std::unique_ptr<GfxScenePipelines>          m_scenePipelines;
-  std::unique_ptr<GfxSceneDrawBuffer>         m_sceneDrawBuffer;
+  std::unique_ptr<GfxSceneDrawBuffer>         m_sceneDrawBufferPrimary;
+  std::unique_ptr<GfxSceneDrawBuffer>         m_sceneDrawBufferSecondary;
   std::unique_ptr<GfxSceneMaterialManager>    m_sceneMaterialManager;
   std::unique_ptr<GfxCommonPipelines>         m_commonPipelines;
   std::unique_ptr<GfxCommonHizImage>          m_hizImage;
@@ -586,21 +649,6 @@ private:
   }
 
 
-  GfxImage createDepthImage(Extent2D imageExtent) {
-    m_device->waitIdle();
-
-    GfxImageDesc desc;
-    desc.debugName = "Depth image";
-    desc.type = GfxImageType::e2D;
-    desc.format = GfxFormat::eD32;
-    desc.usage = GfxUsage::eRenderTarget | GfxUsage::eShaderResource;
-    desc.extent = Extent3D(imageExtent, 1u);
-    desc.samples = 1;
-
-    return m_device->createImage(desc, GfxMemoryType::eAny);
-  }
-
-
   WsiWindow createWindow() {
     WsiWindowDesc windowDesc;
     windowDesc.title = "Meshlets";
@@ -619,7 +667,7 @@ private:
     GfxPresenterDesc presenterDesc;
     presenterDesc.window = m_window;
     presenterDesc.queue = GfxQueue::eGraphics;
-    presenterDesc.imageUsage = GfxUsage::eRenderTarget;
+    presenterDesc.imageUsage = GfxUsage::eShaderStorage;
 
     return m_device->createPresenter(presenterDesc);
   }
@@ -728,6 +776,41 @@ private:
     m_transfer->uploadBuffer(subFile, buffer, 0);
     m_transfer->waitForCompletion(m_transfer->flush());
     return buffer;
+  }
+
+
+  void initRenderTargets(const GfxContext& context) {
+    context->imageBarrier(m_depthImage, m_depthImage->getAvailableSubresources(),
+      0, 0, GfxUsage::eRenderTarget, 0, GfxBarrierFlag::eDiscard);
+    context->imageBarrier(m_colorImage, m_colorImage->getAvailableSubresources(),
+      0, 0, GfxUsage::eRenderTarget, 0, GfxBarrierFlag::eDiscard);
+  }
+
+
+  void createRenderTargets(const GfxContext& context, Extent2D extent) {
+    if (m_colorImage && m_colorImage->getDesc().extent.get<0, 1>() == extent)
+      return;
+
+    if (m_depthImage)
+      context->trackObject(m_depthImage);
+
+    if (m_colorImage)
+      context->trackObject(m_colorImage);
+
+    GfxImageDesc desc;
+    desc.debugName = "Depth image";
+    desc.type = GfxImageType::e2D;
+    desc.format = GfxFormat::eD32;
+    desc.usage = GfxUsage::eRenderTarget | GfxUsage::eShaderResource;
+    desc.extent = Extent3D(extent, 1u);
+    desc.samples = 1;
+
+    m_depthImage = m_device->createImage(desc, GfxMemoryType::eAny);
+
+    desc.debugName = "Color image";
+    desc.format = GfxFormat::eR11G11B10f;
+
+    m_colorImage = m_device->createImage(desc, GfxMemoryType::eAny);
   }
 
 };
