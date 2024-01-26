@@ -165,13 +165,9 @@ public:
       m_scenePassManager->processPasses(context,
         *m_scenePipelines, *m_sceneNodeManager, m_frameId);
 
-      GfxScenePassGroupInfo passGroup = { };
-      passGroup.passBufferVa = m_scenePassManager->getGpuAddress();
-      passGroup.rootNodeCount = 1;
-      passGroup.rootNodes = &m_sceneRootRef;
-
-      m_sceneNodeManager->traverseBvh(context,
-        *m_scenePipelines, *m_scenePassGroup, passGroup, m_frameId, 0);
+      m_sceneNodeManager->traverseBvh(context, *m_scenePipelines,
+        *m_scenePassManager, *m_scenePassGroup, 1, &m_sceneRootRef,
+        m_frameId, 0);
 
       m_sceneInstanceManager->processPassGroupAnimations(context,
         *m_scenePipelines, *m_scenePassGroup, m_frameId);
