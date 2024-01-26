@@ -11,9 +11,10 @@
 #include <cs_animation_process.h>
 
 #include <cs_group_finalize.h>
-#include <cs_group_init.h>
 #include <cs_group_reset_update.h>
 #include <cs_group_traverse_bvh.h>
+#include <cs_group_traverse_init.h>
+#include <cs_group_traverse_prepare.h>
 #include <cs_group_traverse_reset.h>
 
 #include <cs_instance_update_execute.h>
@@ -42,9 +43,10 @@ GfxScenePipelines::GfxScenePipelines(
 , m_csDrawListInit          (createComputePipeline("cs_draw_list_init", cs_draw_list_init))
 , m_csDrawListGenerate      (createComputePipeline("cs_draw_list_generate", cs_draw_list_generate))
 , m_csGroupFinalize         (createComputePipeline("cs_group_finalize", cs_group_finalize))
-, m_csGroupInit             (createComputePipeline("cs_group_init", cs_group_init))
 , m_csGroupResetUpdate      (createComputePipeline("cs_group_reset_update", cs_group_reset_update))
 , m_csGroupTraverseBvh      (createComputePipeline("cs_group_traverse_bvh", cs_group_traverse_bvh))
+, m_csGroupTraverseInit     (createComputePipeline("cs_group_traverse_init", cs_group_traverse_init))
+, m_csGroupTraversePrepare  (createComputePipeline("cs_group_traverse_prepare", cs_group_traverse_prepare))
 , m_csGroupTraverseReset    (createComputePipeline("cs_group_traverse_reset", cs_group_traverse_reset))
 , m_csInstanceUpdateExecute (createComputePipeline("cs_instance_update_execute", cs_instance_update_execute))
 , m_csInstanceUpdateNode    (createComputePipeline("cs_instance_update_node", cs_instance_update_node))
@@ -66,21 +68,30 @@ GfxScenePipelines::~GfxScenePipelines() {
 }
 
 
-void GfxScenePipelines::initPassGroupBuffer(
+void GfxScenePipelines::initBvhTraversal(
   const GfxContext&                   context,
   const GfxScenePassInitArgs&         args,
   const GfxSceneNodeRef*              rootNodes) const {
   auto scratch = context->writeScratch(GfxUsage::eShaderResource,
     sizeof(*rootNodes) * args.nodeCount, rootNodes);
 
-  context->bindPipeline(m_csGroupInit);
+  context->bindPipeline(m_csGroupTraverseInit);
   context->bindDescriptor(0, 0, scratch.getDescriptor(GfxUsage::eShaderResource));
   context->setShaderConstants(0, args);
-  context->dispatch(m_csGroupInit->computeWorkgroupCount(Extent3D(args.nodeCount, 1u, 1u)));
+  context->dispatch(m_csGroupTraverseInit->computeWorkgroupCount(Extent3D(args.nodeCount, 1u, 1u)));
 }
 
 
-void GfxScenePipelines::finalizePassGroupBuffer(
+void GfxScenePipelines::prepareBvhTraversal(
+  const GfxContext&                   context,
+        uint64_t                      passGroupVa) const {
+  context->bindPipeline(m_csGroupTraversePrepare);
+  context->setShaderConstants(0, passGroupVa);
+  context->dispatch(Extent3D(1u, 1u, 1u));
+}
+
+
+void GfxScenePipelines::finalizeBvhTraversal(
   const GfxContext&                   context,
         uint64_t                      passGroupVa) const {
   context->bindPipeline(m_csGroupFinalize);

@@ -262,19 +262,32 @@ public:
   GfxScenePipelines& operator = (const GfxScenePipelines&) = delete;
 
   /**
-   * \brief Initializes pass group buffer
+   * \brief Initializes pass group buffer for BVH traversal
    *
-   * Must be used to initialize a pass group buffer prior to BVH
-   * traversal. Animations for nodes that have a BVH child node
-   * attached to them must be updated prior to this.
+   * Must be used to initialize a pass group buffer prior the first pass
+   * of BVH traversal using the given pass group buffer in a frame.
+   * Animations for nodes that have a BVH child node attached to them
+   * must be updated prior to this.
    * \param [in] context Context object
    * \param [in] args Push constants, including buffer addresses
    * \param [in] rootNodes Root BVH node references
    */
-  void initPassGroupBuffer(
+  void initBvhTraversal(
     const GfxContext&                   context,
     const GfxScenePassInitArgs&         args,
     const GfxSceneNodeRef*              rootNodes) const;
+
+  /**
+   * \brief Prepares pass group buffer for further BVH traversal
+   *
+   * Must be used after appending BVH nodes to the traversal lists,
+   * prior to performing additional traversal passes.
+   * \param [in] context Context object
+   * \param [in] passGroupVa Pass group buffer address
+   */
+  void prepareBvhTraversal(
+    const GfxContext&                   context,
+          uint64_t                      passGroupVa) const;
 
   /**
    * \brief Finalizes pass group buffer
@@ -283,7 +296,7 @@ public:
    * \param [in] context Context object
    * \param [in] passGroupVa Address of pass group buffer
    */
-  void finalizePassGroupBuffer(
+  void finalizeBvhTraversal(
     const GfxContext&                   context,
           uint64_t                      passGroupVa) const;
 
@@ -516,9 +529,10 @@ private:
   GfxComputePipeline  m_csDrawListGenerate;
 
   GfxComputePipeline  m_csGroupFinalize;
-  GfxComputePipeline  m_csGroupInit;
   GfxComputePipeline  m_csGroupResetUpdate;
   GfxComputePipeline  m_csGroupTraverseBvh;
+  GfxComputePipeline  m_csGroupTraverseInit;
+  GfxComputePipeline  m_csGroupTraversePrepare;
   GfxComputePipeline  m_csGroupTraverseReset;
 
   GfxComputePipeline  m_csInstanceUpdateExecute;

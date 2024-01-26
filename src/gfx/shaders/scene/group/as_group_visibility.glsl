@@ -67,19 +67,12 @@ struct PassGroupBvhVisibility {
 // for each BVH node within the scene for the given pass group.
 layout(buffer_reference, buffer_reference_align = 16, scalar)
 buffer PassGroupBvhVisibilityBuffer {
+  queuefamilycoherent
   PassGroupBvhVisibility bvhs[];
 };
-
 
 layout(buffer_reference, buffer_reference_align = 16, scalar)
 readonly buffer PassGroupBvhVisibilityBufferIn {
-  PassGroupBvhVisibility bvhs[];
-};
-
-
-layout(buffer_reference, buffer_reference_align = 16, scalar)
-buffer PassGroupBvhVisibilityBufferCoherent {
-  queuefamilycoherent
   PassGroupBvhVisibility bvhs[];
 };
 
@@ -131,7 +124,7 @@ readonly buffer PassGroupBvhListIn {
 // node count in order to not mess with the current pass.
 void bvhMarkVisible(
         PassGroupBvhList                list,
-        PassGroupBvhVisibilityBufferCoherent visibilityBuffer,
+        PassGroupBvhVisibilityBuffer    visibilityBuffer,
   in    PassGroupBvhVisibility          visibility,
         uint32_t                        passBit,
         PassGroupBvhListItem            item) {
