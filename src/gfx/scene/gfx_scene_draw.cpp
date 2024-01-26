@@ -165,7 +165,7 @@ void GfxSceneDrawBuffer::generateDraws(
   context->memoryBarrier(
     GfxUsage::eShaderStorage, GfxShaderStage::eCompute,
     GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer,
-    GfxShaderStage::eCompute);
+    GfxShaderStage::eCompute | GfxShaderStage::eMeshTask);
 
   context->endDebugLabel();
   context->endDebugLabel();
