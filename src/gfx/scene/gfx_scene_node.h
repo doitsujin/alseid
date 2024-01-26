@@ -9,10 +9,12 @@
 
 #include "gfx_scene_common.h"
 #include "gfx_scene_pipelines.h"
+#include <cstdint>
 
 namespace as {
 
 class GfxScenePassGroupBuffer;
+class GfxScenePassManager;
 
 /**
  * \brief Scene node info
@@ -387,20 +389,6 @@ private:
 
 
 /**
- * \brief Pass group parameters for BVH traversal
- */
-struct GfxScenePassGroupInfo {
-  /** Virtual address of where render pass
-   *  parameters are stored. */
-  uint64_t passBufferVa = 0ull;
-  /** Number of root nodes for the pass group. */
-  uint32_t rootNodeCount = 0u;
-  /** Pointer to root node references. */
-  const GfxSceneNodeRef* rootNodes = nullptr;
-};
-
-
-/**
  * \brief Node manager
  *
  * Manages GPU resources for plain node data as well as the BVH,
@@ -614,8 +602,11 @@ public:
    * with no data dependency to avoid unnecessary memory barriers.
    * \param [in] context Context object
    * \param [in] pipelines Update pipelines
-   * \param [in] groupBuffer Pass group buffer
-   * \param [in] groupInfo Pass group parameters
+   * \param [in] passManager Render pass manager
+   * \param [in] passGroup Pass group buffer
+   * \param [in] rootNodeCount Number of root nodes. If 0, this is
+   *    considered a secondary pass with new nodes already added.
+   * \param [in] rootNodes Root node references
    * \param [in] frameId Current frame ID
    * \param [in] referencePass Pass index used for distance culling
    *    and LOD selection. This should generally refer to the main
@@ -624,8 +615,10 @@ public:
   void traverseBvh(
     const GfxContext&                   context,
     const GfxScenePipelines&            pipelines,
-    const GfxScenePassGroupBuffer&      groupBuffer,
-    const GfxScenePassGroupInfo&        groupInfo,
+    const GfxScenePassManager&          passManager,
+    const GfxScenePassGroupBuffer&      passGroup,
+          uint32_t                      rootNodeCount,
+    const GfxSceneNodeRef*              rootNodes,
           uint32_t                      frameId,
           uint32_t                      referencePass);
 
@@ -657,6 +650,10 @@ private:
   std::mutex                          m_freeMutex;
   std::unordered_multimap<
     uint32_t, GfxSceneNodeRef>        m_freeNodeQueue;
+
+  alignas(CacheLineSize)
+  std::mutex                          m_bvhDepthMutex;
+  std::unordered_map<uint64_t, uint32_t> m_bvhDepth;
 
   void markDirty(
           uint32_t                      index,
@@ -690,6 +687,15 @@ private:
   void insertIntoNodeMap(
           GfxSceneNodeRef               reference,
           uint32_t                      index);
+
+  void storeBvhDepth(
+          uint64_t                      passGroupVa,
+          uint32_t                      bvhDepth);
+
+  uint32_t loadBvhDepth(
+          uint64_t                      passGroupVa);
+
+  void cleanupBvhDepth();
 
 };
 

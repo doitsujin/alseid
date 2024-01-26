@@ -379,37 +379,50 @@ void GfxSceneNodeManager::commitUpdates(
   updateBufferData(context, pipelines, currFrameId);
 
   cleanupNodes(lastFrameId);
+  cleanupBvhDepth();
 }
 
 
 void GfxSceneNodeManager::traverseBvh(
   const GfxContext&                   context,
   const GfxScenePipelines&            pipelines,
-  const GfxScenePassGroupBuffer&      groupBuffer,
-  const GfxScenePassGroupInfo&        groupInfo,
+  const GfxScenePassManager&          passManager,
+  const GfxScenePassGroupBuffer&      passGroup,
+        uint32_t                      rootNodeCount,
+  const GfxSceneNodeRef*              rootNodes,
         uint32_t                      frameId,
         uint32_t                      referencePass) {
   context->beginDebugLabel("Traverse scene BVH", 0xff64c0ff);
 
   uint64_t sceneBufferVa = m_gpuResources.getGpuAddress();
 
-  // Find upper bound for BVH depth for each individual
-  // group, and then the maximum value across all groups.
+  // Find upper bound for BVH depth. If we're traversing the given pass
+  // group for the first time, write back the BVH depth for later passes.
   uint32_t bvhDepth = 0u;
 
-  for (uint32_t j = 0; j < groupInfo.rootNodeCount; j++)
-    bvhDepth = std::max(bvhDepth, m_hostData[getNodeIndex(groupInfo.rootNodes[j])].childDepth);
+  if (rootNodeCount) {
+    for (uint32_t j = 0; j < rootNodeCount; j++)
+      bvhDepth = std::max(bvhDepth, m_hostData[getNodeIndex(rootNodes[j])].childDepth);
+
+    storeBvhDepth(passGroup.getGpuAddress(), bvhDepth);
+  } else {
+    bvhDepth = loadBvhDepth(passGroup.getGpuAddress());
+  }
 
   // Prepare the pass buffers for the first traversal iteration
   context->beginDebugLabel("Initialization", 0xffa0e0ff);
 
-  GfxScenePassInitArgs initArgs = { };
-  initArgs.sceneBufferVa = sceneBufferVa;
-  initArgs.groupBufferVa = groupBuffer.getGpuAddress();
-  initArgs.nodeCount = groupInfo.rootNodeCount;
-  initArgs.frameId = frameId;
+  if (rootNodeCount) {
+    GfxScenePassInitArgs initArgs = { };
+    initArgs.sceneBufferVa = sceneBufferVa;
+    initArgs.groupBufferVa = passGroup.getGpuAddress();
+    initArgs.nodeCount = rootNodeCount;
+    initArgs.frameId = frameId;
 
-  pipelines.initBvhTraversal(context, initArgs, groupInfo.rootNodes);
+    pipelines.initBvhTraversal(context, initArgs, rootNodes);
+  } else {
+    pipelines.prepareBvhTraversal(context, passGroup.getGpuAddress());
+  }
 
   context->endDebugLabel();
 
@@ -422,16 +435,16 @@ void GfxSceneNodeManager::traverseBvh(
       GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
 
     GfxSceneTraverseBvhArgs traverseArgs = { };
-    traverseArgs.passBufferVa = groupInfo.passBufferVa;
+    traverseArgs.passBufferVa = passManager.getGpuAddress();
     traverseArgs.sceneBufferVa = sceneBufferVa;
-    traverseArgs.groupBufferVa = groupBuffer.getGpuAddress();
+    traverseArgs.groupBufferVa = passGroup.getGpuAddress();
     traverseArgs.frameId = frameId;
     traverseArgs.bvhLayer = i;
     traverseArgs.distanceCullingPass = uint16_t(referencePass);
 
     pipelines.processBvhLayer(context,
-      groupBuffer.getBvhDispatchDescriptor(i, true),
-      groupBuffer.getBvhDispatchDescriptor(i, false),
+      passGroup.getBvhDispatchDescriptor(i, true),
+      passGroup.getBvhDispatchDescriptor(i, false),
       traverseArgs);
 
     context->endDebugLabel();
@@ -445,7 +458,7 @@ void GfxSceneNodeManager::traverseBvh(
     GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
     GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
 
-  pipelines.finalizeBvhTraversal(context, groupBuffer.getGpuAddress());
+  pipelines.finalizeBvhTraversal(context, passGroup.getGpuAddress());
 
   context->endDebugLabel();
 
@@ -656,6 +669,31 @@ void GfxSceneNodeManager::insertIntoNodeMap(
 
   if (uint32_t(reference.type) >= uint32_t(GfxSceneNodeType::eBuiltInCount))
     atomicMax(m_nodeCounts[uint32_t(reference.type)], uint32_t(reference.index) + 1u);
+}
+
+
+void GfxSceneNodeManager::storeBvhDepth(
+        uint64_t                      passGroupVa,
+        uint32_t                      bvhDepth) {
+  std::lock_guard lock(m_bvhDepthMutex);
+  m_bvhDepth.insert_or_assign(passGroupVa, bvhDepth);
+}
+
+
+uint32_t GfxSceneNodeManager::loadBvhDepth(
+        uint64_t                      passGroupVa) {
+  std::lock_guard lock(m_bvhDepthMutex);
+  auto entry = m_bvhDepth.find(passGroupVa);
+
+  if (entry == m_bvhDepth.end())
+    return 0u;
+
+  return entry->second;
+}
+
+
+void GfxSceneNodeManager::cleanupBvhDepth() {
+  m_bvhDepth.clear();
 }
 
 }
