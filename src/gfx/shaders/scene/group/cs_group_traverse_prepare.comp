@@ -42,7 +42,7 @@ void csCommitTraverseArgs() {
   if (gid == 0u)
     bvhList.header.totalNodeCount += totalCount + entryCount;
 
-  // TODO prepare lists
+  nodeListResetLocal(globals.passGroupVa, gid);
 }
 
 #include "../../as_include_tail.glsl"

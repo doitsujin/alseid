@@ -50,12 +50,13 @@ uint32_t csGetInstanceNodeRef() {
 
   PassGroupNodeListIn nodeList = PassGroupNodeListIn(globals.groupVa +
     group.nodeListOffsets[NODE_TYPE_INSTANCE - NODE_TYPE_BUILTIN_COUNT].nodeList);
+  PassGroupNodeListHeader nodeListHeader = nodeList.header;
 
-  if (gid >= nodeList.header.entryCount)
+  if (gid >= nodeListHeader.localEntryCount)
     return 0u;
 
   // Load instance properties and check whether we need to update it.
-  uint32_t instanceNodeRef = nodeList.items[gid].nodeRef;
+  uint32_t instanceNodeRef = nodeList.items[nodeListHeader.localEntryIndex + gid].nodeRef;
   uint32_t instanceIndex = getNodeIndexFromRef(instanceNodeRef);
   InstanceNode instance = globals.instanceNodeBuffer.nodes[instanceIndex];
 
