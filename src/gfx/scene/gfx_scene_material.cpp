@@ -1,5 +1,5 @@
 #include "gfx_scene_material.h"
-#include <cstdint>
+#include "gfx_scene_draw.h"
 
 namespace as {
 
@@ -25,6 +25,9 @@ GfxSceneMaterial::GfxSceneMaterial(
       entry.pipeline = pipeline;
       entry.renderState = renderState;
     }
+
+    // Workgroup sizes must be consistent across pipelines
+    m_workgroupSize = desc.shaders[i].task->getWorkgroupSize().at<0>();
   }
 }
 
@@ -121,18 +124,18 @@ void GfxSceneMaterialManager::updateDrawBuffer(
 
   // Update local draw count array. Values will be passed to indirect
   // draws, and materials with no draws will be skipped entirely.
-  m_drawCounts.resize(groupCount);
+  m_drawGroups.resize(groupCount);
 
   for (uint32_t i = 0; i < groupCount; i++) {
-    m_drawCounts[i] = m_materials.hasObjectAt(i)
-      ? m_materials[i].getDrawCount()
-      : 0u;
+    m_drawGroups[i] = m_materials.hasObjectAt(i)
+      ? m_materials[i].getDrawGroupInfo()
+      : GfxSceneDrawGroupDesc();
   }
 
   // Resize draw buffer for the current frame
   GfxSceneDrawBufferDesc drawBufferDesc;
   drawBufferDesc.drawGroupCount = groupCount;
-  drawBufferDesc.drawCounts = m_drawCounts.data();
+  drawBufferDesc.drawGroups = m_drawGroups.data();
 
   drawBuffer.updateLayout(context, drawBufferDesc);
 }
@@ -155,10 +158,10 @@ void GfxSceneMaterialManager::dispatchDraws(
   args.sceneVa = nodeManager.getGpuAddress();
   args.frameId = frameId;
 
-  for (uint32_t i = 0; i < uint32_t(m_drawCounts.size()); i++) {
+  for (uint32_t i = 0; i < uint32_t(m_drawGroups.size()); i++) {
     args.drawGroup = i;
 
-    if (!m_drawCounts[i])
+    if (!m_drawGroups[i].drawCount)
       continue;
 
     if (!m_materials[i].begin(context, passType,
@@ -173,7 +176,7 @@ void GfxSceneMaterialManager::dispatchDraws(
       context->drawMeshIndirect(
         drawBuffers[j]->getDrawParameterDescriptor(i),
         drawBuffers[j]->getDrawCountDescriptor(i),
-        m_drawCounts[i]);
+        m_drawGroups[i].drawCount);
 
     }
 
@@ -194,8 +197,10 @@ void GfxSceneMaterialManager::adjustInstanceDraws(
   for (uint32_t i = 0; i < header->drawCount; i++) {
     uint32_t material = draws[i].materialIndex;
 
-    if (m_materials.hasObjectAt(material))
-      m_materials[material].adjustDrawCount(adjustment);
+    if (m_materials.hasObjectAt(material)) {
+      int32_t meshletCount = int32_t(draws[i].meshInstanceCount * draws[i].maxMeshletCount);
+      m_materials[material].adjustDrawCount(adjustment, adjustment * meshletCount);
+    }
   }
 }
 

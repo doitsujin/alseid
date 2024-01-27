@@ -147,26 +147,34 @@ public:
    * \param [in] draws Number of draws to add or remove
    */
   void adjustDrawCount(
-          int32_t                       draws) {
+          int32_t                       draws,
+          int32_t                       meshlets) {
     m_drawCount += uint32_t(draws);
+    m_meshletCount += uint32_t(meshlets);
   }
 
   /**
-   * \brief Reads current draw count
+   * \brief Reads current draw count and meshlet count
    *
-   * The draw count of a material is used for setting up the draw
-   * buffer layout. Only valid if instance residency is not being
-   * changed at the same time.
-   * \returns Current number of draws for this material.
+   * This information is used for setting up the draw buffer layout, as well
+   * as the maximum number of dispatches needed for each material. Only valid
+   * if instance residency is not being changed at the same time.
+   * \returns Current number of draws and meshlets for this material.
    */
-  uint32_t getDrawCount() const {
-    return m_drawCount.load();
+  GfxSceneDrawGroupDesc getDrawGroupInfo() const {
+    GfxSceneDrawGroupDesc result;
+    result.drawCount = m_drawCount.load();
+    result.meshletCount = m_meshletCount.load();
+    result.meshletCountPerWorkgroup = m_workgroupSize;
+    return result;
   }
 
 private:
 
   std::array<GfxSceneMaterialPipeline, 8> m_pipelines;
   std::atomic<uint32_t>                   m_drawCount = { 0u };
+  std::atomic<uint32_t>                   m_meshletCount = { 0u };
+  uint32_t                                m_workgroupSize = 0u;
   std::string                             m_name;
 
   static GfxRenderState createRenderState(
@@ -288,7 +296,7 @@ private:
   ObjectMap<GfxSceneMaterial, 8u, 8u> m_materials;
   ObjectAllocator                     m_materialAllocator;
 
-  std::vector<uint32_t>         m_drawCounts;
+  std::vector<GfxSceneDrawGroupDesc> m_drawGroups;
 
   void adjustInstanceDraws(
     const GfxSceneInstanceManager&      instanceManager,

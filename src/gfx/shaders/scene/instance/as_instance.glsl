@@ -51,10 +51,12 @@ struct InstanceDraw {
   uint16_t        meshIndex;
   uint16_t        meshInstanceIndex;
   uint16_t        meshInstanceCount;
+  uint32_t        meshletCount;
   uint32_t        materialParameterOffset;
   uint32_t        materialParameterSize;
   uint32_t        resourceParameterOffset;
   uint32_t        resourceParameterSize;
+  uint32_t        reserved;
 };
 
 #define AS_INSTANCE_MAX_ANIMATION_CHANNELS    (2u)

@@ -536,6 +536,7 @@ private:
       draw.meshIndex = i;
       draw.meshInstanceCount = std::max(1u,
         uint32_t(m_geometry->meshes[i].info.instanceCount));
+      draw.maxMeshletCount = m_geometry->meshes[i].info.maxMeshletCount;
       draw.meshInstanceIndex = 0u;
     }
 
