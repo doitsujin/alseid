@@ -316,13 +316,14 @@ void csGenerateDraws() {
 
   PassGroupNodeList nodeList = PassGroupNodeList(globals.passGroupVa +
     group.nodeListOffsets[NODE_TYPE_INSTANCE - NODE_TYPE_BUILTIN_COUNT].nodeList);
+  PassGroupNodeListHeader nodeListHeader = nodeList.header;
   PassGroupBvhVisibilityBuffer bvhVisibilityBuffer = PassGroupBvhVisibilityBuffer(
     globals.passGroupVa + group.bvhVisibilityOffset);
 
   csInitDrawInfo();
 
-  if (gid < nodeList.header.entryCount) {
-    PassGroupNodeListItem nodeItem = nodeList.items[gid];
+  if (gid < nodeListHeader.localEntryCount) {
+    PassGroupNodeListItem nodeItem = nodeList.items[nodeListHeader.localEntryIndex + gid];
     instanceDrawInfo.instanceIndex = getNodeIndexFromRef(nodeItem.nodeRef);
     instanceDrawInfo.passMask = 0u;
 

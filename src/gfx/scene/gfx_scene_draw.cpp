@@ -148,7 +148,7 @@ void GfxSceneDrawBuffer::generateDraws(
 
   context->beginDebugLabel("Emit draws", 0xffb4b0ff);
 
-  GfxDescriptor dispatch = groupBuffer.getDispatchDescriptors(GfxSceneNodeType::eInstance).first;
+  GfxDescriptor dispatch = groupBuffer.getDispatchDescriptors(GfxSceneNodeType::eInstance).processAll;
 
   GfxSceneDrawListGenerateArgs generateArgs = { };
   generateArgs.drawListVa = m_buffer->getGpuAddress();

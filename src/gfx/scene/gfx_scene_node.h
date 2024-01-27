@@ -74,17 +74,40 @@ static_assert(sizeof(GfxSceneNodeTransform) == 32);
 /**
  * \brief Node list header
  *
- * Provides a node count which shaders can use as a linear
- * allocator, and parameters for an indirect compute dispatch.
+ * Provides a node counter to serve as a linear allocator, as well as
+ * two sets of indirect dispatch parameters: One to process the entire
+ * list of entries, and one to process only entries that were added
+ * since the last BVH traversal.
  */
 struct GfxSceneNodeListHeader {
+  /** Dispatch to process full node list. */
+  GfxDispatchArgs allDispatch;
+  /** Dispatch to process newly added nodes. */
+  GfxDispatchArgs newDispatch;
+  /** Index of the first newly added item. */
+  uint32_t localEntryIndex;
+  /** Total number of newly added entries. */
+  uint32_t localEntryCount;
+};
+
+static_assert(sizeof(GfxSceneNodeListHeader) == 32);
+
+
+/**
+ * \brief Node update list header
+ *
+ * Provides a node count which shaders can use as a linear allocator,
+ * and parameters for an indirect compute dispatch that processes the
+ * entire list at usually one workgroup per entry.
+ */
+struct GfxSceneNodeUpdateListHeader {
   /** Indirect dispatch parameters */
   GfxDispatchArgs dispatch;
   /** Number of list entries */
   uint32_t entryCount;
 };
 
-static_assert(sizeof(GfxSceneNodeListHeader) == 16);
+static_assert(sizeof(GfxSceneNodeUpdateListHeader) == 16);
 
 
 /**

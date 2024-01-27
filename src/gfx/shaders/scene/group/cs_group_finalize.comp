@@ -37,6 +37,8 @@ void csFinalizePassBuffer() {
     bvhList.header.args[gid].entryCount = 0u;
     bvhList.header.args[gid].entryIndex = bvhList.header.totalNodeCount;
   }
+
+  nodeListFinalize(globals.passGroupVa, gid);
 }
 
 #include "../../as_include_tail.glsl"

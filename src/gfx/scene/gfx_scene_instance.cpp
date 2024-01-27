@@ -459,7 +459,7 @@ void GfxSceneInstanceManager::processPassGroupAnimations(
   args.groupBufferVa = groupBuffer.getGpuAddress();
   args.frameId = frameId;
 
-  pipelines.prepareInstanceAnimations(context, dispatches.first, args);
+  pipelines.prepareInstanceAnimations(context, dispatches.processNew, args);
 
   context->memoryBarrier(
     GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
@@ -469,7 +469,7 @@ void GfxSceneInstanceManager::processPassGroupAnimations(
 
   context->beginDebugLabel("Execute dispatch", 0xffb4f6ff);
 
-  pipelines.processInstanceAnimations(context, dispatches.second, args);
+  pipelines.processInstanceAnimations(context, dispatches.update, args);
 
   context->memoryBarrier(
     GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
@@ -497,7 +497,7 @@ void GfxSceneInstanceManager::processPassGroupInstances(
   prepArgs.groupBufferVa = groupBuffer.getGpuAddress();
   prepArgs.frameId = frameId;
 
-  pipelines.prepareInstanceUpdates(context, dispatches.first, prepArgs);
+  pipelines.prepareInstanceUpdates(context, dispatches.processNew, prepArgs);
 
   context->memoryBarrier(
     GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
@@ -510,7 +510,7 @@ void GfxSceneInstanceManager::processPassGroupInstances(
   execArgs.instanceBufferVa = m_gpuResources.getGpuAddress();
   execArgs.groupBufferVa = groupBuffer.getGpuAddress();
 
-  pipelines.executeInstanceUpdates(context, dispatches.second, execArgs);
+  pipelines.executeInstanceUpdates(context, dispatches.update, execArgs);
 
   context->memoryBarrier(
     GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,

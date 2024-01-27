@@ -1,4 +1,6 @@
 #include "gfx_scene_pass.h"
+#include "gfx_scene_node.h"
+#include <cstdint>
 
 namespace as {
 
@@ -35,19 +37,26 @@ GfxDescriptor GfxScenePassGroupBuffer::getBvhDispatchDescriptor(
 }
 
 
-std::pair<GfxDescriptor, GfxDescriptor> GfxScenePassGroupBuffer::getDispatchDescriptors(
+GfxScenePassGroupDispatchDescriptors GfxScenePassGroupBuffer::getDispatchDescriptors(
         GfxSceneNodeType              nodeType) const {
+  GfxScenePassGroupDispatchDescriptors result = { };
+
   if (!m_buffer)
-    return std::make_pair(GfxDescriptor(), GfxDescriptor());
+    return result;
 
   GfxScenePassTypedNodeListOffsets offsets = m_header.listOffsets.at(
     size_t(nodeType) - size_t(GfxSceneNodeType::eBuiltInCount));
 
   size_t size = sizeof(GfxDispatchArgs);
 
-  return std::make_pair(
-    m_buffer->getDescriptor(GfxUsage::eParameterBuffer, offsets.nodeList, size),
-    m_buffer->getDescriptor(GfxUsage::eParameterBuffer, offsets.updateList, size));
+  uint32_t processNewOffset = offsets.nodeList + offsetof(GfxSceneNodeListHeader, newDispatch);
+  uint32_t processAllOffset = offsets.nodeList + offsetof(GfxSceneNodeListHeader, allDispatch);
+  uint32_t updateOffset = offsets.updateList + offsetof(GfxSceneNodeUpdateListHeader, dispatch);
+
+  result.processNew = m_buffer->getDescriptor(GfxUsage::eParameterBuffer, processNewOffset, size);
+  result.processAll = m_buffer->getDescriptor(GfxUsage::eParameterBuffer, processAllOffset, size);
+  result.update = m_buffer->getDescriptor(GfxUsage::eParameterBuffer, updateOffset, size);
+  return result;
 }
 
 
@@ -246,7 +255,7 @@ bool GfxScenePassGroupBuffer::resizeBuffer(
         sizeof(GfxSceneNodeListHeader) +
         sizeof(GfxSceneNodeListEntry) * m_nodeCounts[i]);
       offsets.updateList = allocStorage(allocator,
-        sizeof(GfxSceneNodeListHeader) +
+        sizeof(GfxSceneNodeUpdateListHeader) +
         sizeof(uint32_t) * m_nodeCounts[i]);
     }
 
@@ -526,7 +535,7 @@ void GfxScenePassManager::resizeBuffer(
   passCount = align(passCount, 1024u);
 
   uint64_t passDataSize = align<uint64_t>(sizeof(GfxScenePassBufferHeader) + sizeof(GfxScenePassInfo) * passCount, 256u);
-  uint64_t passListSize = align<uint64_t>(sizeof(GfxSceneNodeListHeader) + sizeof(uint32_t) * passCount, 256u);
+  uint64_t passListSize = align<uint64_t>(sizeof(GfxSceneNodeUpdateListHeader) + sizeof(uint32_t) * passCount, 256u);
 
   uint64_t newSize = passDataSize + passListSize;
   uint64_t oldSize = m_buffer ? m_buffer->getDesc().size : uint64_t(0u);
