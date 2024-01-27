@@ -81,13 +81,26 @@ static_assert(sizeof(GfxSceneDrawInstanceInfo) == 12);
 
 
 /**
+ * \brief Draw group info for the draw buffer
+ */
+struct GfxSceneDrawGroupDesc {
+  /** Number of draws in the draw group */
+  uint32_t drawCount = 0;
+  /** Maximum number of meshlets in the draw group */
+  uint32_t meshletCount = 0;
+  /** Number of meshlets emitted per task shader workgroup */
+  uint32_t meshletCountPerWorkgroup = 0;
+};
+
+
+/**
  * \brief Draw buffer description
  */
 struct GfxSceneDrawBufferDesc {
   /** Number of draw groups. */
   uint32_t drawGroupCount = 0;
   /** Maximum number of draws in each draw group. */
-  const uint32_t* drawCounts = nullptr;
+  const GfxSceneDrawGroupDesc* drawGroups = nullptr;
 };
 
 

@@ -101,6 +101,11 @@ struct GfxSceneInstanceDraw {
    *  be processed in a single draw, unless individual instances
    *  use unique sets of parameters or are skipped entirely. */
   uint16_t meshInstanceCount;
+  /** Meshlet count of the most detailed LOD for this draw. Only
+   *  counts for a single local mesh instance, so the maximum total
+   *  task shader thread count is the mesh instance count multiplied
+   *  with the meshlet count. */
+  uint32_t maxMeshletCount;
   /** Offset of material parameter data for this particular draw
    *  within the instance data buffer. Shaders assigned to the
    *  given material must interpret this data consistently. */
@@ -115,9 +120,11 @@ struct GfxSceneInstanceDraw {
   uint32_t resourceParameterOffset;
   /** Size of resource parameter data, in bytes. */
   uint32_t resourceParameterSize;
+  /** Reserved for future use. */
+  uint32_t reserved;
 };
 
-static_assert(sizeof(GfxSceneInstanceDraw) == 24);
+static_assert(sizeof(GfxSceneInstanceDraw) == 32);
 
 
 /**
@@ -547,6 +554,8 @@ struct GfxSceneInstanceDrawDesc {
    *  be processed in a single draw, unless individual instances
    *  use unique sets of parameters or are skipped entirely. */
   uint16_t meshInstanceCount = 0;
+  /** Number of meshlets in the most detailed LOD for this draw. */
+  uint32_t maxMeshletCount = 0;
   /** Material parameter size, in bytes. This data is uniform
    *  within the draw. */
   uint32_t materialParameterSize = 0;

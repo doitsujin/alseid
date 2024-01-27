@@ -51,8 +51,8 @@ void GfxSceneDrawBuffer::updateLayout(
 
   for (uint32_t i = 0; i < desc.drawGroupCount; i++) {
     m_entries[i].drawIndex = totalDrawCount;
-    m_entries[i].drawCount = desc.drawCounts[i];
-    totalDrawCount += desc.drawCounts[i];
+    m_entries[i].drawCount = desc.drawGroups[i].drawCount;
+    totalDrawCount += desc.drawGroups[i].drawCount;
   }
 
   // Compute buffer layout

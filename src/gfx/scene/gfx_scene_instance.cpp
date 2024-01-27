@@ -114,10 +114,12 @@ GfxSceneInstanceDataBuffer::GfxSceneInstanceDataBuffer(
     draws[i].meshIndex = desc.draws[i].meshIndex;
     draws[i].meshInstanceIndex = desc.draws[i].meshInstanceIndex;
     draws[i].meshInstanceCount = desc.draws[i].meshInstanceCount;
+    draws[i].maxMeshletCount = desc.draws[i].maxMeshletCount;
     draws[i].materialParameterOffset = materialParameters[i].first;
     draws[i].materialParameterSize = materialParameters[i].second;
     draws[i].resourceParameterOffset = resourceParameters[i].first;
     draws[i].resourceParameterSize = resourceParameters[i].second;
+    draws[i].reserved = 0u;
   }
 
   if (!resourceIndirections.empty()) {
