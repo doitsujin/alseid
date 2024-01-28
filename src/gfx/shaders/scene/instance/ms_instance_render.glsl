@@ -612,9 +612,9 @@ void msLoadVertexDataFromMemory(in MsContext context, in Meshlet meshlet) {
 shared MsVertexOut msVertexDataShared[MAX_VERT_COUNT];
 
 bool msCullPrimitive(in MsContext context, uvec3 indices) {
-  vec4 a = msVertexDataShared[indices.x].position;
-  vec4 b = msVertexDataShared[indices.y].position;
-  vec4 c = msVertexDataShared[indices.z].position;
+  vec4 a = vec4(msVertexDataShared[indices.x].position);
+  vec4 b = vec4(msVertexDataShared[indices.y].position);
+  vec4 c = vec4(msVertexDataShared[indices.z].position);
 
   float minW = min(a.w, min(b.w, c.w));
   float maxW = max(a.w, max(b.w, c.w));
@@ -957,7 +957,10 @@ void msMain() {
 #endif // MS_NO_SKINNING
 
   // Compute vertex positions and write the results to shared memory
-  bool useMotionVectors = msInstanceUsesMotionVectors(context);
+  bool useMotionVectors = false;
+#ifndef MS_NO_MOTION_VECTORS
+  useMotionVectors = msInstanceUsesMotionVectors(context);
+#endif // MS_NO_MOTION_VECTORS
 
   MS_LOOP_WORKGROUP(index, outputVertexCount, MAX_VERT_COUNT) {
     uint inputIndex = index;
