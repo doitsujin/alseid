@@ -38,7 +38,7 @@ uvec2 msDecodeMeshletPayload(uint32_t payload) {
 }
 
 
-// Scans task shader payload for the meshlet offset and local
+// Scans task shader payload for the meshlet index and local
 // view index to process in the current workgroup.
 shared uint msWorkgroupPayloadIndexShared;
 
@@ -64,7 +64,7 @@ uvec2 msGetMeshletInfoForWorkgroup() {
   uint32_t viewIndex = asFindIndexOfSetBitCooperative(
     payload.x, workgroupIndex - payload.y, 6u);
 
-  return uvec2(tsPayload.meshletOffsets[payloadIndex], viewIndex);
+  return uvec2(payloadIndex, viewIndex);
 }
 
 
@@ -88,42 +88,64 @@ struct MsInvocationInfo {
 // Helper function to retrieve shading info, using both the
 // task shader payload and the instance node buffer as inputs.
 MsInvocationInfo msGetInvocationInfo(
+        uint64_t                      drawListVa,
         uint64_t                      instanceNodeVa,
         uint64_t                      sceneVa,
         uint32_t                      frameId) {
+  DrawListBufferIn drawList = DrawListBufferIn(drawListVa);
+  DrawInstanceInfoBufferIn drawInfos = DrawInstanceInfoBufferIn(drawListVa + drawList.header.drawInfoOffset);
+
   SceneHeader scene = SceneHeaderIn(sceneVa).header;
+
+  u32vec2 meshletInfo = msGetMeshletInfoForWorkgroup();
+
+  uint32_t meshletIndex = meshletInfo.x;
+  uint32_t viewIndex = meshletInfo.y;
+
+  u32vec2 localDrawThread = csComputeLocalDrawThreadIndex(
+    tsPayload.threadDrawMask, tsPayload.firstThread, meshletIndex);
+
+  uint32_t drawInfoIndex = tsPayload.firstDraw + localDrawThread.x;
+  DrawInstanceInfo draw = drawInfos.draws[drawInfoIndex];
+
+  u32vec3 drawIndices = csGetDrawSubIndicesForInvocation(draw, localDrawThread.y);
 
   MsInvocationInfo result;
 
   // Load instance node and instance properties from the buffer.
-  result.instanceNode = InstanceNodeBufferIn(instanceNodeVa).nodes[tsPayload.instanceIndex];
+  uint32_t instanceIndex = csGetPackedInstanceIndexFromDraw(draw.instanceIndexAndLod);
+
+  result.instanceNode = InstanceNodeBufferIn(instanceNodeVa).nodes[instanceIndex];
   result.instanceInfo = InstanceDataBufferIn(result.instanceNode.propertyBuffer).header;
   result.nodeTransformVa = sceneVa + scene.nodeTransformOffset;
   result.nodeTransformIndices = nodeComputeTransformIndices(
     result.instanceNode.nodeIndex, scene.nodeCount, frameId);
 
+  GeometryRef geometry = GeometryRef(result.instanceInfo.geometryVa);
+  uint32_t instanceDataOffset = geometry.meshes[draw.meshIndex].instanceDataOffset;
+  uint32_t skinDataOffset = geometry.meshes[draw.meshIndex].skinDataOffset;
+
   // Load mesh instance data from geometry buffer
   result.meshInstance = initMeshInstance();
 
-  if (tsPayload.instanceDataOffset != 0u) {
-    MeshInstanceRef instances = MeshInstanceRef(result.instanceInfo.geometryVa + tsPayload.instanceDataOffset);
-    result.meshInstance = instances.instances[tsPayload.meshInstanceIndex];
+  if (instanceDataOffset != 0u) {
+    MeshInstanceRef instances = MeshInstanceRef(result.instanceInfo.geometryVa + instanceDataOffset);
+    result.meshInstance = instances.instances[drawIndices.y];
   }
 
   // Copy some basic parameters
   result.frameId = frameId;
-  result.passIndex = tsPayload.passIndex;
-  result.drawIndex = tsPayload.drawIndex;
+  result.passIndex = drawIndices.z;
+  result.drawIndex = draw.instanceDrawIndex;
 
   // Decode meshlet payload and compute the address of the meshlet header.
-  uvec2 meshletInfo = msGetMeshletInfoForWorkgroup();
-  result.viewIndex = meshletInfo.y;
-  result.meshletVa = tsPayload.meshletBuffer + meshletInfo.x;
+  result.viewIndex = viewIndex;
+  result.meshletVa = draw.meshletBufferAddress + tsPayload.meshletOffsets[meshletIndex];
 
   // Compute address of joint indices used for skinning, if present.
-  result.skinningVa = tsPayload.skinningDataOffset != 0u
-    ? result.instanceInfo.geometryVa + tsPayload.skinningDataOffset
-    : uint64_t(0u);
+  result.skinningVa = skinDataOffset != 0u
+    ? result.instanceInfo.geometryVa + skinDataOffset
+    : 0ul;
 
   return result;
 }
@@ -143,7 +165,7 @@ MsDrawParameters msGetDrawParameters(in MsInvocationInfo invocationInfo) {
     invocationInfo.instanceNode.propertyBuffer +
     invocationInfo.instanceInfo.drawOffset);
 
-  InstanceDraw draw = drawBuffer.draws[tsPayload.drawIndex];
+  InstanceDraw draw = drawBuffer.draws[invocationInfo.drawIndex];
 
   MsDrawParameters result;
   result.shadingDataOffset = invocationInfo.instanceInfo.parameterOffset;

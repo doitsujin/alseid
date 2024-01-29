@@ -21,9 +21,7 @@ GfxDescriptor GfxSceneDrawBuffer::getDrawCountDescriptor(
   if (m_buffer == nullptr || drawGroup >= m_header.drawGroupCount)
     return GfxDescriptor();
 
-  size_t offset = sizeof(GfxSceneDrawListHeader) +
-    sizeof(GfxSceneDrawListEntry) * m_entries[drawGroup].drawIndex +
-    offsetof(GfxSceneDrawListEntry, drawCount);
+  size_t offset = m_header.drawCountOffset + sizeof(uint32_t) * drawGroup;
   size_t size = sizeof(uint32_t);
 
   return m_buffer->getDescriptor(GfxUsage::eParameterBuffer, offset, size);
@@ -36,15 +34,16 @@ GfxDescriptor GfxSceneDrawBuffer::getDrawParameterDescriptor(
     return GfxDescriptor();
 
   return m_buffer->getDescriptor(GfxUsage::eParameterBuffer,
-    sizeof(GfxDispatchArgs) * m_entries[drawGroup].drawIndex + m_header.drawParameterOffset,
-    sizeof(GfxDispatchArgs) * m_entries[drawGroup].drawCount);
+    sizeof(GfxDispatchArgs) * m_entries[drawGroup].dispatchIndex + m_header.drawParameterOffset,
+    sizeof(GfxDispatchArgs) * m_entries[drawGroup].dispatchCount);
 }
 
 
 void GfxSceneDrawBuffer::updateLayout(
   const GfxContext&                   context,
   const GfxSceneDrawBufferDesc&       desc) {
-  uint32_t totalDrawCount = 0;
+  uint32_t totalDrawCount = 0u;
+  uint32_t totalDispatchCount = 0u;
 
   // Compute individual draw group offsets
   m_entries.resize(desc.drawGroupCount);
@@ -53,6 +52,15 @@ void GfxSceneDrawBuffer::updateLayout(
     m_entries[i].drawIndex = totalDrawCount;
     m_entries[i].drawCount = desc.drawGroups[i].drawCount;
     totalDrawCount += desc.drawGroups[i].drawCount;
+
+    uint32_t meshletCountPerDispatch = GfxSceneDrawMaxTsWorkgroupsPerDispatch *
+      desc.drawGroups[i].meshletCountPerWorkgroup;
+
+    m_entries[i].dispatchIndex = totalDispatchCount;
+    m_entries[i].dispatchCount = align(desc.drawGroups[i].meshletCount,
+      meshletCountPerDispatch) / meshletCountPerDispatch;
+    m_entries[i].searchTreeDepth = 0u;
+    totalDispatchCount += m_entries[i].dispatchCount;
   }
 
   // Compute buffer layout
@@ -60,37 +68,48 @@ void GfxSceneDrawBuffer::updateLayout(
     sizeof(GfxSceneDrawListEntry) * desc.drawGroupCount;
 
   uint64_t newSize = 0;
-  uint64_t oldSize = 0;
-
   allocateStorage(newSize, drawGroupListSize);
 
   m_header = GfxSceneDrawListHeader{};
   m_header.drawGroupCount = desc.drawGroupCount;
+  m_header.drawCountOffset = allocateStorage(newSize,
+    sizeof(uint32_t) * desc.drawGroupCount);
   m_header.drawParameterOffset = allocateStorage(newSize,
-    sizeof(GfxDispatchArgs) * totalDrawCount);
+    sizeof(GfxDispatchArgs) * totalDispatchCount);
   m_header.drawInfoOffset = allocateStorage(newSize,
     sizeof(GfxSceneDrawInstanceInfo) * totalDrawCount);
 
-  // Align to 4 MiB to avoid frequent reallocations
-  newSize = align(newSize, uint64_t(4u << 20));
+  // Allocate storage for each draw group's search tree
+  uint32_t workgroupCounterCount = 0u;
 
-  if (m_buffer != nullptr)
-    oldSize = m_buffer->getDesc().size;
+  for (uint32_t i = 0; i < desc.drawGroupCount; i++) {
+    uint32_t layerWidth = desc.drawGroups[i].meshletCountPerWorkgroup;
+    uint32_t layerSize = align(m_entries[i].drawCount, layerWidth) / layerWidth;
 
-  if (newSize > oldSize) {
-    GfxBufferDesc bufferDesc;
-    bufferDesc.debugName = "Draw parameters";
-    bufferDesc.usage = GfxUsage::eTransferDst | GfxUsage::eParameterBuffer |
-      GfxUsage::eShaderResource | GfxUsage::eShaderStorage;
-    bufferDesc.size = newSize;
-    bufferDesc.flags = GfxBufferFlag::eDedicatedAllocation;
+    m_entries[i].searchTreeDepth = 2u;
+    m_entries[i].searchTreeCounterIndex = workgroupCounterCount++;
+    m_entries[i].searchTreeLayerOffsets[0] = allocateStorage(
+      newSize, sizeof(uint32_t) * m_entries[i].drawCount);
+    m_entries[i].searchTreeLayerOffsets[1] = allocateStorage(
+      newSize, sizeof(uint32_t) * layerSize);
 
-    GfxBuffer oldBuffer = std::exchange(m_buffer,
-      m_device->createBuffer(bufferDesc, GfxMemoryType::eAny));
+    for (uint32_t j = m_entries[i].searchTreeDepth; j < GfxSceneDrawSearchTreeDepth; j++) {
+      m_entries[i].searchTreeLayerOffsets[j] = 0u;
 
-    if (oldBuffer)
-      context->trackObject(oldBuffer);
+      if (layerSize > layerWidth) {
+        layerSize = align(layerSize, layerWidth) / layerWidth;
+
+        m_entries[i].searchTreeDepth += 1u;
+        m_entries[i].searchTreeLayerOffsets[j] = allocateStorage(
+          newSize, sizeof(uint32_t) * layerSize);
+
+        workgroupCounterCount += layerSize;
+      }
+    }
   }
+
+  recreateDrawBuffer(context, newSize);
+  recreateCounterBuffer(context, workgroupCounterCount);
 
   // Write new buffer contents to a scratch buffer
   GfxScratchBuffer scratch = context->allocScratch(
@@ -104,7 +123,7 @@ void GfxSceneDrawBuffer::updateLayout(
   *dstHeader = m_header;
 
   for (uint32_t i = 0; i < m_header.drawGroupCount; i++) {
-    dstEntries[i].drawIndex = m_entries[i].drawIndex;
+    dstEntries[i] = m_entries[i];
     dstEntries[i].drawCount = 0u;
   }
 
@@ -113,10 +132,6 @@ void GfxSceneDrawBuffer::updateLayout(
   // the layout is expected to be volatile anyway.
   context->beginDebugLabel("Initialize draw buffer", 0xff96c096u);
   context->copyBuffer(m_buffer, 0, scratch.buffer, scratch.offset, scratch.size);
-
-  if (newSize > oldSize)
-    context->clearBuffer(m_buffer, drawGroupListSize, newSize - drawGroupListSize);
-
   context->endDebugLabel();
 }
 
@@ -131,7 +146,7 @@ void GfxSceneDrawBuffer::generateDraws(
         uint32_t                      frameId,
         uint32_t                      passMask,
         uint32_t                      lodSelectionPass) {
-  context->beginDebugLabel("Generate draws", 0xff7878ff);
+  context->beginDebugLabel("Generate draw list", 0xff7878ff);
   context->beginDebugLabel("Reset counters", 0xffb4b0ff);
 
   GfxSceneDrawListInitArgs resetArgs = { };
@@ -146,7 +161,8 @@ void GfxSceneDrawBuffer::generateDraws(
 
   context->endDebugLabel();
 
-  context->beginDebugLabel("Emit draws", 0xffb4b0ff);
+  // Scan instances that are visible in the given passes
+  context->beginDebugLabel("Emit draw infos", 0xffb4b0ff);
 
   GfxDescriptor dispatch = groupBuffer.getDispatchDescriptors(GfxSceneNodeType::eInstance).processAll;
 
@@ -165,10 +181,91 @@ void GfxSceneDrawBuffer::generateDraws(
   context->memoryBarrier(
     GfxUsage::eShaderStorage, GfxShaderStage::eCompute,
     GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer,
-    GfxShaderStage::eCompute | GfxShaderStage::eMeshTask);
+    GfxShaderStage::eCompute);
+
+  context->endDebugLabel();
+
+  // For each draw group, build a search tree for the task shader
+  // and emit indirect draw parameters.
+  context->beginDebugLabel("Emit draw parameters", 0xffb4b0ff);
+
+  for (uint32_t j = 0; j < m_header.drawGroupCount; j++) {
+    uint32_t dispatchOffset = sizeof(GfxSceneDrawListHeader) +
+      sizeof(GfxSceneDrawListEntry) * j +
+      offsetof(GfxSceneDrawListEntry, searchTreeDispatch);
+
+    GfxSceneDrawListBuildSearchTreeArgs args = { };
+    args.counterVa = m_counters->getGpuAddress();
+    args.drawListVa = getGpuAddress();
+    args.drawGroup = j;
+
+    GfxDescriptor dispatch = m_buffer->getDescriptor(GfxUsage::eParameterBuffer,
+      dispatchOffset, sizeof(GfxDispatchArgs));
+
+    pipelines.generateDrawParameters(context, dispatch, args);
+  }
+
+  context->memoryBarrier(
+    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
+    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eMeshTask);
 
   context->endDebugLabel();
   context->endDebugLabel();
+}
+
+
+void GfxSceneDrawBuffer::recreateDrawBuffer(
+  const GfxContext&                   context,
+        uint64_t                      size) {
+  uint64_t newSize = align(size, uint64_t(4u << 20));
+  uint64_t oldSize = 0u;
+
+  if (m_buffer != nullptr)
+    oldSize = m_buffer->getDesc().size;
+
+  if (newSize > oldSize) {
+    GfxBufferDesc bufferDesc;
+    bufferDesc.debugName = "Draw parameters";
+    bufferDesc.usage = GfxUsage::eTransferDst | GfxUsage::eParameterBuffer |
+      GfxUsage::eShaderResource | GfxUsage::eShaderStorage;
+    bufferDesc.size = newSize;
+    bufferDesc.flags = GfxBufferFlag::eDedicatedAllocation;
+
+    GfxBuffer oldBuffer = std::exchange(m_buffer,
+      m_device->createBuffer(bufferDesc, GfxMemoryType::eAny));
+
+    if (oldBuffer)
+      context->trackObject(oldBuffer);
+  }
+}
+
+
+void GfxSceneDrawBuffer::recreateCounterBuffer(
+  const GfxContext&                   context,
+        uint32_t                      counters) {
+  uint64_t newSize = sizeof(uint32_t) * align(counters, 1u << 18u);
+  uint64_t oldSize = 0u;
+
+  if (m_counters != nullptr)
+    oldSize = m_counters->getDesc().size;
+
+  if (newSize > oldSize) {
+    GfxBufferDesc bufferDesc;
+    bufferDesc.debugName = "Draw list counters";
+    bufferDesc.usage = GfxUsage::eTransferDst | GfxUsage::eShaderStorage;
+    bufferDesc.size = newSize;
+
+    GfxBuffer oldBuffer = std::exchange(m_counters,
+      m_device->createBuffer(bufferDesc, GfxMemoryType::eAny));
+
+    if (oldBuffer)
+      context->trackObject(oldBuffer);
+
+    // Zero-initialize counters right away
+    context->beginDebugLabel("Initialize draw list counters", 0xff96c096u);
+    context->clearBuffer(m_counters, 0, newSize);
+    context->endDebugLabel();
+  }
 }
 
 

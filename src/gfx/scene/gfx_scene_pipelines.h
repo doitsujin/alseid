@@ -240,6 +240,17 @@ struct GfxSceneOcclusionTestArgs {
 
 
 /**
+ * \brief Arguments for building the draw list search tree
+ */
+struct GfxSceneDrawListBuildSearchTreeArgs {
+  uint64_t counterVa;
+  uint64_t drawListVa;
+  uint32_t drawGroup;
+  uint32_t reserved;
+};
+
+
+/**
  * \brief Pipelines for scene rendering
  *
  * Creates compute and graphics pipelines for built-in shaders
@@ -408,6 +419,19 @@ public:
     const GfxSceneDrawListGenerateArgs& args) const;
 
   /**
+   * \brief Builds draw list search tree
+   *
+   * Picks the correct pipeline based on the selected layer.
+   * \param [in] context Context object
+   * \param [in] dispatch Indirect dispatch descriptor
+   * \param [in] args Build arguments
+   */
+  void generateDrawParameters(
+    const GfxContext&                   context,
+    const GfxDescriptor&                dispatch,
+    const GfxSceneDrawListBuildSearchTreeArgs& args) const;
+
+  /**
    * \brief Resets update lists of a group buffer
    *
    * \param [in] context Context object
@@ -527,6 +551,7 @@ private:
 
   GfxComputePipeline  m_csDrawListInit;
   GfxComputePipeline  m_csDrawListGenerate;
+  GfxComputePipeline  m_csDrawListSetupDraws;
 
   GfxComputePipeline  m_csGroupFinalize;
   GfxComputePipeline  m_csGroupResetUpdate;

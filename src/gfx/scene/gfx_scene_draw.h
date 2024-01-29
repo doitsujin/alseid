@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 
 #include "../../util/util_types.h"
@@ -13,6 +14,13 @@
 
 namespace as {
 
+/** Maximum depth of the search tree. */
+constexpr uint32_t GfxSceneDrawSearchTreeDepth = 6u;
+/** Maximum number of task shader workgroups per indirect dispatch.
+ *  Used to split extremely large draws that would otherwise exceed
+ *  device limits. */
+constexpr uint32_t GfxSceneDrawMaxTsWorkgroupsPerDispatch = 32768u;
+
 /**
  * \brief Draw list header
  *
@@ -22,6 +30,10 @@ namespace as {
 struct GfxSceneDrawListHeader {
   /** Number of draw groups in the draw group buffer. */
   uint32_t drawGroupCount;
+  /** Offset of indirect draw counts, in bytes, relative to the start
+   *  of the buffer. Stores the number of task shader dispatches for
+   *  each individual draw group. */
+  uint32_t drawCountOffset;
   /** Offset of indirect draw parameters, in bytes, relative to the
    *  start of the buffer. This stores a packed array of task shader
    *  workgroup counts for each possible draw. */
@@ -29,8 +41,6 @@ struct GfxSceneDrawListHeader {
   /** Offset of draw infos, in bytes, relative to the start of the
    *  buffer. This stores a  */
   uint32_t drawInfoOffset;
-  /** Reserved for future use. */
-  uint32_t reserved;
 };
 
 static_assert(sizeof(GfxSceneDrawListHeader) == 16);
@@ -44,16 +54,34 @@ static_assert(sizeof(GfxSceneDrawListHeader) == 16);
  * the draw list using the real material index.
  */
 struct GfxSceneDrawListEntry {
-  /** Index into the draw parameter for the first draw within this
-   *  draw group. Must be pre-computed in such a way that each draw
-   *  group can accomodate the maximum possible draw count. */
+  /** Index of the first draw info for this draw group within the
+   *  draw info array. Note that this does not directly correspond
+   *  to a task shader dispatch. */
   uint32_t drawIndex;
-  /** Number of draws within the draw group. Must be initialized to
-   *  zero so that the draw count can be used as a linear allocator. */
+  /** Number of draws within the draw group. When generating draw
+   *  lists, this must be initialized to zero so that the draw count
+   *  can be used as a linear allocator. */
   uint32_t drawCount;
+  /** Index of the first task shader dispatch argument. */
+  uint32_t dispatchIndex;
+  /** Maximum task shader dispatch count. */
+  uint32_t dispatchCount;
+  /** Number of valid layers in the search tree. Higher layers must not
+   *  be accessed. This is static, based on the maximum draw count. */
+  uint32_t searchTreeDepth;
+  /** First workgroup counter in the counter buffer to use when computing the
+   *  search tree for this draw group. Counters must be zero-initialized. */
+  uint32_t searchTreeCounterIndex;
+  /** Dispatch parameters for generating the search tree */
+  GfxDispatchArgs searchTreeDispatch;
+  /** Offsets of the individual search tree layers within the buffer,
+   *  starting with the lowest layer that stores per-draw counts. */
+  std::array<uint32_t, GfxSceneDrawSearchTreeDepth> searchTreeLayerOffsets;
+  /** Total number of task shader threads for the draw group. */
+  uint32_t taskShaderThreadCount;
 };
 
-static_assert(sizeof(GfxSceneDrawListEntry) == 8);
+static_assert(sizeof(GfxSceneDrawListEntry) == 64);
 
 
 /**
@@ -63,21 +91,37 @@ static_assert(sizeof(GfxSceneDrawListEntry) == 8);
  * the task shader can then index via the draw ID.
  */
 struct GfxSceneDrawInstanceInfo {
+  /** GPU address of the meshlet buffer for this draw. Taken from the mesh
+   *  metadata structure to reduce the number of dependent memory loads in
+   *  the mesh shader. */
+  uint64_t meshletBufferVa;
   /** Instance node index. Can be used to obtain geometry information
    *  and the final transform, as well as visibility information. */
   uint24_t instanceIndex;
   /** Mesh LOD to use for rendering. */
   uint8_t lodIndex;
-  /** Local draw index of the instance. Used to pull in data such as
-   *  the mesh to draw, or material parameters for shading. */
-  uint32_t drawIndex;
+  /** Local draw index of the instance. Used to pull in data such
+   *  as material parameters and resources for shading. */
+  uint16_t instanceDrawIndex;
+  /** Number of mesh instances to draw. Can be derived from the draw as
+   *  well, but this is needed to compute the task shader thread count. */
+  uint16_t meshInstanceCount;
+  /** Mesh index to draw. Used to reduce the number of indirections in
+   *  the mesh shader. */
+  uint32_t meshIndex;
+  /** Index of the first meshlet of the selected LOD. Used to reduce
+   *  the number of indirections in the task shader. */
+  uint32_t meshletIndex;
+  /** Total number of meshlets in the selected LOD. Contributes to
+   *  the task shader thread count as well. */
+  uint32_t meshletCount;
   /** Mask of passes where this instance is visible. This is useful when
    *  rendering multiple passes at once, e.g. for shadow maps. Task shaders
    *  will have to work out the pass index based on the workgroup ID. */
   uint32_t passMask;
 };
 
-static_assert(sizeof(GfxSceneDrawInstanceInfo) == 12);
+static_assert(sizeof(GfxSceneDrawInstanceInfo) == 32);
 
 
 /**
@@ -194,9 +238,18 @@ private:
 
   GfxDevice                           m_device;
   GfxBuffer                           m_buffer;
+  GfxBuffer                           m_counters;
 
   GfxSceneDrawListHeader              m_header = { };
   std::vector<GfxSceneDrawListEntry>  m_entries;
+
+  void recreateDrawBuffer(
+    const GfxContext&                   context,
+          uint64_t                      size);
+
+  void recreateCounterBuffer(
+    const GfxContext&                   context,
+          uint32_t                      counters);
 
   uint32_t allocateStorage(
           uint64_t&                     allocator,

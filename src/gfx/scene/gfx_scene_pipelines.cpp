@@ -6,6 +6,7 @@
 
 #include <cs_draw_list_generate.h>
 #include <cs_draw_list_init.h>
+#include <cs_draw_list_setup_dispatches.h>
 
 #include <cs_animation_prepare.h>
 #include <cs_animation_process.h>
@@ -42,6 +43,7 @@ GfxScenePipelines::GfxScenePipelines(
 , m_csAnimationProcess      (createComputePipeline("cs_animation_process", cs_animation_process))
 , m_csDrawListInit          (createComputePipeline("cs_draw_list_init", cs_draw_list_init))
 , m_csDrawListGenerate      (createComputePipeline("cs_draw_list_generate", cs_draw_list_generate))
+, m_csDrawListSetupDraws    (createComputePipeline("cs_draw_list_setup_dispatches", cs_draw_list_setup_dispatches))
 , m_csGroupFinalize         (createComputePipeline("cs_group_finalize", cs_group_finalize))
 , m_csGroupResetUpdate      (createComputePipeline("cs_group_reset_update", cs_group_reset_update))
 , m_csGroupTraverseBvh      (createComputePipeline("cs_group_traverse_bvh", cs_group_traverse_bvh))
@@ -188,6 +190,16 @@ void GfxScenePipelines::generateDrawList(
   const GfxDescriptor&                dispatch,
   const GfxSceneDrawListGenerateArgs& args) const {
   context->bindPipeline(m_csDrawListGenerate);
+  context->setShaderConstants(0, args);
+  context->dispatchIndirect(dispatch);
+}
+
+
+void GfxScenePipelines::generateDrawParameters(
+  const GfxContext&                   context,
+  const GfxDescriptor&                dispatch,
+  const GfxSceneDrawListBuildSearchTreeArgs& args) const {
+  context->bindPipeline(m_csDrawListSetupDraws);
   context->setShaderConstants(0, args);
   context->dispatchIndirect(dispatch);
 }

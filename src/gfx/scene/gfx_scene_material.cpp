@@ -27,7 +27,7 @@ GfxSceneMaterial::GfxSceneMaterial(
     }
 
     // Workgroup sizes must be consistent across pipelines
-    m_workgroupSize = desc.shaders[i].task->getWorkgroupSize().at<0>();
+    m_workgroupSize = pipeline->getWorkgroupSize().at<0>();
   }
 }
 
@@ -177,7 +177,6 @@ void GfxSceneMaterialManager::dispatchDraws(
         drawBuffers[j]->getDrawParameterDescriptor(i),
         drawBuffers[j]->getDrawCountDescriptor(i),
         m_drawGroups[i].drawCount);
-
     }
 
     m_materials[i].end(context);

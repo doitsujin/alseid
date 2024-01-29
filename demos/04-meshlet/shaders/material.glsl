@@ -104,7 +104,8 @@ struct MsVertexOut {
 
 MsContext msGetInstanceContext() {
   MsContext context;
-  context.invocation = msGetInvocationInfo(globals.instanceVa, globals.sceneVa, globals.frameId);
+  context.invocation = msGetInvocationInfo(globals.drawListVa,
+    globals.instanceVa, globals.sceneVa, globals.frameId);
   context.flags = MS_CULL_FACE_CW_BIT;
 
   if (asGetMirrorMode(context.invocation.meshInstance.extra) != MESH_MIRROR_NONE)
