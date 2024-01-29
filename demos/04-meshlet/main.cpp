@@ -256,6 +256,10 @@ public:
       context->imageBarrier(m_depthImage, m_depthImage->getAvailableSubresources(),
         GfxUsage::eRenderTarget, 0, GfxUsage::eShaderResource, GfxShaderStage::eCompute, 0);
 
+      context->memoryBarrier(
+        GfxUsage::eRenderTarget, 0,
+        GfxUsage::eRenderTarget, 0);
+
       m_hizImage->generate(context, *m_commonPipelines, m_depthImage);
 
       // Perform occlusion tests and add any previously invisible
@@ -637,14 +641,27 @@ private:
 
   GfxRenderState createRenderState() {
     GfxCullMode cullMode = GfxCullMode::eBack;
+    GfxFrontFace frontFace = GfxFrontFace::eCcw;
 
-    GfxDepthTest depthTest;
+    bool conservativeRaster = false;
+
+    GfxDepthBias depthBias = { };
+
+    GfxDepthTest depthTest = { };
     depthTest.enableDepthWrite = true;
     depthTest.depthCompareOp = GfxCompareOp::eGreater;
 
+    GfxStencilTest stencilTest = { };
+    GfxBlending blending = { };
+
     GfxRenderStateDesc desc;
+    desc.frontFace = &frontFace;
     desc.cullMode = &cullMode;
+    desc.conservativeRaster = &conservativeRaster;
+    desc.depthBias = &depthBias;
     desc.depthTest = &depthTest;
+    desc.stencilTest = &stencilTest;
+    desc.blending = &blending;
 
     return m_device->createRenderState(desc);
   }
@@ -782,9 +799,11 @@ private:
 
   void initRenderTargets(const GfxContext& context) {
     context->imageBarrier(m_depthImage, m_depthImage->getAvailableSubresources(),
-      0, 0, GfxUsage::eRenderTarget, 0, GfxBarrierFlag::eDiscard);
+      GfxUsage::eRenderTarget | GfxUsage::eShaderResource, GfxShaderStage::eCompute,
+      GfxUsage::eRenderTarget, 0, GfxBarrierFlag::eDiscard);
     context->imageBarrier(m_colorImage, m_colorImage->getAvailableSubresources(),
-      0, 0, GfxUsage::eRenderTarget, 0, GfxBarrierFlag::eDiscard);
+      GfxUsage::eRenderTarget | GfxUsage::eShaderResource, GfxShaderStage::eCompute,
+      GfxUsage::eRenderTarget, 0, GfxBarrierFlag::eDiscard);
   }
 
 
@@ -809,7 +828,7 @@ private:
     m_depthImage = m_device->createImage(desc, GfxMemoryType::eAny);
 
     desc.debugName = "Color image";
-    desc.format = GfxFormat::eR11G11B10f;
+    desc.format = GfxFormat::eR16G16B16A16f;
 
     m_colorImage = m_device->createImage(desc, GfxMemoryType::eAny);
   }
