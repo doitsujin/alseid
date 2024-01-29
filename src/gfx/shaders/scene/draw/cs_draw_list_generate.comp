@@ -231,40 +231,65 @@ bool csPrepareNextIteration(out InstanceDrawInfo info) {
 }
 
 
-uvec2 csSelectLod(uint64_t geometryBuffer, uint32_t meshIndex, float viewDistanceSq) {
+struct CsLodInfo {
+  uint64_t bufferAddress;
+  uint32_t lodIndex;
+  uint32_t meshletIndex;
+  uint32_t meshletCount;
+};
+
+
+CsLodInfo csSelectLod(uint64_t geometryBuffer, uint32_t meshIndex, float viewDistanceSq) {
   GeometryRef geometry = GeometryRef(geometryBuffer);
   GeometryBufferPointerRef geometryBuffers = geometryGetBuffers(geometry, geometry.geometry);
 
   Mesh mesh = geometry.meshes[meshIndex];
   MeshLodRef meshLods = meshGetLodData(geometry, mesh);
 
+  CsLodInfo result = CsLodInfo(0ul, 0u, 0u, 0u);
+
   // Perform basic test against the mesh visibility range, passing
-  // this also means that we can at least use LOD 0. 
+  // this also means that we can at least use LOD 0.
   vec2 visibilityRange = vec2(mesh.visibilityRange);
   vec2 visibilityRangeSq = visibilityRange * visibilityRange;
 
   if ((viewDistanceSq < visibilityRangeSq.x) ||
       (viewDistanceSq >= visibilityRangeSq.y && visibilityRangeSq.y != 0.0f))
-    return uvec2(0u, 0u);
+    return result;
 
   // LODs are ordered by view distance from least to most detailed, just
   // iterate over the list and pick an LOD for the adjusted view distance.
-  uvec2 result = uvec2(0u, meshLods.lods[0].meshletCount);
+  result.meshletIndex = meshLods.lods[0].meshletIndex;
+  result.meshletCount = meshLods.lods[0].meshletCount;
+  result.bufferAddress = geometryBuffer + geometry.geometry.meshletDataOffset;
+
+  uint32_t lodBufferIndex = 0u;
 
   for (uint32_t i = 1; i < uint32_t(mesh.lodCount); i++) {
-    float maxDistance = float(meshLods.lods[i].maxDistance);
+    MeshLod lod = meshLods.lods[i];
+
+    float maxDistance = float(lod.maxDistance);
     float maxDistanceSq = maxDistance * maxDistance;
 
     if (viewDistanceSq >= maxDistanceSq && maxDistance != 0.0f)
       break;
 
     // Also make sure that meshlet data is present for the current LOD.
-    uint bufferIndex = meshLods.lods[i].bufferIndex;
+    uint bufferIndex = lod.bufferIndex;
 
-    if (bufferIndex > 0u && uint64_t(geometryBuffers.buffers[bufferIndex - 1u]) == uint64_t(0u))
-      break;
+    if (bufferIndex != lodBufferIndex) {
+      uint64_t bufferAddress = uint64_t(geometryBuffers.buffers[bufferIndex - 1u]);
 
-    result = uvec2(i, meshLods.lods[i].meshletCount);
+      if (bufferAddress == 0ul)
+        break;
+
+      lodBufferIndex = bufferIndex;
+      result.bufferAddress = bufferAddress;
+    }
+
+    result.lodIndex = i;
+    result.meshletIndex = lod.meshletIndex;
+    result.meshletCount = lod.meshletCount;
   }
 
   return result;
@@ -279,13 +304,10 @@ void csEmitDraw(in InstanceDrawInfo drawInfo) {
 
   // Select mesh LOD based on the precomputed view distance, and skip
   // the draw if there is no suitable LOD for the current mesh.
-  uvec2 lodInfo = csSelectLod(instanceInfo.geometryVa,
+  CsLodInfo lodInfo = csSelectLod(instanceInfo.geometryVa,
     draw.meshIndex, drawInfo.viewDistanceSq);
 
-  uint32_t lodIndex = lodInfo.x;
-  uint32_t lodMeshletCount = lodInfo.y;
-
-  if (lodMeshletCount == 0u)
+  if (lodInfo.meshletCount == 0u)
     return;
 
   // Compute addresses of the various output arrays
@@ -295,17 +317,17 @@ void csEmitDraw(in InstanceDrawInfo drawInfo) {
 
   // Emit actual draw parameters
   DrawInstanceInfo drawInstanceInfo;
-  drawInstanceInfo.instanceAndLod = drawPackInstanceAndLod(drawInfo.instanceIndex, lodIndex);
-  drawInstanceInfo.drawIndex = drawInfo.drawIndex;
+  drawInstanceInfo.meshletBufferAddress = lodInfo.bufferAddress;
+  drawInstanceInfo.instanceIndexAndLod = csPackInstanceIndexAndLod(drawInfo.instanceIndex, lodInfo.lodIndex);
+  drawInstanceInfo.instanceDrawIndex = uint16_t(drawInfo.drawIndex);
+  drawInstanceInfo.meshIndex = draw.meshIndex;
+  drawInstanceInfo.meshletIndex = lodInfo.meshletIndex;
+  drawInstanceInfo.meshletCount = lodInfo.meshletCount;
+  drawInstanceInfo.meshInstanceCount = uint16_t(draw.meshInstanceCount);
   drawInstanceInfo.passMask = drawInfo.passMask;
 
-  u32vec3 drawParameters = u32vec3(0u);
-  drawParameters.x = asComputeWorkgroupCount1D(lodMeshletCount, TsWorkgroupSize);
-  drawParameters.y = draw.meshInstanceCount;
-  drawParameters.z = bitCount(drawInfo.passMask);
-
   drawListAdd(drawList, drawInfos, drawArgs,
-    draw.materialIndex, drawInstanceInfo, drawParameters);
+    draw.materialIndex, drawInstanceInfo);
 }
 
 
@@ -322,8 +344,8 @@ void csGenerateDraws() {
 
   csInitDrawInfo();
 
-  if (gid < nodeListHeader.localEntryCount) {
-    PassGroupNodeListItem nodeItem = nodeList.items[nodeListHeader.localEntryIndex + gid];
+  if (gid < nodeListGetTotalEntryCount(nodeListHeader)) {
+    PassGroupNodeListItem nodeItem = nodeList.items[gid];
     instanceDrawInfo.instanceIndex = getNodeIndexFromRef(nodeItem.nodeRef);
     instanceDrawInfo.passMask = 0u;
 

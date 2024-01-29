@@ -249,12 +249,6 @@ uint32_t asComputeWorkgroupCount1D(uint32_t count, uint32_t workgroupSize) {
 uint32_t asFlattenWorkgroupIndex() {
   return gl_NumWorkGroups.x * gl_WorkGroupID.y + gl_WorkGroupID.x;
 }
-
-// Flattens global invocation index, assuming a one-dimensional
-// workgroup size.
-uint32_t asFlattenGlobalInvocationIndex() {
-  return asFlattenWorkgroupIndex() * gl_WorkGroupSize.x + gl_LocalInvocationIndex;
-}
 #endif
 
 

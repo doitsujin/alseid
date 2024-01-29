@@ -1,0 +1,200 @@
+// Shader to generate the search tree and set up indirect dispatches for
+// the draw group. This runs in a single pass, using an auxilary buffer
+// to count the number of workgroups that have finished computing their
+// part of any given node.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csEmitDrawParameters
+
+#include "../../as_include_head.glsl"
+
+#include "as_draw.glsl"
+
+layout(local_size_x_id = SPEC_CONST_ID_TASK_SHADER_WORKGROUP_SIZE) in;
+
+#include "as_draw_list_search_tree_build.glsl"
+
+// Workgroup counter buffer. Only used in this shader, so don't
+// bother exporting it globally.
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+buffer DrawSearchTreeWorkgroupCounters {
+  uint32_t counters[];
+};
+
+
+// Buffer pointers and the draw group to work on.
+layout(push_constant)
+uniform PushData {
+  uint64_t        counterVa;
+  uint64_t        drawListVa;
+  uint32_t        drawGroup;
+} globals;
+
+
+shared uint32_t csWorkgroupCountShared;
+
+void csEmitDrawParameters() {
+  DrawSearchTreeWorkgroupCounters counters = DrawSearchTreeWorkgroupCounters(globals.counterVa);
+
+  // Invocation counters, we'll repurpose them later
+  uint32_t tid = gl_LocalInvocationIndex;
+  uint32_t wid = asFlattenWorkgroupIndex();
+  uint32_t gid = tid + wid * gl_WorkGroupSize.x;
+
+  uint32_t drawGroup = globals.drawGroup;
+
+  // Total number of task shader threads to dispatch
+  uint32_t tsThreads = 0u;
+
+  // Compute all relevant pointers from draw list header right away
+  DrawListBuffer drawList = DrawListBuffer(globals.drawListVa);
+  DrawCountBufferOut drawCounts = DrawCountBufferOut(globals.drawListVa + drawList.header.drawCountOffset);
+  DrawParameterBufferOut drawParameters = DrawParameterBufferOut(globals.drawListVa + drawList.header.drawParameterOffset);
+  DrawInstanceInfoBufferIn drawInfos = DrawInstanceInfoBufferIn(globals.drawListVa + drawList.header.drawInfoOffset);
+
+  // Assume that the previous pass generated one output per workgroup
+  uint32_t drawIndex = drawList.drawGroups[drawGroup].drawIndex;
+  uint32_t drawCount = drawList.drawGroups[drawGroup].drawCount;
+  uint32_t dispatchIndex = drawList.drawGroups[drawGroup].dispatchIndex;
+  uint32_t dispatchCount = drawList.drawGroups[drawGroup].dispatchCount;
+  uint32_t layerCount = drawList.drawGroups[drawGroup].searchTreeDepth;
+  uint32_t counterIndex = drawList.drawGroups[drawGroup].searchTreeCounterIndex;
+
+  // Skip generating the search tree if there are no draws. In this situation,
+  // we will execute exactly one dummy workgroup to set up the draws.
+  if (drawCount > 0u) {
+    // Exit early if the workgroup index is out of bounds for the draw group
+    uint32_t srcLayerWidth = asComputeWorkgroupCount1D(drawCount, gl_WorkGroupSize.x);
+
+    if (wid >= srcLayerWidth)
+      return;
+
+    // Generate the first two layers of the search tree. The tree depth
+    // is always guaranteed to be at least two for practicality.
+    DrawSearchTreeLayerOut layer0 = DrawSearchTreeLayerOut(globals.drawListVa +
+      drawList.drawGroups[drawGroup].searchTreeLayerOffsets[0u]);
+    DrawSearchTreeLayer layer1 = DrawSearchTreeLayer(globals.drawListVa +
+      drawList.drawGroups[drawGroup].searchTreeLayerOffsets[1u]);
+
+    // Compute thread count for the current draw and store it
+    // in the first layer
+    uint32_t count = 0;
+
+    if (gid < drawCount) {
+      DrawInstanceInfo drawInfo = drawInfos.draws[drawIndex + gid];
+      count = uint32_t(drawInfo.meshInstanceCount) *
+        uint32_t(drawInfo.meshletCount) *
+        bitCount(drawInfo.passMask);
+
+      layer0.threadCount[gid] = count;
+    }
+
+    // Reduce and write the second layer
+    count = csWorkgroupAdd(count);
+
+    if (tid == 0u)
+      layer1.threadCount[wid] = count;
+
+    // Pointers to rotate with each layer
+    DrawSearchTreeLayer srcLayer = DrawSearchTreeLayer(0ul);
+    DrawSearchTreeLayer dstLayer = layer1;
+
+    for (uint32_t i = 2u; i < layerCount; i++) {
+      // Adjust fake workgroup ID and use it as a counter index.
+      wid /= gl_WorkGroupSize.x;
+
+      // Desired counter value for the workgroup to keep going.
+      uint32_t desiredValue = min(gl_WorkGroupSize.x,
+        srcLayerWidth - gl_WorkGroupSize.x * wid);
+
+      if (tid == 0u) {
+        csWorkgroupCountShared = atomicAdd(counters.counters[counterIndex + wid], 1u,
+          gl_ScopeQueueFamily, gl_StorageSemanticsBuffer, gl_SemanticsAcquireRelease) + 1u;
+      }
+
+      barrier();
+
+      if (csWorkgroupCountShared != desiredValue)
+        return;
+
+      // Rotate layer pointers
+      srcLayer = dstLayer;
+      dstLayer = DrawSearchTreeLayer(globals.drawListVa +
+        drawList.drawGroups[drawGroup].searchTreeLayerOffsets[i]);
+
+      // Reset counter to zero to avoid having to perform manual clears
+      if (tid == 0u) {
+        atomicStore(counters.counters[counterIndex + wid], 0u,
+          gl_ScopeQueueFamily, gl_StorageSemanticsBuffer, gl_SemanticsRelaxed);
+      }
+
+      // Adjust fake global invocation ID and use it to reduce the source layer.
+      gid = gl_WorkGroupSize.x * wid + tid;
+
+      uint32_t count = 0u;
+
+      if (gid < srcLayerWidth)
+        count = srcLayer.threadCount[gid];
+
+      count = csWorkgroupAdd(count);
+
+      if (tid == 0u)
+        dstLayer.threadCount[wid] = count;
+
+      // Compute layer properties for the next round
+      srcLayerWidth = asComputeWorkgroupCount1D(srcLayerWidth, gl_WorkGroupSize.x);
+      counterIndex += srcLayerWidth;
+    }
+
+    // All layers of the search tree have been written, but we still need to
+    // compute the task shader workgroup count and emit dispatch parameters.
+    if (tid == 0u) {
+      csWorkgroupCountShared = atomicAdd(counters.counters[counterIndex], 1u,
+        gl_ScopeQueueFamily, gl_StorageSemanticsBuffer, gl_SemanticsAcquireRelease) + 1u;
+    }
+
+    barrier();
+
+    if (csWorkgroupCountShared != srcLayerWidth)
+      return;
+
+    if (tid == 0u) {
+      atomicStore(counters.counters[counterIndex], 0u,
+        gl_ScopeQueueFamily, gl_StorageSemanticsBuffer, gl_SemanticsRelaxed);
+    }
+
+    // Only one workgroup left at this point, reset the counter as usual and
+    // then emit the draw properties.
+    if (tid < srcLayerWidth)
+      tsThreads = dstLayer.threadCount[tid];
+
+    tsThreads = csWorkgroupAdd(tsThreads);
+  }
+
+  // Compute number of task shader workgroups and dispatches to emit
+  uint32_t tsWorkgroups = asComputeWorkgroupCount1D(tsThreads, TsWorkgroupSize);
+  uint32_t tsDispatches = asComputeWorkgroupCount1D(tsWorkgroups, DRAW_LIST_TS_WORKGROUPS_PER_DRAW);
+
+  if (tid == 0u) {
+    drawList.drawGroups[drawGroup].taskShaderThreadCount = tsThreads;
+    drawCounts.drawCounts[drawGroup] = min(tsDispatches, dispatchCount);
+  }
+
+  // We shouldn't ever have to do more than one iteration here, but support
+  // it anyway just in case.
+  for (uint32_t i = 0; i < dispatchCount; i += gl_WorkGroupSize.x) {
+    uint32_t index = i + tid;
+
+    if (index < dispatchCount) {
+      uint32_t workgroupCount = uint32_t(clamp(
+        int32_t(tsWorkgroups) - int32_t(index * DRAW_LIST_TS_WORKGROUPS_PER_DRAW),
+        0, int32_t(DRAW_LIST_TS_WORKGROUPS_PER_DRAW)));
+
+      drawParameters.draws[dispatchIndex + tid] = u32vec3(workgroupCount, 1u, 1u);
+    }
+  }
+}
+
+#include "../../as_include_tail.glsl"

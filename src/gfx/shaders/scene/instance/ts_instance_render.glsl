@@ -39,80 +39,66 @@
 
 #define TS_MAIN tsMain
 
-
 uint tsMain() {
   uint32_t tid = gl_LocalInvocationIndex;
 
   TsContext context = tsGetInstanceContext();
 
-  // Load scene header
-  SceneHeader scene = SceneHeaderIn(context.sceneVa).header;
-  SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(context.sceneVa + scene.nodeTransformOffset);
-
-  // Load instance node
-  InstanceNodeBufferIn instanceNodes = InstanceNodeBufferIn(context.instanceVa);
-  InstanceNode instanceNode = instanceNodes.nodes[context.invocation.instanceIndex];
-
-  uint32_t nodeTransformIndex = nodeComputeTransformIndices(instanceNode.nodeIndex, scene.nodeCount, context.frameId).x;
-  Transform nodeTransform = nodeTransforms.nodeTransforms[nodeTransformIndex].absoluteTransform;
-
-  // Load draw parameters
-  InstanceHeader instanceInfo = InstanceDataBufferIn(instanceNode.propertyBuffer).header;
-  InstanceDraw draw = instanceLoadDraw(instanceNode.propertyBuffer, context.invocation.drawIndex);
-
-  // Load mesh properties
-  GeometryRef geometry = GeometryRef(instanceInfo.geometryVa);
-  Geometry geometryMetadata = geometry.geometry;
-
-  Mesh mesh = geometry.meshes[uint32_t(draw.meshIndex)];
-
-  // Compute absolute meshlet index for the current invocation
-  MeshLod lod = meshGetLodData(geometry, mesh).lods[context.invocation.lodIndex];
-
-  uint32_t meshletIndex = uint32_t(lod.meshletIndex) + context.invocation.lodMeshletIndex;
-  uint32_t meshletCount = uint32_t(lod.meshletIndex) + uint32_t(lod.meshletCount);
-
-  // Locate meshlet data buffer for the selected LOD
-  GeometryBufferPointerRef geometryBuffers = geometryGetBuffers(geometry, geometryMetadata);
-  MeshletMetadataRef dataBuffer = geometryGetEmbeddedBuffer(geometry, geometryMetadata);
-
-  if (lod.bufferIndex > 0u)
-    dataBuffer = geometryBuffers.buffers[lod.bufferIndex - 1u];
-
-  // Load mesh instance and skinning-related properties
-  uint32_t meshInstanceIndex = uint32_t(draw.meshInstanceIndex) + context.invocation.localMeshInstance;
-  MeshInstance meshInstance = tsLoadMeshInstance(geometry, mesh, meshInstanceIndex);
-
-  InstanceDataBufferIn instanceData = InstanceDataBufferIn(instanceNode.propertyBuffer);
-  MeshSkinningRef meshSkinning = meshGetSkinningData(geometry, mesh);
-
-  // Compute visibility mask for a given meshlet. For render passes that may emit
-  // multiple meshlets per invocation, e.g. when rendering cube maps or shadow maps,
-  // each set bit corresponds to a sub-pass, and the bit index will be passed to the
-  // mesh shader via the meshlet payload field.
+  // Visibility mask for the meshlet emitted by the current invocation.
+  // Initialize to 0, since the invocation may be inactive.
   uint32_t viewMask = 0u;
   uint32_t meshletOffset = 0u;
 
-  if (meshletIndex < meshletCount) {
-    MeshletMetadata meshlet = dataBuffer.meshlets[meshletIndex];
+  if (context.invocation.isValid) {
+    // Load scene header
+    SceneHeader scene = SceneHeaderIn(context.sceneVa).header;
+    SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(context.sceneVa + scene.nodeTransformOffset);
+
+    // Load instance node
+    InstanceNodeBufferIn instanceNodes = InstanceNodeBufferIn(context.instanceVa);
+    InstanceNode instanceNode = instanceNodes.nodes[context.invocation.instanceIndex];
+
+    uint32_t nodeTransformIndex = nodeComputeTransformIndices(instanceNode.nodeIndex, scene.nodeCount, context.frameId).x;
+    Transform nodeTransform = nodeTransforms.nodeTransforms[nodeTransformIndex].absoluteTransform;
+
+    // Load draw parameters
+    InstanceHeader instanceInfo = InstanceDataBufferIn(instanceNode.propertyBuffer).header;
+    InstanceDraw draw = instanceLoadDraw(instanceNode.propertyBuffer, context.invocation.drawIndex);
+
+    // Load mesh properties
+    GeometryRef geometry = GeometryRef(instanceInfo.geometryVa);
+    Geometry geometryMetadata = geometry.geometry;
+
+    // Locate meshlet data buffer for the selected LOD
+    MeshletMetadataRef dataBuffer = MeshletMetadataRef(context.invocation.meshletBuffer);
+
+    // Load mesh instance and skinning-related properties
+    Mesh mesh = geometry.meshes[uint32_t(draw.meshIndex)];
+
+    uint32_t meshInstanceIndex = uint32_t(draw.meshInstanceIndex) + context.invocation.localMeshInstance;
+    MeshInstance meshInstance = tsLoadMeshInstance(geometry, mesh, meshInstanceIndex);
+
+    InstanceDataBufferIn instanceData = InstanceDataBufferIn(instanceNode.propertyBuffer);
+    MeshSkinningRef meshSkinning = meshGetSkinningData(geometry, mesh);
+
+    // Compute visibility mask for a given meshlet. For render passes that
+    // may emit multiple meshlets per invocation, e.g. when rendering cube
+    // maps or shadow maps, each set bit corresponds to a sub-pass.
+    MeshletMetadata meshlet = dataBuffer.meshlets[context.invocation.lodMeshletIndex];
     meshletOffset = meshlet.dataOffset;
 
-    // Load render pass info and default to rendering each view,
+    // Load render pass info and default to rendering all views,
     // since meshlets may have all culling options disabled.
     PassInfoBufferIn passBuffer = PassInfoBufferIn(context.passInfoVa);
-    PassInfo pass = passBuffer.passes[context.invocation.passIndex];
+    uint32_t passFlags = passBuffer.passes[context.invocation.passIndex].flags;
 
-    uint32_t viewCount = (pass.flags & RENDER_PASS_IS_CUBE_MAP_BIT) != 0u ? 6u : 1u;
+    uint32_t viewCount = (passFlags & RENDER_PASS_IS_CUBE_MAP_BIT) != 0u ? 6u : 1u;
     viewMask = (1u << viewCount) - 1u;
 
-    // Resolve bounding sphere and cone
-    vec2 coneAxis = meshlet.coneAxis;
-    float coneCutoff = meshlet.coneCutoff;
-
     if (meshlet.flags != 0u) {
+      // Compute transform from model space to view space
       Transform meshletTransform = Transform(meshInstance.transform, meshInstance.translate);
 
-      // Apply joint transform as necessary
       if (meshlet.jointIndex < 0xffffu) {
         uint32_t jointIndex = meshSkinning.joints[meshInstance.jointIndex + meshlet.jointIndex];
 
@@ -122,15 +108,22 @@ uint tsMain() {
         }
       }
 
-      // Apply transforms from model to view space
       meshletTransform = transChain(nodeTransform, meshletTransform);
-      meshletTransform = transChainNorm(pass.currTransform.transform, meshletTransform);
+      meshletTransform = transChainNorm(passBuffer.passes[context.invocation.passIndex].currTransform.transform, meshletTransform);
 
       // Check mirror mode, which has to be applied in mesh instance space
       uint32_t mirrorMode = asGetMirrorMode(meshInstance.extra);
 
+      vec4 passMirrorPlane = vec4(0.0f);
+
+      if ((passFlags & RENDER_PASS_USES_MIRROR_PLANE_BIT) != 0u)
+        passMirrorPlane = passBuffer.passes[context.invocation.passIndex].currMirrorPlane;
+
       // Perform cone culling if that is enabled for the meshlet. Since the
       // angles don't change with a view rotation, we only need to do this once.
+      vec2 coneAxis = meshlet.coneAxis;
+      float coneCutoff = meshlet.coneCutoff;
+
       if ((meshlet.flags & MESHLET_CULL_CONE_BIT) != 0u) {
         float coneCutoff = float(meshlet.coneCutoff);
         vec3 coneOrigin = vec3(meshlet.coneOrigin);
@@ -146,9 +139,9 @@ uint tsMain() {
         coneOrigin = transApply(meshletTransform, coneOrigin);
         coneAxis = quatApply(meshletTransform.rot, coneAxis);
 
-        if ((pass.flags & RENDER_PASS_USES_MIRROR_PLANE_BIT) != 0u) {
-          coneOrigin = planeMirror(pass.currMirrorPlane, coneOrigin);
-          coneAxis = planeMirror(pass.currMirrorPlane, coneAxis);
+        if ((passFlags & RENDER_PASS_USES_MIRROR_PLANE_BIT) != 0u) {
+          coneOrigin = planeMirror(passMirrorPlane, coneOrigin);
+          coneAxis = planeMirror(passMirrorPlane, coneAxis);
         }
 
         if (!testConeFacing(coneOrigin, coneAxis, coneCutoff))
@@ -157,6 +150,8 @@ uint tsMain() {
 
       // Cull against the mirror plane and frustum planes if necessary.
       if ((meshlet.flags & MESHLET_CULL_SPHERE_BIT) != 0u && viewMask != 0u) {
+        float passViewDistanceLimit = passBuffer.passes[context.invocation.passIndex].viewDistanceLimit;
+
         vec3 sphereCenter = vec3(meshlet.sphereCenter);
         float sphereRadius = float(meshlet.sphereRadius);
         sphereRadius *= quatGetScale(meshletTransform.rot);
@@ -166,21 +161,21 @@ uint tsMain() {
 
         sphereCenter = transApply(meshletTransform, sphereCenter);
 
-        if ((pass.flags & RENDER_PASS_USES_MIRROR_PLANE_BIT) != 0u) {
+        if ((passFlags & RENDER_PASS_USES_MIRROR_PLANE_BIT) != 0u) {
           // We also only need to test against the mirror plane once since
           // it is not dependent on the exact view orientation
-          if (!testPlaneSphere(pass.currMirrorPlane, sphereCenter, sphereRadius))
+          if (!testPlaneSphere(passMirrorPlane, sphereCenter, sphereRadius))
             viewMask = 0u;
 
           // Apply mirroring after culling to not negate the plane test
-          sphereCenter = planeMirror(pass.currMirrorPlane, sphereCenter);
+          sphereCenter = planeMirror(passMirrorPlane, sphereCenter);
         }
 
         // If the render pass has a limited view range, cull meshlets against
         // it since the instance level culling isn't very accurate.
-        if (pass.viewDistanceLimit > 0.0f) {
+        if (passViewDistanceLimit > 0.0f) {
           float sphereRadiusSq = sphereRadius * sphereRadius;
-          float maxDistanceSq = pass.viewDistanceLimit * pass.viewDistanceLimit;
+          float maxDistanceSq = passViewDistanceLimit * passViewDistanceLimit;
 
           if (!testSphereDistance(sphereCenter, sphereRadiusSq, maxDistanceSq))
             viewMask = 0u;
@@ -190,21 +185,23 @@ uint tsMain() {
           // Test bounding sphere against the view frustum for each view. Ensure
           // that the view mask is uniform here so that memory loads and some
           // of the operation can be made more efficient.
+          ViewFrustum frustum = passBuffer.passes[context.invocation.passIndex].frustum;
+
           for (uint32_t i = 0; i < viewCount; i++) {
             // If necessary, apply view rotation to the sphere center
             // so that we can test it against the view frustum.
             vec3 sphereCenterView = sphereCenter;
 
-            if ((pass.flags & RENDER_PASS_IS_CUBE_MAP_BIT) != 0u)
+            if ((passFlags & RENDER_PASS_IS_CUBE_MAP_BIT) != 0u)
               sphereCenterView = quatApply(passBuffer.cubeFaceRotations[i], sphereCenterView);
 
             // Don't trust compilers to deal with local arrays here
-            bool frustumTest = testPlaneSphere(pass.frustum.planes[0], sphereCenterView, sphereRadius)
-                            && testPlaneSphere(pass.frustum.planes[1], sphereCenterView, sphereRadius)
-                            && testPlaneSphere(pass.frustum.planes[2], sphereCenterView, sphereRadius)
-                            && testPlaneSphere(pass.frustum.planes[3], sphereCenterView, sphereRadius)
-                            && testPlaneSphere(pass.frustum.planes[4], sphereCenterView, sphereRadius)
-                            && testPlaneSphere(pass.frustum.planes[5], sphereCenterView, sphereRadius);
+            bool frustumTest = testPlaneSphere(frustum.planes[0], sphereCenterView, sphereRadius)
+                            && testPlaneSphere(frustum.planes[1], sphereCenterView, sphereRadius)
+                            && testPlaneSphere(frustum.planes[2], sphereCenterView, sphereRadius)
+                            && testPlaneSphere(frustum.planes[3], sphereCenterView, sphereRadius)
+                            && testPlaneSphere(frustum.planes[4], sphereCenterView, sphereRadius)
+                            && testPlaneSphere(frustum.planes[5], sphereCenterView, sphereRadius);
 
             if (!frustumTest)
               viewMask &= ~(1u << i);
@@ -218,9 +215,14 @@ uint tsMain() {
   uint32_t outputCount = bitCount(viewMask);
   uint32_t outputIndex = tsAllocateOutputs(outputCount);
 
-  tsPayloadInit(context.invocation, mesh, meshInstanceIndex, uint64_t(dataBuffer));
-  tsPayloadAddMeshlet(tid, meshletOffset, outputIndex, viewMask);
-  return tsGetOutputCount();
+  outputCount = tsGetOutputCount();
+
+  if (outputCount != 0u) {
+    tsPayloadInit(context.invocation);
+    tsPayloadAddMeshlet(tid, meshletOffset, outputIndex, viewMask);
+  }
+
+  return outputCount;
 }
 
 #endif // TS_INSTANCE_RENDER_H

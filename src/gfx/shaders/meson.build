@@ -15,6 +15,8 @@ as_shader_includes = files(
   'scene/animation/as_animation.glsl',
 
   'scene/draw/as_draw.glsl',
+  'scene/draw/as_draw_list_search_tree_build.glsl',
+  'scene/draw/as_draw_list_search_tree_traverse.glsl',
 
   'scene/group/as_group.glsl',
   'scene/group/as_group_visibility.glsl',
@@ -44,6 +46,7 @@ as_shader_builtins = [
 
   [ 'scene/draw/cs_draw_list_init.comp', 'cs' ],
   [ 'scene/draw/cs_draw_list_generate.comp', 'cs' ],
+  [ 'scene/draw/cs_draw_list_setup_dispatches.comp', 'cs' ],
 
   [ 'scene/group/cs_group_finalize.comp', 'cs' ],
   [ 'scene/group/cs_group_reset_update.comp', 'cs' ],
