@@ -88,6 +88,40 @@ struct GfxMeshletDualIndex {
 
 
 /**
+ * \brief Meshlet primitive group metadata
+ *
+ * Stores the vertex and primitive count of each primitive group
+ * within the overall meshlet. Offsets into the respective arrays
+ * can be computed via exclusive scans in the shader, they are
+ * not stored because they may exceed 8 bits in some cases.
+ */
+struct GfxMeshletPrimitiveGroupInfo {
+  /** Number of vertices in the group */
+  uint8_t vertexCount;
+  /** Number of primitives in the group */
+  uint8_t primitiveCount;
+};
+
+
+/**
+ * \brief Morph target info for grouped vertices
+ *
+ * Stores per-vertex morph target information. Note that this
+ * is stored with one entry per export vertex and indexed via
+ * the primitive group vertex index.
+ */
+struct GfxMeshletMorphTargetVertexInfo {
+  /** Bit mask of local morph targets affecting this vertex.
+   *  The number of bits set in this mask also indicates how
+   *  many morph data structures are stored at the given index. */
+  uint16_t morphTargetMask;
+  /** Index into morph data array. Corresponds to the morph
+   *  data structure of the first morph target for this vertex. */
+  uint16_t morphDataIndex;
+};
+
+
+/**
  * \brief Meshlet info
  *
  * Stores culling properties of the given meshlet as well as a

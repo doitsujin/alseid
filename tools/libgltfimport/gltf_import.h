@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -13,6 +14,8 @@
 #include "../../src/gfx/gfx_geometry.h"
 
 #include "../../src/job/job.h"
+
+#include "../../src/util/util_bitarray.h"
 
 #include "gltf_asset.h"
 
@@ -459,6 +462,7 @@ class GltfMeshletBuilder : public std::enable_shared_from_this<GltfMeshletBuilde
 
 public:
 
+  // TODO bump to 240/240 once we support this properly
   constexpr static uint32_t MaxVertexCount = 128;
   constexpr static uint32_t MaxPrimitiveCount = 128;
   constexpr static uint32_t MaxPrimitiveGroupSize = 32;
@@ -524,6 +528,15 @@ public:
 
 private:
 
+  struct PrimitiveGroup {
+    uint32_t primCount = 0;
+    uint32_t vertCount = 0;
+    std::array<GfxMeshletPrimitive, MaxPrimitiveGroupSize> prims = { };
+    std::array<uint8_t, MaxPrimitiveGroupSize> verts = { };
+  };
+
+  using PrimitiveGroups = small_vector<PrimitiveGroup, 8>;
+
   std::shared_ptr<GltfMeshPrimitive>      m_primitive;
   std::shared_ptr<GltfPackedVertexLayout> m_packedLayout;
   std::shared_ptr<GltfMorphTargetMap>     m_morphTargetMap;
@@ -572,7 +585,11 @@ private:
           std::vector<char>&            morphBuffer,
     const uint32_t*                     vertexIndices);
 
+  PrimitiveGroups buildPrimitiveGroups(
+    const uint8_t*                      primitiveIndices);
+
   void buildMeshletBuffer(
+    const PrimitiveGroups&              groups,
     const uint8_t*                      primitiveIndices,
     const char*                         vertexData,
     const char*                         shadingData,

@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -872,8 +873,11 @@ void GltfMeshletBuilder::buildMeshlet(
   processMorphTargets(morphTargets, morphBuffer, vertexIndices);
   m_metadata.header.morphTargetCount = morphTargets.size();
 
+  // Split meshlet into primitive groups. This only rearranges some index data.
+  PrimitiveGroups groups = buildPrimitiveGroups(primitiveIndices);
+
   // Build the actual meshlet buffer
-  buildMeshletBuffer(
+  buildMeshletBuffer(groups,
     primitiveIndices,
     vertexBuffer.data(),
     shadingBuffer.data(),
@@ -1318,7 +1322,154 @@ void GltfMeshletBuilder::processMorphTargets(
 }
 
 
+GltfMeshletBuilder::PrimitiveGroups GltfMeshletBuilder::buildPrimitiveGroups(
+  const uint8_t*                      primitiveIndices) {
+  PrimitiveGroups result = { };
+
+  // Cost coefficients
+  constexpr uint32_t CostNewVertex = 1u << 24u;
+  constexpr uint32_t CostFactorOldVertices = 1u << 16u;
+  constexpr uint32_t CostFactorNewVertices = 1u << 8u;
+  constexpr uint32_t CostUniqueVertex = 1u;
+
+  // Per-vertex primitive mask. Primitives must be removed from
+  // each vertex mask as primitives get assigned to a group.
+  auto primitives = reinterpret_cast<const GfxMeshletPrimitive*>(primitiveIndices);
+  std::array<BitArray<MaxPrimitiveCount>, MaxVertexCount> vertexPrimMasks = { };
+
+  for (uint32_t i = 0; i < m_meshlet.triangle_count; i++) {
+    vertexPrimMasks[primitives[i].at<0>()].set(i);
+    vertexPrimMasks[primitives[i].at<1>()].set(i);
+    vertexPrimMasks[primitives[i].at<2>()].set(i);
+  }
+
+  // Bit mask of vertices not yet included in any group.
+  BitArray<MaxVertexCount> vertexMask = { };
+  vertexMask.setLo(m_meshlet.vertex_count);
+
+  // Initialize mask of primitives that still needs to be processed
+  BitArray<MaxPrimitiveCount> primMask = { };
+  primMask.setLo(m_meshlet.triangle_count);
+
+  while (primMask) {
+    auto& group = result.emplace_back();
+
+    // Array used to remap vertices within a group.
+    std::array<uint8_t, MaxVertexCount> groupVertexIndices;
+
+    for (size_t i = 0; i < groupVertexIndices.size(); i++)
+      groupVertexIndices[i] = MaxPrimitiveGroupSize;
+
+    while (primMask) {
+      BitArray<MaxPrimitiveCount> iterMask = primMask;
+
+      uint32_t primIndex = ~0u;
+      uint32_t primCost = ~0u;
+
+      while (iterMask) {
+        uint32_t cost = 0u;
+        uint32_t index = iterMask.findlsb();
+
+        // Compute cost of adding the primitive to the current group.
+        //
+        // This is the core of the algorithm to ensure vertex sharing
+        // within a group, while reducing vertex duplication across
+        // groups.
+        //
+        // Costs add up as follows, from high to low:
+        // 1: Adding new vertices. This way we prefer primitives that
+        //    share vertices already in the group.
+        // 2: Number of unique primitives containing any of the vertices
+        //    already in the group. While counter-intuitive, this helps
+        //    reduce the number of groups a vertex is used in.
+        // 3: Number of unique adjacent primitives containing any of the
+        //    newly added vertices. Same idea as above.
+        // 4: Number of vertices not added to any group yet. Relevant when
+        //    beginning a new group, ensures spatial coherence and avoids
+        //    fragmenting meshlets too much.
+        BitArray<MaxPrimitiveCount> newVertexPrimMask = { };
+        BitArray<MaxPrimitiveCount> oldVertexPrimMask = { };
+
+        auto& prim = primitives[index];
+
+        for (uint32_t i = 0; i < 3; i++) {
+          uint32_t vertex = prim[i];
+
+          if (groupVertexIndices[vertex] >= group.vertCount) {
+            newVertexPrimMask |= vertexPrimMasks[vertex];
+            cost += CostNewVertex;
+          } else {
+            oldVertexPrimMask |= vertexPrimMasks[vertex];
+          }
+
+          if (vertexMask.test(vertex))
+            cost += CostUniqueVertex;
+        }
+
+        newVertexPrimMask.clear(index);
+        oldVertexPrimMask.clear(index);
+
+        cost += CostFactorNewVertices * newVertexPrimMask.popcnt();
+        cost += CostFactorOldVertices * oldVertexPrimMask.popcnt();
+
+        // If the current primitive's cost is lower than the
+        // one we previously selected, commit it and move on.
+        if (cost < primCost) {
+          primCost = cost;
+          primIndex = index;
+        }
+
+        iterMask.clear(index);
+      }
+
+      // Start a new primitive group if we cannot add the
+      // required vertices to the current group.
+      uint32_t newVertCount = primCost / CostNewVertex;
+
+      if (group.vertCount + newVertCount > MaxPrimitiveGroupSize)
+        break;
+
+      // Remove primitive from all the relevant masks
+      auto& prim = primitives[primIndex];
+      vertexPrimMasks[prim.at<0>()].clear(primIndex);
+      vertexPrimMasks[prim.at<1>()].clear(primIndex);
+      vertexPrimMasks[prim.at<2>()].clear(primIndex);
+
+      vertexMask.clear(prim.at<0>());
+      vertexMask.clear(prim.at<1>());
+      vertexMask.clear(prim.at<2>());
+
+      primMask.clear(primIndex);
+
+      // Add primitive and vertices to the current group
+      std::array<uint8_t, 3> outPrim = { };
+
+      for (uint32_t i = 0; i < 3; i++) {
+        uint32_t vertex = prim[i];
+
+        if (groupVertexIndices[vertex] >= group.vertCount) {
+          groupVertexIndices[vertex] = group.vertCount;
+          group.verts[group.vertCount++] = vertex;
+        }
+
+        outPrim[i] = groupVertexIndices[vertex];
+      }
+
+      // Write out primitive, and exit if we're full.
+      group.prims[group.primCount++] = GfxMeshletPrimitive(
+        outPrim[0], outPrim[1], outPrim[2]);
+
+      if (group.primCount == MaxPrimitiveGroupSize)
+        break;
+    }
+  }
+
+  return result;
+}
+
+
 void GltfMeshletBuilder::buildMeshletBuffer(
+  const PrimitiveGroups&              groups,
   const uint8_t*                      primitiveIndices,
   const char*                         vertexData,
   const char*                         shadingData,
