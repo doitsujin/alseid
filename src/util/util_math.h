@@ -41,7 +41,8 @@ constexpr T align(T value, T alignment) {
 }
 
 
-inline uint32_t popcntStep(uint32_t n, uint32_t mask, uint32_t shift) {
+template<typename T>
+inline T popcntStep(T n, T  mask, uint32_t shift) {
   return (n & mask) + ((n & ~mask) >> shift);
 }
 
@@ -56,11 +57,26 @@ inline uint32_t popcnt(uint32_t n) {
 #ifdef __POPCNT__
   return _mm_popcnt_u32(n);
 #else
-  n = popcntStep(n, 0x55555555, 1);
-  n = popcntStep(n, 0x33333333, 2);
-  n = popcntStep(n, 0x0F0F0F0F, 4);
-  n = popcntStep(n, 0x00FF00FF, 8);
-  n = popcntStep(n, 0x0000FFFF, 16);
+  n = popcntStep(n, 0x55555555u, 1u);
+  n = popcntStep(n, 0x33333333u, 2u);
+  n = popcntStep(n, 0x0F0F0F0Fu, 4u);
+  n = popcntStep(n, 0x00FF00FFu, 8u);
+  n = popcntStep(n, 0x0000FFFFu, 16u);
+  return n;
+#endif
+}
+
+
+inline uint32_t popcnt(uint64_t n) {
+#ifdef __POPCNT__
+  return _mm_popcnt_u64(n);
+#else
+  n = popcntStep(n, uint64_t(0x5555555555555555ull), 1u);
+  n = popcntStep(n, uint64_t(0x3333333333333333ull), 2u);
+  n = popcntStep(n, uint64_t(0x0F0F0F0F0F0F0F0Full), 4u);
+  n = popcntStep(n, uint64_t(0x00FF00FF00FF00FFull), 8u);
+  n = popcntStep(n, uint64_t(0x0000FFFF0000FFFFull), 16u);
+  n = popcntStep(n, uint64_t(0x00000000FFFFFFFFull), 32u);
   return n;
 #endif
 }
