@@ -989,19 +989,8 @@ std::vector<std::pair<uint8_t, uint8_t>> GltfMeshletBuilder::computeDualIndexBuf
   vertexData.resize(vertexDataCount);
   shadingData.resize(shadingDataCount);
 
-  // Only enable dual indexing if doing so allows us to save memory
-  uint32_t oldDataSize = m_meshlet.vertex_count * (vertexStride + shadingStride);
-  uint32_t newDataSize = vertexDataCount * vertexStride + shadingDataCount * shadingStride + 2 * m_meshlet.vertex_count;
-
-  if (newDataSize <= oldDataSize) {
-    m_metadata.header.flags |= GfxMeshletFlag::eDualIndex;
-    m_metadata.header.vertexDataCount = vertexDataCount;
-    m_metadata.header.shadingDataCount = shadingDataCount;
-  } else {
-    m_metadata.header.vertexDataCount = m_meshlet.vertex_count;
-    m_metadata.header.shadingDataCount = m_meshlet.vertex_count;
-  }
-
+  m_metadata.header.vertexDataCount = vertexDataCount;
+  m_metadata.header.shadingDataCount = shadingDataCount;
   return result;
 }
 
@@ -1344,10 +1333,8 @@ void GltfMeshletBuilder::buildMeshletBuffer(
   allocateStorage(offset, localJointDataSize);
 
   // Dual index data is always accessed first
-  if (m_metadata.header.flags & GfxMeshletFlag::eDualIndex) {
-    m_metadata.header.dualIndexOffset = allocateStorage(offset,
-      m_meshlet.vertex_count * 2);
-  }
+  m_metadata.header.dualIndexOffset = allocateStorage(offset,
+    m_meshlet.vertex_count * 2);
 
   // Joint data is always required for vertex processing if present.
   if (m_metadata.header.jointCountPerVertex) {
@@ -1413,12 +1400,10 @@ void GltfMeshletBuilder::buildMeshletBuffer(
   for (uint32_t i = 0; i < m_meshlet.vertex_count; i++) {
     std::pair<uint8_t, uint8_t> dualIndex = dualIndexData[i];
 
-    if (m_metadata.header.flags & GfxMeshletFlag::eDualIndex) {
-      auto dstDualIndexData = reinterpret_cast<uint8_t*>(&m_buffer[m_metadata.header.dualIndexOffset * 16]);
-      dstDualIndexData[2 * i + 0] = dualIndexData[i].first;
-      dstDualIndexData[2 * i + 1] = dualIndexData[i].second;
-      dualIndex = { i, i };
-    }
+    auto dstDualIndexData = reinterpret_cast<uint8_t*>(&m_buffer[m_metadata.header.dualIndexOffset * 16]);
+    dstDualIndexData[2 * i + 0] = dualIndexData[i].first;
+    dstDualIndexData[2 * i + 1] = dualIndexData[i].second;
+    dualIndex = { i, i };
 
     if (i < m_metadata.header.vertexDataCount) {
       std::memcpy(&dstVertexData[i * vertexStride],
@@ -1451,9 +1436,7 @@ void GltfMeshletBuilder::buildMeshletBuffer(
 
     for (uint32_t j = 0; j < 3; j++) {
       uint8_t index = primitiveIndices[3 * i + j];
-
-      if (m_metadata.header.flags & GfxMeshletFlag::eDualIndex)
-        index = dualIndexData[index].first;
+      index = dualIndexData[index].first;
 
       dstBvhIndexData[3 * i + j] = uint16_t(index);
     }
@@ -1622,18 +1605,15 @@ void GltfMeshPrimitiveConverter::readPrimitiveData() {
 
 
 void GltfMeshPrimitiveConverter::generateMeshlets() {
-  constexpr uint32_t maxVertexCount = 128;
-  constexpr uint32_t maxPrimitiveCount = 128;
-
   auto position = m_inputLayout.findAttribute("POSITION");
 
   // Figure out an upper bound for the number of meshlets
   size_t meshletCount = meshopt_buildMeshletsBound(
-    m_sourceIndexBuffer.size(), maxVertexCount, maxPrimitiveCount);
+    m_sourceIndexBuffer.size(), GltfMeshletBuilder::MaxVertexCount, GltfMeshletBuilder::MaxPrimitiveCount);
 
   m_meshletMetadata.resize(meshletCount);
-  m_meshletIndexBuffer.resize(meshletCount * maxPrimitiveCount * 3);
-  m_meshletVertexIndices.resize(meshletCount * maxVertexCount);
+  m_meshletIndexBuffer.resize(meshletCount * GltfMeshletBuilder::MaxPrimitiveCount * 3);
+  m_meshletVertexIndices.resize(meshletCount * GltfMeshletBuilder::MaxVertexCount);
 
   meshletCount = meshopt_buildMeshlets(
     m_meshletMetadata.data(),
@@ -1643,7 +1623,8 @@ void GltfMeshPrimitiveConverter::generateMeshlets() {
     m_sourceIndexBuffer.size(),
     &m_sourceVertexBuffer[0].f32[position->offset],
     m_sourceVertexBuffer.size(), sizeof(GltfVertex),
-    maxVertexCount, maxPrimitiveCount, 0.85f);
+    GltfMeshletBuilder::MaxVertexCount,
+    GltfMeshletBuilder::MaxPrimitiveCount, 0.85f);
 
   // Already allocate the meshlet builder array so
   // that the caller doesn't have to worry about it

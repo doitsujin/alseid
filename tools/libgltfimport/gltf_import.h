@@ -459,6 +459,10 @@ class GltfMeshletBuilder : public std::enable_shared_from_this<GltfMeshletBuilde
 
 public:
 
+  constexpr static uint32_t MaxVertexCount = 128;
+  constexpr static uint32_t MaxPrimitiveCount = 128;
+  constexpr static uint32_t MaxPrimitiveGroupSize = 32;
+
   GltfMeshletBuilder(
           std::shared_ptr<GltfMeshPrimitive> primitive,
           GltfVertexLayout                inputLayout,

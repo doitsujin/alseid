@@ -34,11 +34,6 @@ using GfxMeshletCullFlags = Flags<GfxMeshletCullFlag>;
  * \brief Meshlet property flags
  */
 enum class GfxMeshletFlag : uint16_t {
-  /** Meshlet uses dual index buffers to fetch vertex
-   *  data, one set for vertex position data and one
-   *  for shading data. Does not affect morph targets. */
-  eDualIndex        = (1u << 0),
-
   eFlagEnum         = 0
 };
 

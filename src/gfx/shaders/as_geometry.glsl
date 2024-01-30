@@ -220,9 +220,6 @@ readonly buffer MeshletMetadataRef {
 // relevant for rendering the meshlet in question.
 #define MESHLET_LOCAL_JOINT_COUNT       (16u)
 
-#define MESHLET_DUAL_INDEX_BIT          (1u << 0)
-#define MESHLET_LOCAL_JOINTS_BIT        (1u << 1)
-
 struct Meshlet {
   uint16_t  flags;
   uint8_t   vertexCount;

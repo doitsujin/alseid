@@ -290,12 +290,6 @@ void msExportPrimitive(uint index, u8vec3 indices
 }
 
 
-// Checks whether dual indexing is enabled for the current meshlet.
-bool msMeshletHasDualIndexing(in Meshlet meshlet) {
-  return (meshlet.flags & MESHLET_DUAL_INDEX_BIT) != 0;
-}
-
-
 // Helper to load primitive indices
 uvec3 msLoadPrimitive(in MsContext context, in Meshlet meshlet, uint index) {
   uint64_t address = meshletComputeAddress(context.invocation.meshletVa, meshlet.primitiveOffset);
@@ -922,10 +916,7 @@ void msMain() {
 
   // If the meshlet has dual-indexing enabled, load index pairs into
   // shared memory as well. We will use this data multiple times.
-  bool hasDualIndexing = msMeshletHasDualIndexing(meshlet);
-
-  if (hasDualIndexing)
-    msLoadDualVertexIndicesFromMemory(context, meshlet);
+  msLoadDualVertexIndicesFromMemory(context, meshlet);
 
   // Insert a barrier here since LDS initialization needs
   // to have finished before processing morph targets.
@@ -940,8 +931,8 @@ void msMain() {
 
   // If any morph targets are active, we cannot compact vertex
   // position data and need to process each output vertex separately.
-  bool hasCompactVertexOutputs = hasDualIndexing && morphTargetCount == 0;
-  bool hasUnpackedVertexOutputs = hasDualIndexing && morphTargetCount != 0;
+  bool hasCompactVertexOutputs = morphTargetCount == 0;
+  bool hasUnpackedVertexOutputs = morphTargetCount != 0;
 
   uint outputVertexCount = hasUnpackedVertexOutputs
     ? meshlet.vertexCount
@@ -1105,7 +1096,7 @@ void msMain() {
     // Compute vertex and shading data indices
     uvec2 dualIndex = uvec2(index);
 
-    if (hasDualIndexing && !hasCompactVertexExports)
+    if (!hasCompactVertexExports)
       dualIndex = msGetDualVertexIndex(index);
 
     // Compute index of vertex output data in LDS
