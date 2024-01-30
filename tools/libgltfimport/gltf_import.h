@@ -463,9 +463,10 @@ class GltfMeshletBuilder : public std::enable_shared_from_this<GltfMeshletBuilde
 public:
 
   // TODO bump to 240/240 once we support this properly
-  constexpr static uint32_t MaxVertexCount = 128;
-  constexpr static uint32_t MaxPrimitiveCount = 128;
-  constexpr static uint32_t MaxPrimitiveGroupSize = 32;
+  constexpr static uint32_t MaxVertexCount = 128u;
+  constexpr static uint32_t MaxPrimitiveCount = 128u;
+  constexpr static uint32_t MaxPrimitiveGroupSize = 32u;
+  constexpr static uint32_t MeshletDataAlignment = 256u;
 
   GltfMeshletBuilder(
           std::shared_ptr<GltfMeshPrimitive> primitive,

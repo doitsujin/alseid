@@ -1531,6 +1531,9 @@ void GltfMeshletBuilder::buildMeshletBuffer(
   m_metadata.rayTracing.primitiveCount = m_meshlet.triangle_count;
   m_metadata.rayTracing.jointIndex = m_metadata.header.jointIndex;
 
+  // Pad allocation to 256 bytes for cache efficiency reasons
+  offset = align(offset, uint16_t(MeshletDataAlignment / 16));
+
   // Allocate buffer and write the header
   m_buffer.resize(offset * 16);
   std::memcpy(&m_buffer[0], &m_metadata.header, sizeof(m_metadata.header));
@@ -2913,6 +2916,7 @@ void GltfConverter::buildGeometry() {
 
   // At this point, all non-meshlet metadata is accounted
   // for, so we can compute the final buffer sizes.
+  bufferOffset = align(bufferOffset, GltfMeshletBuilder::MeshletDataAlignment);
   m_geometry->info.meshletDataOffset = bufferOffset;
 
   // Compute meshlet buffer metadata size
