@@ -31,16 +31,6 @@ using GfxMeshletCullFlags = Flags<GfxMeshletCullFlag>;
 
 
 /**
- * \brief Meshlet property flags
- */
-enum class GfxMeshletFlag : uint16_t {
-  eFlagEnum         = 0
-};
-
-using GfxMeshletFlags = Flags<GfxMeshletFlag>;
-
-
-/**
  * \brief Primitive data
  *
  * Stores three packed 8-bit indices
@@ -104,6 +94,24 @@ struct GfxMeshletPrimitiveGroupInfo {
 
 
 /**
+ * \brief Meshlet primitive group index set
+ *
+ * Encodes three 5-bit indices into a single 16-bit integer.
+ */
+struct GfxMeshletPrimitiveGroupIndices {
+  GfxMeshletPrimitiveGroupIndices() = default;
+
+  explicit GfxMeshletPrimitiveGroupIndices(
+          GfxMeshletPrimitive           prim)
+  : indices(uint16_t(prim.at<0>()) << 0 |
+            uint16_t(prim.at<1>()) << 5 |
+            uint16_t(prim.at<2>()) << 10) { }
+
+  uint16_t indices;
+};
+
+
+/**
  * \brief Morph target info for grouped vertices
  *
  * Stores per-vertex morph target information. Note that this
@@ -151,8 +159,9 @@ struct GfxMeshletInfo {
   /** Meshlet data offset relative to the start
    *  of the buffer, always aligned to 16 bytes. */
   uint32_t dataOffset;
-  /** Reserved for future use */
-  uint32_t reserved;
+  /** Number of primitive groups. Used to compute the
+   *  number of mesh shader workgroups to dispatch. */
+  uint32_t groupCount;
 };
 
 static_assert(sizeof(GfxMeshletInfo) == 32);
@@ -170,75 +179,65 @@ static_assert(sizeof(GfxMeshletInfo) == 32);
  * per meshlet.
  */
 struct GfxMeshletHeader {
-  /** Meshlet property flags. */
-  GfxMeshletFlags flags;
-  /** Total number of vertices in the meshlet. Should generally not
-   *  exceed 128. If dual index buffers are enabled, this is equal
-   *  the number of index pairs in the buffer. */
-  uint8_t vertexCount;
-  /** Number of triangles in the meshlet. Should generally not exceed
-   *  128. Equal to the number of primitive entries in the buffer. */
-  uint8_t primitiveCount;
-  /** Number of vertex data instances. If dual index buffers are
-   *  enabled, this may be lower than the total vertex count, and
-   *  the first index in the index pair can be used to access this
-   *  data. */
-  uint8_t vertexDataCount;
-  /** Number of shading data instances. If dual index buffers are
-   *  enabled, this may be lower than the total vertex count, and
-   *  the second index in the pair can be used to access this data. */
-  uint8_t shadingDataCount;
-  /** Dual index buffer offset, relative to the meshlet header.
-   *  Only relevant if dual index buffers are enabled. */
-  uint16_t dualIndexOffset;
-  /** Primitive data offset, relative to the meshlet header. Primitive
-   *  data is tightly packed with three bytes per triangle. */
-  uint16_t primitiveOffset;
+  /** Vertex index offset, relative to the meshlet header. Stores a pair
+   *  of indices into the vertex and shading data arrays for each vertex
+   *  in a primitive group. */
+  uint16_t groupVertexOffset;
+  /** Primitive data offset, relative to the meshlet header. Stores indices
+   *  as a tightly packed array 16-bit integers, with 5 bits per index, which
+   *  correspond to a local vertex index. These must be remapped at runtime
+   *  to actual export indices. */
+  uint16_t groupPrimitiveOffset;
   /** Vertex data offset relative to the meshlet header. */
   uint16_t vertexDataOffset;
   /** Shading data offset relative to the meshlet header. */
   uint16_t shadingDataOffset;
+  /** Total number of vertex data structures in the meshlet. */
+  uint8_t vertexDataCount;
+  /** Total number of shading data structures in the meshlet. */
+  uint8_t shadingDataCount;
+  /** Number of unique joints used by this meshlet. Per-vertex
+   *  joint indices will index into the skin index array. */
+  uint8_t jointCount;
   /** Number of joint index and weight structures for each vertex,
    *  i.e. the maximum number of joint influences per vertex. */
-  uint16_t jointCountPerVertex;
+  uint8_t jointCountPerVertex;
   /** Offset of the joint index and weight arrays within the buffer.
    *  This is laid out in such a way that joint data is stored in
    *  \c vertexDataCount consecutive elements for every possible
    *  joint. */
   uint16_t jointDataOffset;
-  /** Morph target vertex data offset. Stores a tightly packed
-   *  array of material-specific morph data structures that can
-   *  be indexed using the vertex mask and offset from the morph
-   *  target metadata structure. */
-  uint16_t morphDataOffset;
-  /** Morph target metadata offset. Morph data does not use dual
-   *  index buffers, and instead needs to be loaded for each
-   *  output vertex. */
-  uint16_t morphTargetOffset;
-  /** Bit mask of morph targets affecting this meshlet. The number
-   *  of bits set here determines the number of morph target info
-   *  structures in the buffer. */
-  uint16_t morphTargetCount;
-  /** Number of unique joints used by this meshlet. Per-vertex joint
-   *  indices will index into the local joint index array, which
-   *  immediately follows the meshlet header as an array of 16-bit
-   *  indices, which in turn indexes into the mesh instance skin. */
-  uint16_t jointCount;
   /** Dominant joint. If this is a valid joint index, all vertices
    *  within the meshlet must be transformed using this joint with
    *  a weight of 1. \c jointCount will be 0 in that case. */
   uint16_t jointIndex;
-  uint32_t reserved1;
+  /** Number of morph targets that affect this meshlet. Actual morph
+   *  target indices are stored in the skin index array, immediately
+   *  following the joint indices. */
+  uint16_t morphTargetCount;
+  /** Morph target metadata offset. Laid out the same way as primitive
+   *  data, with one entry per group vertex. */
+  uint16_t morphTargetOffset;
+  /** Morph target vertex data offset. Stores a tightly packed array
+   *  of material-specific morph data structures that can be indexed
+   *  using the vertex mask and offset from the morph target metadata
+   *  structure. */
+  uint16_t morphDataOffset;
+  /** Offset of skin index data relative to the meshlet header. This
+   *  stores a tightly packed array of joint and morph target indices,
+   *  with joint indices being relative to the mesh skin, and morph
+   *  target indices being absolute. */
+  uint16_t skinIndexOffset;
 };
 
-static_assert(sizeof(GfxMeshletHeader) == 32);
+static_assert(sizeof(GfxMeshletHeader) == 24);
 
 
 /**
  * \brief Joint index + weight pair
  */
 struct GfxMeshletJointData {
-  constexpr static uint32_t WeightBits = 11;
+  constexpr static uint32_t WeightBits = 12;
   constexpr static uint32_t WeightFactor = (1u << WeightBits) - 1;
 
   GfxMeshletJointData() = default;
@@ -249,9 +248,8 @@ struct GfxMeshletJointData {
   : jointWeightAndIndex((index << WeightBits) |
       clamp<uint16_t>(uint16_t(weight * float(WeightFactor)), 0, WeightFactor)) { }
 
-  /** Joint weight in the lower 11 bits as a normalized
-   *  unsigned integer, and local joint index in the
-   *  upper 5 bits. */
+  /** Joint weight in the lower bits as a normalized unsigned
+   *  integer, and local joint index in the upper bits. */
   uint16_t jointWeightAndIndex;
 
   uint16_t getIndex() const {
@@ -312,23 +310,6 @@ struct GfxMeshletMetadata {
   /** Meshlet ray tracing info */
   GfxMeshletRayTracingInfo rayTracing = { };
 };
-
-
-/**
- * \brief Morph target metadata structure
- */
-struct GfxMeshletMorphTargetInfo {
-  /** Morph target index. */
-  uint16_t targetIndex;
-  /** Index of the morph data structure for the first affected
-   *  vertex in the meshlet morh data array. */
-  uint16_t dataIndex;
-  /** Bit mask of meshlet vertices affected by this morph target.
-  *   Requires that the meshlet has at most 128 vertices. */
-  std::array<uint32_t, 4> vertexMask;
-};
-
-static_assert(sizeof(GfxMeshletMorphTargetInfo) == 20);
 
 
 /**

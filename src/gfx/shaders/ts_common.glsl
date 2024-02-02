@@ -7,67 +7,28 @@
 layout(local_size_x_id = SPEC_CONST_ID_TASK_SHADER_WORKGROUP_SIZE) in;
 
 
-// Reserves space for meshlet outputs per invocation. This must be
-// called exactly once from uniform control flow. Returns the index
-// of the allocated output slot within the payload. The return value
-// is undefined for any invocation with a count of 0.
-shared uint tsOutputIndexShared;
+// Computes the number of workgroups to spawn based
+// on a thread-local, per-meshlet workgroup count.
+shared uint32_t tsOutputCountShared;
 
-uint tsOutputIndexLocal = 0;
-
-uint tsAllocateOutputs(uint count) {
-  uint localIndex = 0;
-  uint localCount = 0;
-
-  if (subgroupAny(count > 1)) {
-    // Having to do the double-reduction is kind of bad but
-    // there's no way to broadcast data from the last lane
-    localIndex = subgroupExclusiveAdd(count);
-    localCount = subgroupAdd(count);
-  } else {
-    // When only allocating one output, take a fast path.
-    // This can be a compile-time optimization if the task
-    // shader only ever emits one workgroup per invocation.
-    uvec4 mask = subgroupBallot(count != 0);
-
-    localIndex = subgroupBallotBitCount(mask & gl_SubgroupLtMask);
-    localCount = subgroupBallotBitCount(mask);
-  }
+uint32_t tsComputeOutputCount(uint32_t localCount) {
+  uint32_t result = subgroupAdd(localCount);
 
   if (!IsSingleSubgroup) {
-    // Initialize the shared counter here. This is fine since the
-    // function is not intended to be called multiple times.
-    if (gl_LocalInvocationIndex == 0)
-      tsOutputIndexShared = 0;
+    if (gl_LocalInvocationIndex == 0u)
+      tsOutputCountShared = 0u;
 
     barrier();
-
-    // Use the shared counter to compute indices for each subgroup
-    uint first;
 
     if (subgroupElect())
-      first = atomicAdd(tsOutputIndexShared, localCount);
-
-    localIndex += subgroupBroadcastFirst(first);
+      atomicAdd(tsOutputCountShared, tsOutputCountShared);
 
     barrier();
 
-    // Broadcast the total allocation count across the workgroup.
-    tsOutputIndexLocal = tsOutputIndexShared;
-  } else {
-    // Adjust the local counter. This should end up in
-    // a scalar register since all values are uniform.
-    tsOutputIndexLocal = localCount;
+    result = tsOutputCountShared;
   }
 
-  return localIndex;
-}
-
-
-// Returns the total number of allocated outputs.
-// Can be passed directly to EmitMeshTasksEXT.
-uint tsGetOutputCount() {
-  return tsOutputIndexLocal;
+  return result;
 }
 
 #endif // TS_COMMON_H

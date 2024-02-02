@@ -2,10 +2,12 @@
 #pragma use_vulkan_memory_model
 
 // Common extensions
-#extension GL_EXT_buffer_reference2 : require
+#extension GL_EXT_buffer_reference2 : enable
+#extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_null_initializer : enable
 #extension GL_EXT_samplerless_texture_functions : enable
-#extension GL_EXT_scalar_block_layout : require
-#extension GL_EXT_shader_8bit_storage : require
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_EXT_shader_8bit_storage : enable
 #extension GL_EXT_shader_explicit_arithmetic_types : enable
 
 #extension GL_KHR_memory_scope_semantics : enable
@@ -24,6 +26,7 @@
 #if defined(STAGE_TASK) || defined(STAGE_MESH) || defined(STAGE_COMP)
 #extension GL_KHR_shader_subgroup_clustered : enable
 #extension GL_KHR_shader_subgroup_shuffle : enable
+#extension GL_KHR_shader_subgroup_shuffle_relative : enable
 #endif
 
 #if defined(STAGE_FRAG)

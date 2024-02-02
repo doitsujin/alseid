@@ -184,39 +184,6 @@
 
 #define MS_MAIN msMain
 
-// Disable uniform output if no per-primitive outputs are used.
-#if !defined(FS_UNIFORM) && !defined(MS_EXPORT_LAYER) && !defined(MS_EXPORT_VIEWPORT)
-  #define MS_NO_UNIFORM_OUTPUT 1
-#endif
-
-
-// Disable shading data entirely if we do not
-// produce any data for a fragment shader
-#ifndef MS_NO_SHADING_DATA
-  #ifndef FS_INPUT
-  #define MS_NO_SHADING_DATA 1
-  #endif // FS_INPUT
-#endif // MS_NO_SHADING_DATA
-
-
-// Work out whether we can define the combined
-// vertex input data struct at all
-#ifndef MS_NO_VERTEX_DATA
-#define MS_COMBINED_DATA 1
-#endif
-
-#ifndef MS_NO_SHADING_DATA
-#define MS_COMBINED_DATA 1
-#endif
-
-// Maximum number of morph targets that can concurrently
-// affect a single meshlet, i.e. have a non-zero weight.
-#define MAX_MORPH_TARGET_COUNT (16)
-
-layout(triangles,
-  max_vertices = MAX_VERT_COUNT,
-  max_primitives = MAX_PRIM_COUNT) out;
-
 
 // Per-vertex fragment shader inputs
 #ifdef FS_INPUT
@@ -238,9 +205,9 @@ FS_UNIFORM
 // as invariant, so that depth passes are reliable.
 out gl_MeshPerVertexEXT {
   invariant vec4 gl_Position;
-#ifdef MS_CLIP_PLANES
+#if MS_CLIP_PLANES > 0
   float gl_ClipDistance[MS_CLIP_PLANES];
-#endif
+#endif // MS_CLIP_PLANES
 } gl_MeshVerticesEXT[];
 
 
@@ -249,7 +216,7 @@ out gl_MeshPerVertexEXT {
 void msExportVertex(uint index, in MsVertexOut vertex) {
   gl_MeshVerticesEXT[index].gl_Position = vec4(vertex.position);
 
-#ifdef MS_CLIP_PLANES
+#if MS_CLIP_PLANES > 0
   for (uint i = 0; i < MS_CLIP_PLANES; i++)
     gl_MeshVerticesEXT[index].gl_ClipDistance[i] = float(vertex.clip[i]);
 #endif // MS_CLIP_PLANES
@@ -264,38 +231,105 @@ void msExportVertex(uint index, in MsVertexOut vertex) {
 void msExportVertexFsInput(uint index, in FsInput data) {
   FS_INPUT
 }
-#endif
+#endif // FS_INPUT
 
-// Helper function to export primitive data, including indices.
-void msExportPrimitive(uint index, u8vec3 indices
-#ifndef MS_NO_UNIFORM_OUTPUT
-  , in MsUniformOut msUniform
-#endif
-) {
+// Helper function to export primitive indices.
+void msExportPrimitive(uint index, u8vec3 indices) {
   gl_PrimitiveTriangleIndicesEXT[index] = indices;
+}
 
+
+// Helper function to export uniforms as primitive data.
+#ifndef MS_NO_UNIFORM_OUTPUT
+void msExportUniform(uint count, in MsUniformOut msUniform) {
+  MS_LOOP_WORKGROUP(index, count, MS_MAX_PRIM_COUNT) {
 #ifdef MS_EXPORT_LAYER
-  gl_MeshPrimitivesEXT[index].gl_Layer = uint(msUniform.layer);
+    gl_MeshPrimitivesEXT[index].gl_Layer = uint(msUniform.layer);
 #endif // MS_EXPORT_LAYER
 
 #ifdef MS_EXPORT_VIEWPORT
-  gl_MeshPrimitivesEXT[index].gl_ViewportIndex = uint(msUniform.viewport);
+    gl_MeshPrimitivesEXT[index].gl_ViewportIndex = uint(msUniform.viewport);
 #endif // MS_EXPORT_VIEWPORT
 
 #ifdef FS_UNIFORM
 #undef FS_INPUT_VAR
 #define FS_INPUT_VAR(l, t, n) fs_##n[index] = msUniform.n;
-  FS_UNIFORM
+    FS_UNIFORM
 #endif // FS_UNIFORM
+  }
+}
+#endif // MS_NO_UNIFORM_OUTPUT
+
+
+// Shared primitive and vertex allocators. When running a single
+// subgroup, a subgroup-uniform global variable will be used,
+// otherwise we have to resort to shared memory.
+shared uint msPrimAllocatorShared;
+shared uint msVertAllocatorShared;
+
+uint msPrimAllocatorGlobal;
+uint msVertAllocatorGlobal;
+
+void msInitDataAllocators() {
+  if (IsSingleSubgroup) {
+    msPrimAllocatorGlobal = 0u;
+    msVertAllocatorGlobal = 0u;
+  } else {
+    if (gl_LocalInvocationIndex == 0u) {
+      msPrimAllocatorShared = 0u;
+      msVertAllocatorShared = 0u;
+    }
+
+    barrier();
+  }
 }
 
 
-// Helper to load primitive indices
-uvec3 msLoadPrimitive(in MsContext context, in Meshlet meshlet, uint index) {
-  uint64_t address = meshletComputeAddress(context.invocation.meshletVa, meshlet.primitiveOffset);
+// Helper function to allocate up to one primitive and vertex for the
+// current thread. Used to store and export compacted output data.
+u32vec2 msAllocateVertexAndPrimitive(
+        bool                          vert,
+        bool                          prim) {
+  uvec4 vertBallot = subgroupBallot(vert);
+  uvec4 primBallot = subgroupBallot(prim);
 
-  uvec3 result = uvec3(MeshletPrimitiveDataRef(address).primitives[index]);
-  return ((context.flags & MS_FLIP_FACE_BIT) != 0u) ? result.xzy : result.xyz;
+  uint vertCount = subgroupBallotBitCount(vertBallot);
+  uint primCount = subgroupBallotBitCount(primBallot);
+
+  uint vertIndex = subgroupBallotExclusiveBitCount(vertBallot);
+  uint primIndex = subgroupBallotExclusiveBitCount(primBallot);
+
+  uint firstVert;
+  uint firstPrim;
+
+  if (IsSingleSubgroup) {
+    firstVert = msVertAllocatorGlobal;
+    firstPrim = msPrimAllocatorGlobal;
+
+    msVertAllocatorGlobal += vertCount;
+    msPrimAllocatorGlobal += primCount;
+  } else {
+    if (subgroupElect()) {
+      firstVert = atomicAdd(msVertAllocatorShared, vertCount);
+      firstPrim = atomicAdd(msPrimAllocatorShared, primCount);
+    }
+
+    firstVert = subgroupBroadcastFirst(firstVert);
+    firstPrim = subgroupBroadcastFirst(firstPrim);
+  }
+
+  return u32vec2(
+    firstVert + vertIndex,
+    firstPrim + primIndex);
+}
+
+
+// Returns total number of allocated primitives and vertices.
+u32vec2 msGetOutputCounts() {
+  if (IsSingleSubgroup)
+    return u32vec2(msVertAllocatorGlobal, msPrimAllocatorGlobal);
+  else
+    return u32vec2(msVertAllocatorShared, msPrimAllocatorShared);
 }
 
 
@@ -315,198 +349,362 @@ readonly buffer MsInputShadingDataRef {
 #endif // MS_NO_SHADING_DATA
 
 
-// Helper struct to combine both vertex and shading data into
-// one structure. Used mostly for morphing everything in one go.
-#ifdef MS_COMBINED_DATA
-struct MsCombinedIn {
-#ifndef MS_NO_VERTEX_DATA
-  MsVertexIn vertex;
-#endif // MS_NO_VERTEX_DATA
-#ifndef MS_NO_SHADING_DATA
-  MsShadingIn shading;
-#endif // MS_NO_SHADING_DATA
-  uint dummy;
-};
-#endif // MS_COMBINED_DATA
+#ifndef MS_NO_MOTION_VECTORS
+// Checks whether motion vectors can be used for the current instance.
+// This is the case if the instance has been updated in the current
+// frame and does not have the flag to explicitly disable them.
+bool msInstanceUsesMotionVectors(in MsContext context) {
+  return !asTest(context.flags, MS_NO_MOTION_VECTORS_BIT)
+      && !asTest(context.invocation.instanceNode.flags, INSTANCE_NO_MOTION_VECTORS_BIT);
+}
+#endif // MS_NO_MOTION_VECTORS
 
 
+// Number of joint and morph target sets
+#ifndef MS_NO_MOTION_VECTORS
+#define MS_SKIN_SETS (2u)
+#else
+#define MS_SKIN_SETS (1u)
+#endif
+
+
+#ifndef MS_NO_MORPH_DATA
 // Buffer reference type for morph data. Morph data may be loaded from
 // memory multiple times since the amount of data is expected to be large.
-#ifndef MS_NO_MORPH_DATA
 layout(buffer_reference, buffer_reference_align = 16, scalar)
 readonly buffer MsInputMorphDataRef {
   MsMorphIn vertices[];
 };
 
-MsInputMorphDataRef msGetMeshletMorphData(in MsContext context, in Meshlet meshlet) {
-  return MsInputMorphDataRef(meshletComputeAddress(context.invocation.meshletVa, meshlet.morphDataOffset));
+
+// Helper function to load morph target data for a given vertex. Must only
+// be called for vertices which are affected by the given morph target.
+MsMorphIn msLoadMorphData(
+        MsInputMorphDataRef           morphData,
+        uint32_t                      morphTarget,
+  in    MeshletMorphTargetVertexInfo  vertex) {
+  uint32_t localIndex = bitCount(uint32_t(vertex.morphTargetMask) & ((1u << morphTarget) - 1u));
+  return morphData.vertices[uint32_t(vertex.morphDataIndex) + localIndex];
 }
+
+
+// Morph target weights, and the active morph target mask. Any target with
+// a weight of zero can be skipped.
+shared int16_t msMorphTargetWeightsShared[MS_SKIN_SETS][MESHLET_LOCAL_MORPH_TARGET_COUNT];
+shared uint32_t msMorphTargetActiveMaskShared;
+
+int32_t msMorphTargetWeightsGlobal;
+uint32_t msMorphTargetActiveMaskGlobal;
+
+
+// Retrieves active morph target mask for the given set.
+// Excludes any morph targets with a weight of zero.
+uint32_t msGetMorphTargetMask(
+        uint32_t                      weightSet) {
+  uint32_t mask = msMorphTargetActiveMaskGlobal;
+
+  return bitfieldExtract(mask,
+    int(MESHLET_LOCAL_MORPH_TARGET_COUNT * weightSet),
+    int(MESHLET_LOCAL_MORPH_TARGET_COUNT));
+}
+
+
+// Retrieves the weight of a morph target as a floating point number.
+// The morph target index must be uniform.
+float msGetMorphTargetWeight(
+        uint32_t                      weightSet,
+        uint32_t                      index) {
+  int32_t weight;
+
+  if (IsFullSubgroup && gl_SubgroupSize >= MESHLET_LOCAL_MORPH_TARGET_COUNT) {
+    i16vec2 packed = unpack16(subgroupBroadcast(msMorphTargetWeightsGlobal, index));
+    weight = weightSet == 0u ? packed.x : packed.y;
+  } else {
+    weight = msMorphTargetWeightsShared[weightSet][index];
+  }
+
+  return clamp(weight / 32767.0f, -1.0f, 1.0f);
+}
+
+
+// Loads morph target weights from memory and stores them either in
+// a shared array, or in a single vector register if the subgroup
+// size is sufficiently large.
+void msLoadMorphTargetWeightsFromMemory(
+  in    MsContext                     context,
+  in    Meshlet                       meshlet) {
+  bool useSubgroupPath = IsFullSubgroup && gl_SubgroupSize >= MESHLET_LOCAL_MORPH_TARGET_COUNT;
+
+  MeshletSkinIndexRef skinIndices = MeshletSkinIndexRef(
+    meshletComputeAddress(context.invocation.meshletVa, meshlet.skinIndexOffset));
+
+  uint32_t tid = useSubgroupPath
+    ? gl_SubgroupInvocationID
+    : gl_LocalInvocationIndex;
+
+  i16vec2 weights = i16vec2(0s, 0s);
+
+  if (tid < meshlet.morphTargetCount) {
+    uint32_t index = skinIndices.indices[meshlet.jointCount + tid];
+
+    weights.x = instanceLoadMorphTargetWeight(
+      context.invocation.instanceNode.propertyBuffer, 0u, index);
+
+#ifndef MS_NO_MOTION_VECTORS
+    weights.y = instanceLoadMorphTargetWeight(
+      context.invocation.instanceNode.propertyBuffer, 1u, index);
+#endif // MS_NO_MOTION_VECTORS
+  }
+
+  if (useSubgroupPath) {
+    // Pack the weight pair to make sure we only use one register.
+    // We can use simple ballots to generate the mask,
+    msMorphTargetWeightsGlobal = pack32(weights);
+    msMorphTargetActiveMaskGlobal = subgroupBallot(weights.x != 0s).x;
+
+#ifndef MS_NO_MOTION_VECTORS
+    msMorphTargetActiveMaskGlobal |= subgroupBallot(weights.y != 0s).x << MESHLET_LOCAL_MORPH_TARGET_COUNT;
+#endif // MS_NO_MOTION_VECTORS
+  } else {
+    if (tid == 0u)
+      msMorphTargetActiveMaskShared = 0u;
+
+    barrier();
+
+    // Store weights as they are
+    if (tid < MESHLET_LOCAL_MORPH_TARGET_COUNT) {
+      msMorphTargetWeightsShared[0u][tid] = weights.x;
+#ifndef MS_NO_MOTION_VECTORS
+      msMorphTargetWeightsShared[1u][tid] = weights.y;
+#endif // MS_NO_MOTION_VECTORS
+    }
+
+    // Compute morph target weight and let each subgroup
+    // write its individual portion to the shared mask.
+    uint32_t mask = 0u;
+
+    if (weights.x != 0s)
+      mask |= 1u << (tid);
+    if (weights.y != 0s)
+      mask |= 1u << (tid + MESHLET_LOCAL_MORPH_TARGET_COUNT);
+
+    mask = subgroupOr(mask);
+
+    if (subgroupElect() && mask != 0u)
+      atomicOr(msMorphTargetActiveMaskShared, mask);
+
+    barrier();
+
+    msMorphTargetActiveMaskGlobal = msMorphTargetActiveMaskShared;
+  }
+}
+
+
+// Loads morph target metadata for a given vertex.
+MeshletMorphTargetVertexInfo msLoadMorphTargetVertexInfoFromMemory(
+  in    MsContext                     context,
+  in    Meshlet                       meshlet,
+        uint32_t                      vertex) {
+  return MeshletMorphTargetVertexInfoRef(meshletComputeAddress(
+    context.invocation.meshletVa, meshlet.morphTargetOffset)).vertexInfos[vertex];
+}
+
+
+// Applies all active morph targets to vertex input data. Essentially
+// iterates over all active morph targets and processes them one by one.
+void msMorphVertexData(
+  in    MsContext                     context,
+  in    Meshlet                       meshlet,
+  inout MsVertexParameters            vertexArgs,
+  in    MeshletMorphTargetVertexInfo  vertexInfo) {
+  MsInputMorphDataRef morph = MsInputMorphDataRef(meshletComputeAddress(
+    context.invocation.meshletVa, meshlet.morphDataOffset));
+
+  uint32_t mask = msGetMorphTargetMask(0u);
+
+#ifndef MS_NO_MOTION_VECTORS
+  if (msInstanceUsesMotionVectors(context))
+    mask |= msGetMorphTargetMask(1u);
+#endif // MS_NO_MOTION_VECTORS
+
+  mask &= uint32_t(vertexInfo.morphTargetMask);
+  mask = subgroupOr(mask);
+
+  while (mask != 0u) {
+    uint32_t index = findLSB(mask);
+
+    // Load weights. If motion vectors are enabled for the instance, load
+    // the previous frame's weight, otherwise use the same weight for both.
+    f32vec2 weights = f32vec2(msGetMorphTargetWeight(0u, index));
+
+#ifndef MS_NO_MOTION_VECTORS
+    if (msInstanceUsesMotionVectors(context))
+      weights.y = msGetMorphTargetWeight(1u, index);
+#endif // MS_NO_MOTION_VECTORS
+
+    // Apply morph target to all affected vertices
+    if (asTest(uint32_t(vertexInfo.morphTargetMask), 1u << index)) {
+      MsMorphIn morphData = msLoadMorphData(morph, index, vertexInfo);
+      msMorphVertex(vertexArgs.currFrame.vertexData, morphData, weights.x);
+
+#ifndef MS_NO_MOTION_VECTORS
+      msMorphVertex(vertexArgs.prevFrame.vertexData, morphData, weights.y);
+#endif // MS_NO_MOTION_VECTORS
+    }
+
+    mask &= mask - 1u;
+  }
+}
+
+
+#ifndef MS_NO_SHADING_DATA
+// Applies all active morph targets to vertex input data. Essentially
+// iterates over all active morph targets and processes them one by one.
+void msMorphShadingData(
+  in    MsContext                     context,
+  in    Meshlet                       meshlet,
+  inout MsShadingIn                   shadingData,
+  in    MeshletMorphTargetVertexInfo  vertexInfo) {
+  MsInputMorphDataRef morph = MsInputMorphDataRef(meshletComputeAddress(
+    context.invocation.meshletVa, meshlet.morphDataOffset));
+
+  uint32_t mask = msGetMorphTargetMask(0u);
+  mask &= uint32_t(vertexInfo.morphTargetMask);
+  mask = subgroupOr(mask);
+
+  while (mask != 0u) {
+    uint32_t index = findLSB(mask);
+
+    // Load weights. If motion vectors are enabled for the instance, load
+    // the previous frame's weight, otherwise use the same weight for both.
+    float weight = msGetMorphTargetWeight(0u, index);
+
+    // Apply morph target to all affected vertices
+    if (asTest(uint32_t(vertexInfo.morphTargetMask), 1u << index)) {
+      MsMorphIn morphData = msLoadMorphData(morph, index, vertexInfo);
+      msMorphShading(shadingData, morphData, weight);
+    }
+
+    mask &= mask - 1u;
+  }
+}
+#endif // MS_NO_SHADING_DATA
+
 #endif // MS_NO_MORPH_DATA
 
 
-// Buffer reference type for per-vertex joint influence data.
 #ifndef MS_NO_SKINNING
+// Buffer reference type for per-vertex joint influence data.
 layout(buffer_reference, buffer_reference_align = 4, scalar)
 readonly buffer JointInfluenceRef {
   uint16_t data[];
 };
 
-JointInfluenceRef msGetJointInfluenceData(in MsContext context, in Meshlet meshlet) {
-  uint64_t address = meshletComputeAddress(context.invocation.meshletVa, meshlet.jointDataOffset);
-  return JointInfluenceRef(address);
+
+// Joint data. Just use shared memory here for simplicity.
+shared f32vec4 msJointDualQuatSharedR[MS_SKIN_SETS][MESHLET_LOCAL_JOINT_COUNT];
+shared f32vec4 msJointDualQuatSharedD[MS_SKIN_SETS][MESHLET_LOCAL_JOINT_COUNT];
+
+
+// Joint transform for when only one joint is used in the meshlet.
+// This is uniform within the workgroup.
+Transform msMeshletJointTransformGlobal[MS_SKIN_SETS];
+
+
+// Helper function to retrieve the dual quaternion for a given local joint.
+DualQuat msLoadJointDualQuat(
+        uint32_t                      jointSet,
+        uint32_t                      index) {
+  return DualQuat(
+    msJointDualQuatSharedR[jointSet][index],
+    msJointDualQuatSharedD[jointSet][index]);
 }
 
 
-// If motion vectors are enabled, we need to store two sets of joints,
-// one for the current frame and one for the previous frame.
-#ifndef MS_NO_MOTION_VECTORS
-#define MESHLET_LOCAL_JOINT_BUFFER_SIZE (MESHLET_LOCAL_JOINT_COUNT * 2u)
-#else
-#define MESHLET_LOCAL_JOINT_BUFFER_SIZE (MESHLET_LOCAL_JOINT_COUNT)
-#endif
+// Helper function to store a dual-quaternion either in a set of
+// vector registers or in LDS, depending on the subgroup size.
+void msStoreJointDualQuat(
+        uint32_t                      jointSet,
+        uint32_t                      localIndex,
+  in    DualQuat                      dq) {
+  if (localIndex < MESHLET_LOCAL_JOINT_COUNT) {
+    msJointDualQuatSharedR[jointSet][localIndex] = dq.r;
+    msJointDualQuatSharedD[jointSet][localIndex] = dq.d;
+  }
+
+  barrier();
+}
 
 
-// Buffer that stores dual quaternions for each local joint. If
-// local joints are enabled for a meshlet, we can use this to
-// avoid having to laod and convert the transform multiple times.
-shared vec4 msJointDualQuatSharedR[MESHLET_LOCAL_JOINT_BUFFER_SIZE];
-shared vec4 msJointDualQuatSharedD[MESHLET_LOCAL_JOINT_BUFFER_SIZE];
-
-// Loads a joint transform from memory
-Transform msLoadJointTransform(in MsContext context, uint32_t jointSet, uint32_t jointIndex) {
+// Helper function to load a joint transform from the instance.
+Transform msLoadInstanceJointTransform(
+  in    MsContext                     context,
+        uint32_t                      jointSet,
+        uint32_t                      jointIndex) {
   InstanceJointBufferIn jointBuffer = InstanceJointBufferIn(
     context.invocation.instanceNode.propertyBuffer +
     context.invocation.instanceInfo.jointAbsoluteOffset);
   return jointBuffer.joints[jointIndex + jointSet * context.invocation.instanceInfo.jointCount].transform;
 }
 
-// Convenience method to load a joint transform and convert it to
-// a dual-quaternion. We cannot use the representation that uses a
-// rotation quaternion with a translation vector directly, since
-// interpolating the translation vectors yields wrong results.
-DualQuat msLoadJointDualQuatFromMemory(in MsContext context, uint32_t jointSet, uint32_t jointIndex) {
-  Transform transform = msLoadJointTransform(context, jointSet, jointIndex);
-  return transToDualQuat(transform);
-}
 
-// Loads a joint's dual-quaternion from LDS
-DualQuat msLoadJointDualQuat(uint32_t joint, uint32_t jointSet) {
-  return DualQuat(
-    msJointDualQuatSharedR[joint + jointSet * MESHLET_LOCAL_JOINT_COUNT],
-    msJointDualQuatSharedD[joint + jointSet * MESHLET_LOCAL_JOINT_COUNT]);
-}
-
-
-// Loads raw transform from LDS
-Transform msLoadJointRawTransform(uint32_t jointSet) {
-  return Transform(
-    msJointDualQuatSharedR[jointSet],
-    msJointDualQuatSharedD[jointSet].xyz);
-}
-
-
-// Loads joint indices either into shared memory, or into a global
-// register which can be accessed like an array via subgroup ops.
-bool MsJointIndicesUseSubgroupPath = (gl_SubgroupSize >= MESHLET_LOCAL_JOINT_COUNT);
-
-shared uint16_t msJointIndicesShared[MESHLET_LOCAL_JOINT_COUNT];
-
-uint32_t msJointIndicesGlobal;
-uint32_t msJointIndexMeshletGlobal;
-
-void msLoadLocalJointIndicesFromMemory(
-  in    MsContext                       context,
-  in    Meshlet                         meshlet) {
+// Helper functions to load joints from memory.
+void msLoadJointsFromMemory(
+  in    MsContext                     context,
+  in    Meshlet                       meshlet) {
   MeshSkinningRef skinningBuffer = MeshSkinningRef(context.invocation.skinningVa);
 
-  if (meshlet.jointIndex < 0xffffu) {
-    // Load joint index for the entire meshlet from skinning buffer.
-    // Local joints are skipped, do not bother initializing LDS for them.
-    msJointIndexMeshletGlobal = skinningBuffer.joints[context.invocation.meshInstance.jointIndex + meshlet.jointIndex];
+  if (meshlet.jointCount == 0us) {
+    uint32_t index = meshlet.jointIndex;
 
-    if (MsJointIndicesUseSubgroupPath)
-      msJointIndicesGlobal = 0xffffu;
-  } else {
-    msJointIndexMeshletGlobal = 0xffffu;
+    if (index != 0xffffu)
+      index = skinningBuffer.joints[context.invocation.meshInstance.jointIndex + index];
 
-    uint jointCount = min(uint(meshlet.jointCount), MESHLET_LOCAL_JOINT_COUNT);
-
-    if (MsJointIndicesUseSubgroupPath) {
-      // Subgroup-optimized variant. Essentially treats the global variable
-      // as an array that we can read from with subgroup operations, which
-      // saves us some LDS.
-      uint32_t index = gl_SubgroupInvocationID;
-
-      msJointIndicesGlobal = 0xffffu;
-
-      if (index < jointCount) {
-        msJointIndicesGlobal = uint(MeshletRef(context.invocation.meshletVa).jointIndices[index]);
-        msJointIndicesGlobal = skinningBuffer.joints[context.invocation.meshInstance.jointIndex + msJointIndicesGlobal];
-      }
+    if (index == 0xffffu) {
+      // If no joint is defined for the current meshlet, initialize the
+      // global transform with the identity transform so we won't have
+      // to make this a special case later.
+      [[unroll]]
+      for (uint32_t i = 0u; i < MS_SKIN_SETS; i++)
+        msMeshletJointTransformGlobal[i] = transIdentity();
     } else {
-      // LDS path, just stores joint indices in a shared array.
-      MS_LOOP_WORKGROUP(index, jointCount, MESHLET_LOCAL_JOINT_COUNT) {
-        uint32_t jointIndex = uint(MeshletRef(context.invocation.meshletVa).jointIndices[index]);
-        jointIndex = skinningBuffer.joints[context.invocation.meshInstance.jointIndex + jointIndex];
-        msJointIndicesShared[index] = uint16_t(jointIndex);
-      }
-
-      barrier();
-    }
-  }
-}
-
-
-// Loads local joint index for the given thread ID
-uint32_t msGetLocalJointIndex(uint32_t jointIndex) {
-  if (MsJointIndicesUseSubgroupPath)
-    return subgroupShuffle(msJointIndicesGlobal, jointIndex);
-  else
-    return msJointIndicesShared[jointIndex];
-}
-
-
-// Loads local joints into shared memory.
-void msLoadLocalJointsFromMemory(
-  in    MsContext                       context,
-  in    Meshlet                         meshlet) {
-  uint32_t tid = gl_LocalInvocationIndex;
-  uint32_t jointSetCount = MESHLET_LOCAL_JOINT_BUFFER_SIZE / MESHLET_LOCAL_JOINT_COUNT;
-
-  if (meshlet.jointIndex < 0xffffu) {
-    // If there's only one joint active for the entire meshlet, we do not need
-    // to convert it into the dual-quaternion representation since there will
-    // be no interpolation.
-    if (tid < jointSetCount) {
-      Transform transform = transIdentity();
-
-      if (msJointIndexMeshletGlobal < context.invocation.instanceInfo.jointCount)
-        transform = msLoadJointTransform(context, tid, msJointIndexMeshletGlobal);
-
-      msJointDualQuatSharedR[tid] = transform.rot;
-      msJointDualQuatSharedD[tid].xyz = transform.pos;
+      // Otherwise, load the joint from memory as normal.
+      for (uint32_t i = 0u; i < MS_SKIN_SETS; i++)
+        msMeshletJointTransformGlobal[i] = msLoadInstanceJointTransform(context, i, index);
     }
   } else {
-    uint jointCount = min(uint(meshlet.jointCount), MESHLET_LOCAL_JOINT_COUNT);
+    MeshletSkinIndexRef skinIndices = MeshletSkinIndexRef(
+      meshletComputeAddress(context.invocation.meshletVa, meshlet.skinIndexOffset));
 
-    MS_LOOP_WORKGROUP(index, MESHLET_LOCAL_JOINT_BUFFER_SIZE, MESHLET_LOCAL_JOINT_BUFFER_SIZE) {
-      uint32_t localSet = index / MESHLET_LOCAL_JOINT_COUNT;
-      uint32_t localIndex = index % MESHLET_LOCAL_JOINT_COUNT;
+    uint32_t tid = gl_LocalInvocationIndex;
 
-      if (localIndex < jointCount) {
-        uint32_t jointIndex = msGetLocalJointIndex(localIndex);
+    // Zero-initialize initial set of transforms in case any
+    // local joints have an invalid mapping in the skin buffer.
+    Transform transforms[MS_SKIN_SETS];
 
-        DualQuat dq = dualQuatIdentity();
+    [[unroll]]
+    for (uint32_t i = 0u; i < MS_SKIN_SETS; i++)
+      transforms[i] = transIdentity();
 
-        if (jointIndex < context.invocation.instanceInfo.jointCount)
-          dq = msLoadJointDualQuatFromMemory(context, localSet, jointIndex);
+    if (tid < uint32_t(meshlet.jointCount)) {
+      uint32_t index = skinIndices.indices[tid];
 
-        msJointDualQuatSharedR[index] = dq.r;
-        msJointDualQuatSharedD[index] = dq.d;
+      if (index != 0xffffu)
+        index = skinningBuffer.joints[context.invocation.meshInstance.jointIndex + index];
+
+      if (index != 0xffffu) {
+        [[unroll]]
+        for (uint32_t i = 0u; i < MS_SKIN_SETS; i++)
+          transforms[i] = msLoadInstanceJointTransform(context, i, index);
       }
     }
+
+    [[unroll]]
+    for (uint32_t i = 0u; i < MS_SKIN_SETS; i++)
+      msStoreJointDualQuat(i, tid, transToDualQuat(transforms[i]));
   }
 }
+
 
 // Accumulates all joint transforms for the given vertex. This will
 // essentially iterate over the per-vertex list of joint influences
@@ -514,118 +712,325 @@ void msLoadLocalJointsFromMemory(
 Transform msComputeJointTransform(
   in    MsContext                     context,
   in    Meshlet                       meshlet,
-  in    JointInfluenceRef             jointData,
         uint32_t                      jointSet,
         uint32_t                      vertexIndex) {
-  if (uint32_t(meshlet.jointIndex) < 0xffffu) {
-    // We stored the raw transform for this joint in shared memory
-    // without conversion, so just load it as-is.
-    return msLoadJointRawTransform(jointSet);
+  if (meshlet.jointCount == 0us) {
+    // Return the global joint transform, which may be an identity
+    // transform if no joint is specified for the meshlet.
+    return msMeshletJointTransformGlobal[jointSet];
   } else {
-    // If the weight of the first joint is zero, the vertex is not
-    // attached to any joints. This works because joint influences
-    // are ordered by weight.
-    JointInfluence joint = JointInfluence(0u, 0.0f);
+    JointInfluenceRef jointData = JointInfluenceRef(meshletComputeAddress(
+      context.invocation.meshletVa, meshlet.jointDataOffset));
 
-    if (meshlet.jointCountPerVertex > 0)
-      joint = jointInfluenceUnpack(jointData.data[vertexIndex]);
+    JointInfluence joint = meshletDecodeJointInfluence(jointData.data[vertexIndex]);
 
-    if (joint.weight > 0.0f) {
-      // Load first joint and skip all the expensive code below if
-      // vertices in this meshlet are only influenced by one joint.
-      DualQuat accum = msLoadJointDualQuat(joint.index, jointSet);
+    // Load first joint, and account for the possibility that the
+    // vertex may not be attached to any joint. This works because
+    // joint influences are ordered by weight.
+    DualQuat accum = msLoadJointDualQuat(jointSet, joint.index);
+    accum.r *= joint.weight;
+    accum.d *= joint.weight;
 
-      if (meshlet.jointCountPerVertex > 1) {
-        accum.r *= joint.weight;
-        accum.d *= joint.weight;
+    if (joint.weight == 0.0f)
+      accum.r.w = 1.0f;
 
-        for (uint i = 1; i < meshlet.jointCountPerVertex; i++) {
-          JointInfluence joint = jointInfluenceUnpack(
-            jointData.data[i * meshlet.vertexDataCount + vertexIndex]);
+    for (uint32_t i = 1; i < meshlet.jointCountPerVertex; i++) {
+      JointInfluence joint = meshletDecodeJointInfluence(
+        jointData.data[i * meshlet.vertexDataCount + vertexIndex]);
 
-          if (joint.weight == 0.0f)
-            break;
+      if (joint.weight == 0.0f)
+        break;
 
-          DualQuat dq = msLoadJointDualQuat(joint.index, jointSet);
-          accum.r = fma(dq.r, vec4(joint.weight), accum.r);
-          accum.d = fma(dq.d, vec4(joint.weight), accum.d);
-        }
+      DualQuat dq = msLoadJointDualQuat(jointSet, joint.index);
+      accum.r = fma(dq.r, f32vec4(joint.weight), accum.r);
+      accum.d = fma(dq.d, f32vec4(joint.weight), accum.d);
+    }
 
-        accum = dualQuatNormalize(accum);
-      }
+    accum = dualQuatNormalize(accum);
+    return dualQuatToTrans(accum);
+  }
+}
 
-      return dualQuatToTrans(accum);
-    } else {
-      // Return identity transform. Note that this different
-      // from running the above code with zero iterations.
-      return transIdentity();
+#endif // MS_NO_SKINNING
+
+
+// Checks whether we need to export vertex data locally and pipe it through
+// the shared memory array, or if locally caching the data is enough.
+bool msUseLocalInvocationVertexExport() {
+  return asTest(MsFlags, MS_PREFER_LOCAL_VERTEX_EXPORT);
+}
+
+
+// Checks whether we need to export primitive data locally.
+bool msUseLocalInvocationPrimitiveExport() {
+  return asTest(MsFlags, MS_PREFER_LOCAL_PRIMITIVE_EXPORT);
+}
+
+
+// Output vertex cache. Stores vertex data computed by each invocation
+// either in shared memory, or a global array variable.
+#define MS_LOCAL_EXPORT_SIZE (MS_MAX_VERT_COUNT / gl_WorkGroupSize.x)
+
+shared MsVertexOut msVertexExportDataShared[MS_MAX_VERT_COUNT];
+
+MsVertexOut msVertexExportDataLocal[MS_LOCAL_EXPORT_SIZE];
+uint32_t msVertexExportIndexLocal = 0u;
+
+
+#ifndef MS_NO_SHADING_DATA
+shared uint8_t msShadingDataIndexShared[MS_MAX_VERT_COUNT];
+uint32_t msShadingDataIndexLocal = 0u;
+#endif // MS_NO_SHADING_DATA
+
+
+#ifndef MS_NO_MORPH_DATA
+shared MeshletMorphTargetVertexInfo msVertexMorphTargetInfosShared[MS_MAX_VERT_COUNT];
+MeshletMorphTargetVertexInfo msVertexMorphTargetInfosLocal[MS_LOCAL_EXPORT_SIZE];
+#endif // MS_NO_MORPH_DATA
+
+
+// Helper function to store computed vertex output.
+void msStoreVertexExportData(
+        uint32_t                      iteration,
+        uint32_t                      localGroup,
+        uint32_t                      localIndex,
+        u8vec2                        dualIndex,
+        uint32_t                      vertexIndex,
+  in    MeshletMorphTargetVertexInfo  morphInfo,
+  in    MsVertexOut                   vertexData,
+        bool                          useVertex) {
+  if (msUseLocalInvocationVertexExport()) {
+    if (useVertex) {
+      msVertexExportDataShared[vertexIndex] = vertexData;
+
+#ifndef MS_NO_SHADING_DATA
+      msShadingDataIndexShared[vertexIndex] = dualIndex.y;
+#endif // MS_NO_SHADING_DATA
+
+#ifndef MS_NO_MORPH_DATA
+      if (msGetMorphTargetMask(0u) != 0u)
+        msVertexMorphTargetInfosShared[vertexIndex] = morphInfo;
+#endif // MS_NO_MORPH_DATA
+    }
+  } else {
+    int bitIndex = int(iteration * 8u);
+
+    msVertexExportDataLocal[iteration] = vertexData;
+    msVertexExportIndexLocal = bitfieldInsert(msVertexExportIndexLocal, useVertex ? vertexIndex : MS_MAX_VERT_COUNT, bitIndex, 8);
+
+#ifndef MS_NO_SHADING_DATA
+    msShadingDataIndexLocal = bitfieldInsert(msShadingDataIndexLocal, uint32_t(dualIndex.y), bitIndex, 8);
+#endif // MS_NO_SHADING_DATA
+
+#ifndef MS_NO_MORPH_DATA
+    msVertexMorphTargetInfosLocal[iteration] = morphInfo;
+#endif // MS_NO_MORPH_DATA
+  }
+}
+
+
+// Helper function to export all vertices. Must only be called after
+// allocating output storage for the mesh shader workgroup.
+void msExportVertexData(uint32_t exportCount) {
+  if (msUseLocalInvocationVertexExport()) {
+    MS_LOOP_WORKGROUP(index, MS_MAX_VERT_COUNT, MS_MAX_VERT_COUNT) {
+      if (index < exportCount)
+        msExportVertex(index, msVertexExportDataShared[index]);
+    }
+  } else {
+    for (uint32_t i = 0; i < MS_LOCAL_EXPORT_SIZE; i++) {
+      uint32_t index = bitfieldExtract(msVertexExportIndexLocal, 8 * int(i), 8);
+
+      if (index < exportCount)
+        msExportVertex(index, msVertexExportDataLocal[i]);
     }
   }
 }
 
 
-#endif // MS_NO_SKINNING
-
-
-// Dual vertex index pairs. Only used if dual indexing is actually
-// enabled, otherwise we'll compute the correct numbers on the fly.
-shared u8vec2 msVertexDualIndicesShared[MAX_VERT_COUNT];
-
-void msLoadDualVertexIndicesFromMemory(in MsContext context, in Meshlet meshlet) {
-  MeshletDualIndexDataRef dualIndexData = MeshletDualIndexDataRef(
-    meshletComputeAddress(context.invocation.meshletVa, meshlet.dualIndexOffset));
-
-  MS_LOOP_WORKGROUP(index, meshlet.vertexCount, MAX_VERT_COUNT) {
-    msVertexDualIndicesShared[index] = dualIndexData.vertices[index];
-  }
-}
-
-uvec2 msGetDualVertexIndex(uint vertexIndex) {
-  return uvec2(msVertexDualIndicesShared[vertexIndex]);
-}
-
-
-// Input vertex data. If dual indexing is enabled for the meshlet, or
-// if vertex input data is needed in order to compute fragment shader
-// input data, it is copied to LDS to reduce memory loads.
-shared MsVertexIn msVertexInputShared[MAX_VERT_COUNT];
-
-void msLoadVertexDataFromMemory(in MsContext context, in Meshlet meshlet) {
-  MsInputVertexDataRef vertexData = MsInputVertexDataRef(
-    meshletComputeAddress(context.invocation.meshletVa, meshlet.vertexDataOffset));
-
-  MS_LOOP_WORKGROUP(index, meshlet.vertexDataCount, MAX_VERT_COUNT) {
-    msVertexInputShared[index] = vertexData.vertices[index];
+// Loads cached dual index data for a given output vertex
+uint32_t msLoadVertexDualIndexData(
+        uint32_t                      iteration,
+        uint32_t                      exportIndex) {
+  if (msUseLocalInvocationVertexExport()) {
+    return msShadingDataIndexShared[exportIndex];
+  } else {
+    int bitIndex = int(iteration * 8u);
+    return bitfieldExtract(msShadingDataIndexLocal, bitIndex, 8);
   }
 }
 
 
-// Output vertex position data. If dual-indexing is used, this is
-// generally compacted in such a way that each output position may
-// be used by multiple output vertices.
-shared MsVertexOut msVertexDataShared[MAX_VERT_COUNT];
+// Loads output vertex data for a given output vertex.
+MsVertexOut msLoadVertexOutputData(
+        uint32_t                      iteration,
+        uint32_t                      exportIndex) {
+  if (msUseLocalInvocationVertexExport())
+    return msVertexExportDataShared[exportIndex];
+  else
+    return msVertexExportDataLocal[iteration];
+}
 
-bool msCullPrimitive(in MsContext context, uvec3 indices) {
-  vec4 a = vec4(msVertexDataShared[indices.x].position);
-  vec4 b = vec4(msVertexDataShared[indices.y].position);
-  vec4 c = vec4(msVertexDataShared[indices.z].position);
 
-  float minW = min(a.w, min(b.w, c.w));
-  float maxW = max(a.w, max(b.w, c.w));
+// Loads export index for a given output vertex. The returned
+// index may be out of bounds, in which case it must be ignored.
+uint32_t msLoadVertexExportIndex(
+        uint32_t                      iteration,
+        uint32_t                      outputIndex) {
+  if (msUseLocalInvocationVertexExport())
+    return outputIndex;
+  else
+    return bitfieldExtract(msVertexExportIndexLocal, int(iteration * 8u), 8);
+}
 
-  // Cull primitives behind the camera
-  if (maxW < 0.0f)
-    return true;
+
+// Loads per-vertex morph target infos.
+#ifndef MS_NO_MORPH_DATA
+MeshletMorphTargetVertexInfo msLoadVertexMorphTargetInfo(
+        uint32_t                      iteration,
+        uint32_t                      exportIndex) {
+  if (msUseLocalInvocationVertexExport())
+    return msVertexMorphTargetInfosShared[exportIndex];
+  else
+    return msVertexMorphTargetInfosLocal[iteration];
+}
+#endif // MS_NO_MORPH_DATA
+
+// Output primitive cache. Works essentially the same way as the
+// vertex cache, except that we only store vertex indices here.
+shared u8vec4 msPrimitiveExportDataShared[MS_MAX_PRIM_COUNT];
+
+uint32_t msPrimitiveExportDataLocal[MS_LOCAL_EXPORT_SIZE];
+uint32_t msPrimitiveExportIndexLocal = 0u;
+
+
+// Helper function to store primitive data for later use.
+void msStorePrimitiveExportData(
+        uint32_t                      iteration,
+        uint32_t                      localGroup,
+        uint32_t                      localIndex,
+        uint32_t                      primitiveIndex,
+        u8vec3                        primitiveData,
+        bool                          usePrimitive) {
+  if (msUseLocalInvocationPrimitiveExport()) {
+    if (usePrimitive)
+      msPrimitiveExportDataShared[primitiveIndex] = u8vec4(primitiveData, 0u);
+
+    barrier();
+  } else {
+    msPrimitiveExportDataLocal[iteration] = pack32(u8vec4(primitiveData, 0u));
+    msPrimitiveExportIndexLocal = bitfieldInsert(msPrimitiveExportIndexLocal,
+      usePrimitive ? primitiveIndex : MS_MAX_PRIM_COUNT, 8 * int(iteration), 8);
+  }
+}
+
+
+// Helper function to export primitive indices.
+void msExportPrimitiveIndices(uint32_t exportCount) {
+  if (msUseLocalInvocationPrimitiveExport()) {
+    MS_LOOP_WORKGROUP(index, MS_MAX_PRIM_COUNT, MS_MAX_PRIM_COUNT) {
+      if (index < exportCount)
+        msExportPrimitive(index, msPrimitiveExportDataShared[index].xyz);
+    }
+  } else {
+    for (uint32_t i = 0; i < MS_LOCAL_EXPORT_SIZE; i++) {
+      uint32_t index = bitfieldExtract(msPrimitiveExportIndexLocal, 8 * int(i), 8);
+
+      if (index < exportCount)
+        msExportPrimitive(index, unpack8(msPrimitiveExportDataLocal[i]).xyz);
+    }
+  }
+}
+
+
+// Helper function to perform primitive culling.
+#define MS_CLIP_MASK_NEGATIVE_W (1u << 8u)
+#define MS_CLIP_MASK_IGNORE     (1u << 9u)
+
+shared f32vec2 msCullPositionsShared[gl_WorkGroupSize.x];
+shared uint16_t msClipMasksShared[gl_WorkGroupSize.x];
+
+bool msCullPrimitive(
+  in    MsContext                     context,
+        uint32_t                      primCount,
+        uint32_t                      localGroup,
+        uint32_t                      localIndex,
+        u32vec3                       indices,
+  in    MsVertexOut                   vertexData) {
+  // Cull primitives that are entirely behind the camera.
+  uint32_t clipMask = vertexData.position.w <= 0.0f ? MS_CLIP_MASK_NEGATIVE_W : 0u;
 
   // Do not bother culling primitives that have a vertex close to
   // or behind the camera, since handling w coordinates becomes
   // very tricky. This should not happen very often.
-  if (minW < 0.0005f)
+  clipMask |= vertexData.position.w <= 0.0005f ? MS_CLIP_MASK_IGNORE : 0u;
+
+  // Set a bit in the clip mask for each plane for which the
+  // current vertex lies outside the clip space.
+#if MS_CLIP_PLANES > 0
+  [unroll]
+  for (uint32_t i = 0u; i < MS_CLIP_PLANES; i++)
+    clipMask |= vertexData.clip[i] < 0.0f ? 1u << i : 0u;
+#endif
+
+  // Read vertex positions and clipping info from other invocations while
+  // still in uniform control flow.
+  f32vec2 position = f32vec2(vertexData.position.xy) / vertexData.position.w;
+  f32vec2 a, b, c;
+  u32vec3 clip;
+
+  if (IsFullSubgroup && gl_SubgroupSize == MESHLET_GROUP_SIZE) {
+    a = subgroupShuffle(position, indices.x);
+    b = subgroupShuffle(position, indices.y);
+    c = subgroupShuffle(position, indices.z);
+
+    clip = u32vec3(
+      subgroupShuffle(clipMask, indices.x),
+      subgroupShuffle(clipMask, indices.y),
+      subgroupShuffle(clipMask, indices.z));
+  } else {
+    uint32_t base = MESHLET_GROUP_SIZE * localGroup;
+
+    msCullPositionsShared[base + localIndex] = position;
+    msClipMasksShared[base + localIndex] = uint16_t(clipMask);
+
+    barrier();
+
+    a = msCullPositionsShared[base + indices.x];
+    b = msCullPositionsShared[base + indices.y];
+    c = msCullPositionsShared[base + indices.z];
+
+    clip = u32vec3(
+      msClipMasksShared[base + indices.x],
+      msClipMasksShared[base + indices.y],
+      msClipMasksShared[base + indices.z]);
+
+    barrier();
+  }
+
+  // Bound-check the primitive index now, we don't want to
+  // lose invocations while doing the subgroup shuffles.
+  if (localIndex >= primCount)
     return false;
 
-  a.xy /= a.w;
-  b.xy /= b.w;
-  c.xy /= c.w;
+  // Investigate the clipping plane mask of each vertex.
+  uint32_t clipCull = (clip.x & clip.y & clip.z) & ~MS_CLIP_MASK_IGNORE;
+  uint32_t clipIgnore = (clip.x | clip.y | clip.z) & MS_CLIP_MASK_IGNORE;
+
+  if (clipCull != 0u)
+    return false;
+
+  if (clipIgnore != 0u)
+    return true;
+
+  // Cull primitives outside the view frustum.
+  vec2 maxCoord = max(a.xy, max(b.xy, c.xy));
+  vec2 minCoord = min(a.xy, min(b.xy, c.xy));
+
+  maxCoord = max(minCoord, -maxCoord);
+
+  if (max(maxCoord.x, maxCoord.y) > 1.0f)
+    return false;
 
   // Perform back-face culling first. Doing this may be useful when
   // rendering heavily-animated objects for which cone culling is
@@ -644,203 +1049,104 @@ bool msCullPrimitive(in MsContext context, uvec3 indices) {
       face = -face;
 
     if (face <= 0.0f)
-      return true;
+      return false;
   }
 
-  // Cull primitives outside the view frustum. 
-  vec2 maxCoord = max(a.xy, max(b.xy, c.xy));
-  vec2 minCoord = min(a.xy, min(b.xy, c.xy));
-
-  maxCoord = max(minCoord, -maxCoord);
-
-  if (any(greaterThan(maxCoord, vec2(1.0f))))
-    return true;
-
-#ifdef MS_CLIP_PLANES
-  // Cull primitive if all vertices are on the
-  // wrong side of one of the clipping planes
-  for (uint i = 0; i < MS_CLIP_PLANES; i++) {
-    float dist = float(max(max(
-      msVertexDataShared[indices.x].clip[i],
-      msVertexDataShared[indices.y].clip[i]),
-      msVertexDataShared[indices.z].clip[i]));
-
-    if (dist <= 0.0f)
-      return true;
-  }
-#endif
-
-  return false;
+  return true;
 }
 
 
-#ifndef MS_NO_MORPH_DATA
-// Morph target weight data and mask. We will discard any morph
-// targets with a weight of zero in order to speed up processing.
-shared MeshletMorphTarget msMorphTargetMetadataShared[MAX_MORPH_TARGET_COUNT];
-shared uint msMorphTargetWeightsShared[MAX_MORPH_TARGET_COUNT];
+// Helper function to compute the vertices used in visible primitives.
+// Any vertices not set in this mask can safely be discarded.
+shared uint32_t msVertexMasksShared[gl_WorkGroupSize.x / MESHLET_GROUP_SIZE];
 
-shared uint msMorphTargetCountShared;
+uint32_t msComputeVertexMask(
+        uint32_t                      localGroup,
+        uint32_t                      localIndex,
+        u8vec3                        indices,
+        bool                          usePrimitive) {
+  uint32_t mask = 0u;
 
-// Initialize morph target allocator
-void msInitMorphTargetAllocator() {
-  if (gl_LocalInvocationIndex == 0)
-    msMorphTargetCountShared = 0;
+  if (usePrimitive) {
+    mask |= 1u << uint32_t(indices.x);
+    mask |= 1u << uint32_t(indices.y);
+    mask |= 1u << uint32_t(indices.z);
+  }
+
+  if (IsFullSubgroup && gl_SubgroupSize >= MESHLET_GROUP_SIZE) {
+    // Large subgroups make this trivial
+    mask = subgroupClusteredOr(mask, MESHLET_GROUP_SIZE);
+  } else {
+    // Otherwise, just do a reduction in LDS
+    if (localIndex == 0u)
+      msVertexMasksShared[localGroup] = 0u;
+
+    barrier();
+
+    atomicOr(msVertexMasksShared[localGroup], mask);
+    barrier();
+
+    mask = msVertexMasksShared[localGroup];
+    barrier();
+  }
+
+  return mask;
 }
 
 
-// Allocates morph target output. Returns index into shared arrays
-// to write to. Must be checked against MAX_MORPH_TARGET_COUNT.
-uint msAllocateMorphTarget() {
-  uvec4 invocationMask = subgroupBallot(true);
+// Helper function to remap local primitive indices to export indices.
+shared uint8_t msVertexIndexMapShared[gl_WorkGroupSize.x];
 
-  uint count = subgroupBallotBitCount(invocationMask);
-  uint index = subgroupBallotBitCount(invocationMask & gl_SubgroupLtMask);
+u8vec3 msRemapPrimitiveIndices(
+        uint32_t                      localGroup,
+        uint32_t                      localIndex,
+        u8vec3                        primitive,
+        bool                          usePrimitive,
+        uint32_t                      vertexIndex,
+        uint32_t                      vertexMask) {
+  u32vec3 result = u32vec3(primitive);
 
-  uint first;
+  if (IsFullSubgroup && gl_SubgroupSize >= MESHLET_GROUP_SIZE) {
+    // Use vertex mask to compute local vertex indices, which is consistent
+    // with how export indices are allocated on this code path.
+    uint32_t baseIndex;
 
-  if (subgroupElect()) {
-    if (IsSingleSubgroup) {
-      first = msMorphTargetCountShared;
-      msMorphTargetCountShared = first + count;
+    if (gl_SubgroupSize == MESHLET_GROUP_SIZE) {
+      // Fast path where each subgroup processes exactly one group
+      baseIndex = subgroupBroadcastFirst(vertexIndex);
+    } else if (gl_SubgroupSize == MESHLET_GROUP_SIZE * 2u) {
+      // Operate on the assumption that this is faster than a shuffle,
+      // which should be the case on AMD hardware in wave64 mode.
+      uint32_t lo = subgroupBroadcast(vertexIndex, 0u);
+      uint32_t hi = subgroupBroadcast(vertexIndex, MESHLET_GROUP_SIZE);
+      baseIndex = asTest(gl_SubgroupInvocationID, MESHLET_GROUP_SIZE) ? hi : lo;
     } else {
-      first = atomicAdd(msMorphTargetCountShared, count);
-    }
-  }
-
-  first = subgroupBroadcastFirst(first);
-  return first + index;
-}
-
-
-// Loads morph target weights from the instance buffer for both
-// the current and previous frame, if motion vectors are enabled.
-uint msLoadMorphTargetWeights(in MsContext context, uint32_t weightIndex) {
-  InstanceWeightBufferIn weightBuffer = InstanceWeightBufferIn(
-    context.invocation.instanceNode.propertyBuffer +
-    context.invocation.instanceInfo.weightOffset);
-
-  u16vec2 packedWeights;
-  packedWeights.x = uint16_t(weightBuffer.weights[weightIndex]);
-  packedWeights.y = uint16_t(0u);
-
-#ifndef MS_NO_MOTION_VECTORS
-  packedWeights.y = uint16_t(weightBuffer.weights[weightIndex + context.invocation.instanceInfo.weightCount]);
-#endif
-
-  return packUint2x16(packedWeights);
-}
-
-
-// Load morph target weights into shared memory and generate a
-// precise mask of morph targets that influence the meshlets.
-// Any morph targets with a weight of zero will be disabled.
-uint msLoadMorphTargetMetadataFromMemory(in MsContext context, in Meshlet meshlet) {
-  // Fast path, no morph targets affect this mesh at all
-  if (meshlet.morphTargetCount == 0)
-    return 0;
-
-  // Location where morph targets for the current meshlet are stored
-  MeshletMorphTargetRef morphTargets = MeshletMorphTargetRef(
-    meshletComputeAddress(context.invocation.meshletVa, meshlet.morphTargetOffset));
-
-  MS_LOOP_WORKGROUP(index, meshlet.morphTargetCount, meshlet.morphTargetCount) {
-    MeshletMorphTarget metadata = morphTargets.metadata[index];
-
-    uint packedWeights = msLoadMorphTargetWeights(context, uint32_t(metadata.targetIndex));
-    vec2 actualWeights = unpackSnorm2x16(packedWeights);
-
-    if (max(abs(actualWeights.x), abs(actualWeights.y)) > 0.0001f) {
-      uint index = msAllocateMorphTarget();
-
-      if (index < MAX_MORPH_TARGET_COUNT) {
-        msMorphTargetMetadataShared[index] = metadata;
-        msMorphTargetWeightsShared[index] = packedWeights;
-      }
-    }
-  }
-
-  barrier();
-  return min(msMorphTargetCountShared, MAX_MORPH_TARGET_COUNT);
-}
-
-
-// Computes index of morph data structure within a given morph
-// target for a given vertex. This essentially works by counting
-// all set bits at an index lower than the vertex index.
-int msScanMorphTargetVertexMask(in MeshletMorphTarget morphTarget, uint vertexIndex) {
-  uint result = 0;
-
-  uint dword = (vertexIndex / 32);
-  uint shift = (vertexIndex % 32);
-  uint bit = 1u << shift;
-
-  bool set = false;
-
-  for (uint i = 0; i < 4; i++) {
-    uint mask = morphTarget.vertexMask[i];
-
-    if (i == dword) {
-      set = (mask & bit) != 0;
-      mask &= bit - 1;
+      // Otherwise, just fall back to a simple shuffle
+      baseIndex = subgroupShuffle(vertexIndex, gl_SubgroupInvocationID & ~(MESHLET_GROUP_SIZE - 1u));
     }
 
-    if (i <= dword)
-      result += bitCount(mask);
+    if (usePrimitive) {
+      result.x = baseIndex + bitCount(bitfieldExtract(vertexMask, 0, int(result.x)));
+      result.y = baseIndex + bitCount(bitfieldExtract(vertexMask, 0, int(result.y)));
+      result.z = baseIndex + bitCount(bitfieldExtract(vertexMask, 0, int(result.z)));
+    }
+  } else {
+    uint32_t localOffset = MESHLET_GROUP_SIZE * localGroup;
+    msVertexIndexMapShared[localOffset + localIndex] = uint8_t(vertexIndex);
+
+    barrier();
+
+    if (usePrimitive) {
+      result.x = msVertexIndexMapShared[localOffset + result.x];
+      result.y = msVertexIndexMapShared[localOffset + result.y];
+      result.z = msVertexIndexMapShared[localOffset + result.z];
+    }
+
+    barrier();
   }
 
-  return set ? int(result) : -1;
+  return u8vec3(result);
 }
-
-
-// This unreadable mess generates a function to apply all active
-// morph targets within the meshlet to the given set of vertex
-// data.
-#define MS_DEFINE_MORPH_FUNCTION(function, type, call)                    \
-void function(in MsContext context, in Meshlet meshlet,                   \
-    inout type variable, uint vertexIndex, uint morphTargetCount,         \
-    uint weightSet) {                                                     \
-  MsInputMorphDataRef morphData = msGetMeshletMorphData(context, meshlet);\
-  for (uint i = 0; i < morphTargetCount; i++) {                           \
-    MeshletMorphTarget target = msMorphTargetMetadataShared[i];           \
-    vec2 weights = unpackSnorm2x16(msMorphTargetWeightsShared[i]);        \
-    int dataIndex = msScanMorphTargetVertexMask(target, vertexIndex);     \
-    if (dataIndex >= 0) {                                                 \
-      MsMorphIn delta = morphData.vertices[dataIndex + target.dataIndex]; \
-      call(variable, delta, weights[weightSet]);                          \
-    }                                                                     \
-  }                                                                       \
-}
-
-MS_DEFINE_MORPH_FUNCTION(msMorphVertexData, MsVertexIn, msMorphVertex)
-
-// Helper Function to morph both vertex and shading inputs in one go, so
-// that we can avoid having to iterate over morph targets multiple times.
-#ifdef MS_COMBINED_DATA
-void msMorphCombined(inout MsCombinedIn data, in MsMorphIn morph, float weight) {
-#ifndef MS_NO_VERTEX_DATA
-  msMorphVertex(data.vertex, morph, weight);
-#endif // MS_NO_VERTEX_DATA
-#ifndef MS_NO_SHADING_DATA
-  msMorphShading(data.shading, morph, weight);
-#endif // MS_NO_SHADING_DATA
-}
-
-MS_DEFINE_MORPH_FUNCTION(msMorphCombinedData, MsCombinedIn, msMorphCombined)
-#endif // MS_COMBINED_DATA
-
-#endif // MS_NO_MORPH_DATA
-
-
-#ifndef MS_NO_MOTION_VECTORS
-// Checks whether motion vectors can be used for the current instance.
-// This is the case if the instance has been updated in the current
-// frame and does not have the flag to explicitly disable them.
-bool msInstanceUsesMotionVectors(in MsContext context) {
-  return !asTest(context.flags, MS_NO_MOTION_VECTORS_BIT)
-      && !asTest(context.invocation.instanceNode.flags, INSTANCE_NO_MOTION_VECTORS_BIT);
-}
-#endif // MS_NO_MOTION_VECTORS
 
 
 // Convenience method to load node transforms from memory.
@@ -856,302 +1162,399 @@ Transform msLoadNodeTransform(
 }
 
 
-// Shared index data array. When written, this is already in output
-// order so that emitting primitive data becomes a lot more simple.
-shared u8vec4 msIndexDataShared[MAX_PRIM_COUNT];
+// Helpers to store and retrieve primitive group information. If subgroups
+// are sufficiently large, we will use a single vector register to store
+// all relevant information, otherwise we will use LDS.
+#define MS_MAX_GROUP_COUNT (16u)
 
+shared uint32_t msPrimitiveGroupInfosPackedShared[MS_MAX_GROUP_COUNT];
 
-// Primitive allocation helpers for writing compacted
-// index data into local shared memory.
-shared uint msIndexDataOffsetShared;
+uint32_t msPrimitiveGroupInfosPackedGlobal;
 
-void msInitPrimitiveAllocator() {
-  if (gl_LocalInvocationIndex == 0)
-    msIndexDataOffsetShared = 0;
+struct MsMeshletPrimitiveGroupInfo {
+  uint32_t vertIndex;
+  uint32_t vertCount;
+  uint32_t primIndex;
+  uint32_t primCount;
+};
+
+void msStorePrimitiveGroupInfo(
+  in    MsMeshletPrimitiveGroupInfo   groupInfo) {
+  uint32_t packed = (groupInfo.vertIndex <<  0) | (groupInfo.vertCount <<  9) |
+                    (groupInfo.primIndex << 16) | (groupInfo.primCount << 25);
+
+  if (IsFullSubgroup && gl_SubgroupSize >= MS_MAX_GROUP_COUNT) {
+    msPrimitiveGroupInfosPackedGlobal = packed;
+  } else {
+    uint32_t tid = gl_LocalInvocationIndex;
+
+    if (tid < MS_MAX_GROUP_COUNT)
+      msPrimitiveGroupInfosPackedShared[tid] = packed;
+
+    barrier();
+  }
 }
 
 
-uint msAllocatePrimitive() {
-  uvec4 invocationMask = subgroupBallot(true);
+// Retrieves info for a given primitive group. This expects the
+// group index to be uniform within each set of 32 threads.
+MsMeshletPrimitiveGroupInfo msGetPrimitiveGroupInfo(
+        uint32_t                      groupIndex) {
+  uint32_t packed;
 
-  uint count = subgroupBallotBitCount(invocationMask);
-  uint index = subgroupBallotBitCount(invocationMask & gl_SubgroupLtMask);
-
-  uint first;
-
-  if (subgroupElect()) {
-    if (IsSingleSubgroup) {
-      first = msIndexDataOffsetShared;
-      msIndexDataOffsetShared = first + count;
-    } else {
-      first = atomicAdd(msIndexDataOffsetShared, count);
-    }
+  if (IsFullSubgroup && gl_SubgroupSize >= MS_MAX_GROUP_COUNT) {
+    packed = gl_SubgroupSize > MESHLET_GROUP_SIZE
+      ? subgroupShuffle(msPrimitiveGroupInfosPackedGlobal, groupIndex)
+      : subgroupBroadcast(msPrimitiveGroupInfosPackedGlobal, groupIndex);
+  } else {
+    packed = msPrimitiveGroupInfosPackedShared[groupIndex];
   }
 
-  first = subgroupBroadcastFirst(first);
-  return first + index;
+  MsMeshletPrimitiveGroupInfo result;
+  result.vertIndex = bitfieldExtract(packed,  0,  9);
+  result.vertCount = bitfieldExtract(packed,  9,  7);
+  result.primIndex = bitfieldExtract(packed, 16,  9);
+  result.primCount = bitfieldExtract(packed, 25,  7);
+  return result;
 }
 
 
-uint msGetOutputPrimitiveCount() {
-  return msIndexDataOffsetShared;
+// Helper function to read primitive group information from the meshlet
+// buffer and return the relevant counts and indices for the current group.
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+readonly buffer MeshletPrimitiveGroupRef {
+  MeshletPrimitiveGroup groups[];
+};
+
+void msLoadPrimitiveGroupInfosFromMemory(
+  in    MsContext                     context) {
+  MeshletRef meshlet = MeshletRef(context.invocation.meshletVa);
+
+  if (IsFullSubgroup && gl_SubgroupSize >= MS_MAX_GROUP_COUNT) {
+    uint32_t sid = gl_SubgroupInvocationID;
+
+    // Fast path, just load all groups at once and compute
+    // indices by performing a subgroup reduction.
+    MsMeshletPrimitiveGroupInfo result;
+    result.vertCount = 0u;
+    result.primCount = 0u;
+
+    if (sid < context.invocation.groupCount) {
+      MeshletPrimitiveGroup group = meshlet.groups[sid];
+      result.vertCount = group.vertexCount;
+      result.primCount = group.primitiveCount;
+    }
+
+    result.vertIndex = subgroupExclusiveAdd(result.vertCount);
+    result.primIndex = subgroupExclusiveAdd(result.primCount);
+
+    msStorePrimitiveGroupInfo(result);
+  } else {
+    // Otherwise we need to use LDS. Use the array that stores
+    // packed group info for the temporary reduction as well.
+    uint32_t tid = gl_LocalInvocationIndex;
+
+    MsMeshletPrimitiveGroupInfo result;
+    result.vertCount = 0u;
+    result.primCount = 0u;
+
+    if (tid < context.invocation.groupCount) {
+      MeshletPrimitiveGroup group = meshlet.groups[tid];
+      result.vertCount = group.vertexCount;
+      result.primCount = group.primitiveCount;
+    }
+
+    if (tid < MS_MAX_GROUP_COUNT) {
+      msPrimitiveGroupInfosPackedShared[tid] = pack32(
+        u16vec2(result.vertCount, result.primCount));
+    }
+
+    barrier();
+
+    // Do an inclusive scan over the counts to compute indices
+    for (uint32_t i = 1u; i < MS_MAX_GROUP_COUNT; i += i) {
+      u16vec2 read;
+
+      if (tid >= i && tid < MS_MAX_GROUP_COUNT) {
+        read = unpack16(msPrimitiveGroupInfosPackedShared[tid]) +
+          unpack16(msPrimitiveGroupInfosPackedShared[tid - i]);
+      }
+
+      barrier();
+
+      if (tid >= i && tid < MS_MAX_GROUP_COUNT)
+        msPrimitiveGroupInfosPackedShared[tid] = pack32(read);
+
+      barrier();
+    }
+
+    if (tid < MS_MAX_GROUP_COUNT) {
+      // Adjust indices to store the exclusive scan results
+      u16vec2 packedIndices = unpack16(msPrimitiveGroupInfosPackedShared[tid]);
+      result.vertIndex = packedIndices.x - result.vertCount;
+      result.primIndex = packedIndices.y - result.primCount;
+    }
+
+    barrier();
+
+    // This writes to LDS, barrier above is not optional.
+    msStorePrimitiveGroupInfo(result);
+  }
 }
 
 
-// Generic mesh shader template with primitive culling,
-// optional morphing, and support for dual indexing.
+// Helper function to load vertex input data from the meshlet buffer.
+MsVertexIn msLoadVertexDataFromMemory(
+  in    MsContext                     context,
+  in    Meshlet                       meshlet,
+        uint32_t                      vertexIndex) {
+  return MsInputVertexDataRef(meshletComputeAddress(
+    context.invocation.meshletVa, meshlet.vertexDataOffset)).vertices[vertexIndex];
+}
+
+
+// Helper function to load shading data from the meshlet buffer.
+MsShadingIn msLoadShadingDataFromMemory(
+  in    MsContext                     context,
+  in    Meshlet                       meshlet,
+        uint32_t                      vertexIndex) {
+  return MsInputShadingDataRef(meshletComputeAddress(
+    context.invocation.meshletVa, meshlet.shadingDataOffset)).vertices[vertexIndex];
+}
+
+
+// Helper function to load a pair of vertex indices from the meshlet buffer. The
+// first index points to the vertex input data, the second to the shading data.
+u8vec2 msLoadVertexIndicesFromMemory(
+  in    MsContext                     context,
+  in    Meshlet                       meshlet,
+        uint32_t                      index) {
+  return MeshletVertexIndexRef(meshletComputeAddress(
+    context.invocation.meshletVa, meshlet.groupVertexOffset)).vertices[index];
+}
+
+
+// Helper function to load primitive indices from the meshlet buffer.
+uint16_t msLoadPrimitiveFromMemory(
+  in    MsContext                     context,
+  in    Meshlet                       meshlet,
+        uint32_t                      index) {
+  return MeshletPrimitiveDataRef(meshletComputeAddress(
+    context.invocation.meshletVa, meshlet.groupPrimitiveOffset)).primitives[index];
+}
+
+
+// Computes local group index within the current workgroup.
+uint32_t msComputeLocalGroup() {
+  if (IsFullSubgroup && gl_SubgroupSize <= MESHLET_GROUP_SIZE)
+    return (gl_SubgroupID * gl_SubgroupSize) / MESHLET_GROUP_SIZE;
+  else if (IsFullSubgroup && gl_SubgroupSize > MESHLET_GROUP_SIZE)
+    return (gl_SubgroupInvocationID + gl_SubgroupID * gl_SubgroupSize) / MESHLET_GROUP_SIZE;
+  else
+    return gl_LocalInvocationIndex / MESHLET_GROUP_SIZE;
+}
+
+
+// Computes local vertex and primitive index within the current group.
+uint32_t msComputeLocalIndex() {
+  uint32_t tid = IsFullSubgroup
+    ? gl_SubgroupInvocationID + gl_SubgroupID * gl_SubgroupSize
+    : gl_LocalInvocationIndex;
+
+  return tid & (MESHLET_GROUP_SIZE - 1u);
+}
+
+
+// Generic mesh shader template.
 void msMain() {
-  msInitPrimitiveAllocator();
+  msInitDataAllocators();
 
-#ifndef MS_NO_MORPH_DATA
-  msInitMorphTargetAllocator();
-#endif
-
-  // Load some data, compute projection matrix etc.
   MsContext context = msGetInstanceContext();
   Meshlet meshlet = MeshletRef(context.invocation.meshletVa).header;
 
-  // Load input vertex data into shared memory for later use
-  msLoadVertexDataFromMemory(context, meshlet);
+  // Load information about the 32-wide primitive group
+  msLoadPrimitiveGroupInfosFromMemory(context);
 
-  // If the meshlet has dual-indexing enabled, load index pairs into
-  // shared memory as well. We will use this data multiple times.
-  msLoadDualVertexIndicesFromMemory(context, meshlet);
+  // Load node transforms for both the previous and current frame
+  // from memory. Ignore whether or not motion vectors are valid
+  // for now to not stall on these loads for the time being.
+  Transform currNodeTransform = msLoadNodeTransform(context, 0u);
 
-  // Insert a barrier here since LDS initialization needs
-  // to have finished before processing morph targets.
-  barrier();
-
-  // Find all active morph targets for the current meshlet, given
-  // the morph target weights provided by the application.
-  uint morphTargetCount = 0;
-#ifndef MS_NO_MORPH_DATA
-  morphTargetCount = msLoadMorphTargetMetadataFromMemory(context, meshlet);
-#endif // MS_NO_MORPH_DATA
-
-  // If any morph targets are active, we cannot compact vertex
-  // position data and need to process each output vertex separately.
-  bool hasCompactVertexOutputs = morphTargetCount == 0;
-  bool hasUnpackedVertexOutputs = morphTargetCount != 0;
-
-  uint outputVertexCount = hasUnpackedVertexOutputs
-    ? meshlet.vertexCount
-    : meshlet.vertexDataCount;
-
-#ifndef MS_NO_SKINNING
-  // If local joints are used for this meshlet, we will need to load
-  // all joints into shared memory so we can reuse them later on.
-  JointInfluenceRef jointData = msGetJointInfluenceData(context, meshlet);
-  msLoadLocalJointIndicesFromMemory(context, meshlet);
-  msLoadLocalJointsFromMemory(context, meshlet);
-  barrier();
-#endif // MS_NO_SKINNING
-
-  // Compute vertex positions and write the results to shared memory
-  bool useMotionVectors = false;
 #ifndef MS_NO_MOTION_VECTORS
-  useMotionVectors = msInstanceUsesMotionVectors(context);
+  Transform prevNodeTransform = msLoadNodeTransform(context, 1u);
 #endif // MS_NO_MOTION_VECTORS
 
-  MS_LOOP_WORKGROUP(index, outputVertexCount, MAX_VERT_COUNT) {
-    uint inputIndex = index;
-
-    if (hasUnpackedVertexOutputs)
-      inputIndex = msGetDualVertexIndex(index).x;
-
-    // Load vertex input and apply morph targets as necessary
-    MsVertexIn vertexInCurr = msVertexInputShared[inputIndex];
-#ifndef MS_NO_MORPH_DATA
-    msMorphVertexData(context, meshlet,
-      vertexInCurr, index, morphTargetCount, 0u);
-#endif // MS_NO_MORPH_DATA
-
 #ifndef MS_NO_SKINNING
-    // Compute current frame's joint transform
-    Transform jointTransformCurr = msComputeJointTransform(
-      context, meshlet, jointData, 0u, inputIndex);
+  msLoadJointsFromMemory(context, meshlet);
 #endif // MS_NO_SKINNING
 
-    Transform nodeTransformCurr = msLoadNodeTransform(context, 0u);
+#ifndef MS_NO_MORPH_DATA
+  msLoadMorphTargetWeightsFromMemory(context, meshlet);
+#endif // MS_NO_MORPH_DATA
+
+  // Main loop that computes vertex outputs for all primitive groups.
+  // The maximum iteration count is known at compile time.
+  uint32_t localGroup = msComputeLocalGroup();
+  uint32_t localIndex = msComputeLocalIndex();
+
+  [[unroll]]
+  for (uint32_t i = 0u; i < MS_LOCAL_EXPORT_SIZE; i++) {
+    uint32_t groupIndex = context.invocation.firstGroup + localGroup +
+      i * (gl_WorkGroupSize.x / MESHLET_GROUP_SIZE);
+
+    // The group index can technically be out of bounds here, however
+    // this is not an issue as vertex and primitive counts would be 0.
+    MsMeshletPrimitiveGroupInfo groupInfo = msGetPrimitiveGroupInfo(groupIndex);
+
+    // Load vertex indices first since we need them to load vertex data
+    u8vec2 dualIndex = u8vec2(0u);
+
+    if (localIndex < groupInfo.vertCount)
+      dualIndex = msLoadVertexIndicesFromMemory(context, meshlet, groupInfo.vertIndex + localIndex);
+
+    // Load morph target data from memory
+    MeshletMorphTargetVertexInfo morphVertex = { };
+
+#ifndef MS_NO_MORPH_DATA
+    if (meshlet.morphTargetCount != 0u && localIndex < groupInfo.vertCount)
+      morphVertex = msLoadMorphTargetVertexInfoFromMemory(context, meshlet, groupInfo.vertIndex + localIndex);
+#endif // MS_NO_MORPH_DATA
+
+    // Load primitive data immediately after, so that we can
+    // access it later with no additional latency.
+    uint16_t primitiveData = 0us;
+
+    if (localIndex < groupInfo.primCount)
+      primitiveData = msLoadPrimitiveFromMemory(context, meshlet, groupInfo.primIndex + localIndex);
+
+    // Default-initialize vertex data since we we need to run the
+    // primitive culling code using it in uniform control flow.
+    MsVertexIn vertexIn = { };
+    MsVertexOut vertexOut = { };
+
+    if (localIndex < groupInfo.vertCount) {
+      vertexIn = msLoadVertexDataFromMemory(context, meshlet, dualIndex.x);
+
+      MsVertexParameters vertexArgs;
+      vertexArgs.currFrame.vertexData = vertexIn;
+      vertexArgs.currFrame.node = currNodeTransform;
+
+#ifndef MS_NO_SKINNING
+      vertexArgs.currFrame.joint = msComputeJointTransform(
+        context, meshlet, 0u, dualIndex.x);
+#endif // MS_NO_SKINNING
+
 
 #ifndef MS_NO_MOTION_VECTORS
-    // Pre-initialize data for the previous frame with the
-    // same values as for the current frame, in case motion
-    // vectors are disabled for the instance for this frame.
-#ifndef MS_NO_MORPH_DATA
-    MsVertexIn vertexInPrev = vertexInCurr;
-#endif // MS_NO_MORPH_DATA
+      if (msInstanceUsesMotionVectors(context)) {
+        vertexArgs.prevFrame.vertexData = vertexIn;
+        vertexArgs.prevFrame.node = prevNodeTransform;
 
 #ifndef MS_NO_SKINNING
-    Transform jointTransformPrev = jointTransformCurr;
+        vertexArgs.prevFrame.joint = msComputeJointTransform(
+          context, meshlet, 1u, dualIndex.x);
 #endif // MS_NO_SKINNING
+      } else {
+        // If motion vectors are disabled for the instance, just use
+        // the current frame's data to produce consistent results.
+        vertexArgs.prevFrame = vertexArgs.currFrame;
+      }
+#endif // MS_NO_MOTION_VECTORS
 
-    Transform nodeTransformPrev = nodeTransformCurr;
-
-    if (useMotionVectors) {
 #ifndef MS_NO_MORPH_DATA
-      // Morph vertex data using previous frame's weights
-      vertexInPrev = msVertexInputShared[inputIndex];
-      msMorphVertexData(context, meshlet,
-        vertexInPrev, index, morphTargetCount, 1u);
+      // Morphing vertex data is special in that we'll handle both
+      // old and new data in one go in order to reduce overhead.
+      msMorphVertexData(context, meshlet, vertexArgs, morphVertex);
 #endif // MS_NO_MORPH_DATA
 
-      // Load previous frame's node transform from memory
-      nodeTransformPrev = msLoadNodeTransform(context, 1u);
-
-#ifndef MS_NO_SKINNING
-      // Compute previous frame's joint transforms
-      jointTransformPrev = msComputeJointTransform(
-        context, meshlet, jointData, 1u, inputIndex);
-#endif // MS_NO_SKINNING
+      vertexOut = msComputeVertexOutput(context, vertexArgs);
     }
-#endif // MS_NO_MOTION_VECTORS
 
-    MsVertexOut newVertex = msComputeVertexOutput(context, index
-      , vertexInCurr
-      , nodeTransformCurr
-#ifndef MS_NO_SKINNING
-      , jointTransformCurr
-#endif // MS_NO_SKINNING
-#ifndef MS_NO_MOTION_VECTORS
-#ifndef MS_NO_MORPH_DATA
-      , vertexInPrev
-#endif // MS_NO_MORPH_DATA
-      , nodeTransformPrev
-#ifndef MS_NO_SKINNING
-      , jointTransformPrev
-#endif // MS_NO_SKINNING
-#endif // MS_NO_MOTION_VECTORS
-      );
+    // Perform primitive culling using the computed vertex positions.
+    // Default-initialized primitives implicitly get culled due to
+    // being degenerate.
+    u8vec3 primitive = meshletDecodePrimitive(primitiveData);
 
-    msVertexDataShared[index] = newVertex;
+    bool usePrimitive = msCullPrimitive(context, groupInfo.primCount,
+      localGroup, localIndex, primitive, vertexOut);
+
+    uint32_t vertexMask = msComputeVertexMask(
+      localGroup, localIndex, primitive, usePrimitive);
+
+    bool useVertex = bitfieldExtract(vertexMask, int(localIndex), 1) != 0u;
+
+    u32vec2 outputIndices = msAllocateVertexAndPrimitive(useVertex, usePrimitive);
+
+    msStoreVertexExportData(i, localGroup, localIndex,
+      dualIndex, outputIndices.x, morphVertex, vertexOut, useVertex);
+
+    primitive = msRemapPrimitiveIndices(localGroup, localIndex,
+      primitive, usePrimitive, outputIndices.x, vertexMask);
+
+    msStorePrimitiveExportData(i, localGroup, localIndex,
+      outputIndices.y, primitive, usePrimitive);
   }
 
-  barrier();
 
-  // In case we do not generate any fragment shader outputs, we can
-  // export vertex data as-is, but we have to remap vertex indices
-  bool hasCompactVertexExports = false;
-#ifndef FS_INPUT
-  hasCompactVertexExports = hasCompactVertexOutputs;
-#endif // FS_INPUT
+  // Allocate output storage and immediately export already
+  // available vertex data
+  u32vec2 outputCounts = msGetOutputCounts();
+  msSetMeshOutputs(outputCounts.x, outputCounts.y);
 
-  // Load primitives and check which ones are visible. We need
-  // to potentially remap indices anyway, so culling primitives
-  // is not overly expensive.
-  MS_LOOP_WORKGROUP(index, meshlet.primitiveCount, MAX_PRIM_COUNT) {
-    uvec3 indicesRead = msLoadPrimitive(context, meshlet, index);
-    uvec3 indicesExport = indicesRead;
-
-    // If vertex output data is compacted in LDS, we
-    // need to remap the indices we use for reading.
-    if (hasCompactVertexOutputs) {
-      indicesRead = uvec3(
-        msGetDualVertexIndex(indicesRead.x).x,
-        msGetDualVertexIndex(indicesRead.y).x,
-        msGetDualVertexIndex(indicesRead.z).x);
-    }
-
-    // If vertex exports are also compacted, we need to
-    // adjust the indices we are going to export as well
-    if (hasCompactVertexExports)
-      indicesExport = indicesRead;
-
-    // Vertex positions are already in shared memory at this
-    // point, so we can perform culling and write compacted
-    // indices to the correct output location right away.
-    if (!msCullPrimitive(context, indicesRead)) {
-      uint outputIndex = msAllocatePrimitive();
-      msIndexDataShared[outputIndex] = u8vec4(indicesExport.xyz, 0);
-    }
-  }
-
-  barrier();
-
-  // Allocate output storage for vertex data. We can exit early if all
-  // triangles were culled. We will not compact vertex data any further
-  // since doing so is generally rather expensive and complicated, and
-  // we generally expect most primitives to be visible anyway.
-  uint outputPrimitiveCount = msGetOutputPrimitiveCount();
-
-  if (!hasCompactVertexExports)
-    outputVertexCount = meshlet.vertexCount;
-
-  // Exit early if all primitives were culled
-  if (!msSetMeshOutputs(outputVertexCount, outputPrimitiveCount))
+  if (outputCounts.y == 0u)
     return;
 
-  // Compute uniform fragment shader inputs
+  msExportVertexData(outputCounts.x);
+  msExportPrimitiveIndices(outputCounts.y);
+
 #ifndef MS_NO_UNIFORM_OUTPUT
   MsUniformOut msUniform = msComputeUniformOut(context);
-#endif
+  msExportUniform(outputCounts.y, msUniform);
+#endif // MS_NO_UNIFORM_OUTPUT
 
-  // Export vertex positions and fragment shader inputs
-#ifndef MS_NO_SHADING_DATA
-  MsInputShadingDataRef shadingData = MsInputShadingDataRef(
-    meshletComputeAddress(context.invocation.meshletVa, meshlet.shadingDataOffset));
-#endif
-
-  MS_LOOP_WORKGROUP(index, outputVertexCount, MAX_VERT_COUNT) {
-    // Compute vertex and shading data indices
-    uvec2 dualIndex = uvec2(index);
-
-    if (!hasCompactVertexExports)
-      dualIndex = msGetDualVertexIndex(index);
-
-    // Compute index of vertex output data in LDS
-    uint outputIndex = dualIndex.x;
-    
-    if (hasUnpackedVertexOutputs)
-      outputIndex = index;
-
-    // Export vertex position and built-ins
-    MsVertexOut vertexOut = msVertexDataShared[outputIndex];
-    msExportVertex(index, vertexOut);
 
 #ifdef FS_INPUT
-#ifdef MS_COMBINED_DATA
-    MsCombinedIn vertexIn;
+  [[unroll]]
+  for (uint32_t i = 0u; i < MS_LOCAL_EXPORT_SIZE; i++) {
+    uint32_t groupIndex = context.invocation.firstGroup + localGroup +
+      i * (gl_WorkGroupSize.x / MESHLET_GROUP_SIZE);
+
+    // At this point, we will no longer need cross-thread communication,
+    // however we should make sure to export to the current local thread
+    // index on devices where local export is preferred.
+    uint32_t outputIndex = MESHLET_GROUP_SIZE * i + gl_LocalInvocationIndex;
+    uint32_t exportIndex = msLoadVertexExportIndex(i, outputIndex);
+
+    if (exportIndex < outputCounts.x) {
+      MsShadingParameters args;
+
 #ifndef MS_NO_VERTEX_DATA
-    vertexIn.vertex = msVertexInputShared[dualIndex.x];
+      args.vertexData = msLoadVertexOutputData(i, exportIndex);
 #endif // MS_NO_VERTEX_DATA
+
+
 #ifndef MS_NO_SHADING_DATA
-    vertexIn.shading = shadingData.vertices[dualIndex.y];
-#endif // MS_NO_SHADING_DATA
+      uint32_t shadingDataIndex = msLoadVertexDualIndexData(i, exportIndex);
+      args.shadingData = msLoadShadingDataFromMemory(context, meshlet, shadingDataIndex);
 
 #ifndef MS_NO_MORPH_DATA
-    msMorphCombinedData(context, meshlet, vertexIn, index, morphTargetCount, 0u);
+      if (msGetMorphTargetMask(0u) != 0u) {
+        msMorphShadingData(context, meshlet, args.shadingData,
+          msLoadVertexMorphTargetInfo(i, exportIndex));
+      }
 #endif // MS_NO_MORPH_DATA
-#endif // MS_COMBINED_DATA
-
-    FsInput fsInput = msComputeFsInput(context
-      , outputIndex
-#ifndef MS_NO_VERTEX_DATA
-      , vertexIn.vertex
-#endif // MS_NO_VERTEX_DATA
-      , vertexOut
-#ifndef MS_NO_SHADING_DATA
-      , vertexIn.shading
 #endif // MS_NO_SHADING_DATA
-#ifndef MS_NO_UNIFORM_OUTPUT
-      , msUniform
-#endif // MS_NO_UNIFORM_OUTPUT
-    );
 
-    msExportVertexFsInput(index, fsInput);
+
+#ifndef MS_NO_UNIFORM_OUTPUT
+      args.uniformData = msUniform;
+#endif // MS_NO_UNIFORM_OUTPUT
+
+      FsInput fsInput = msComputeFsInput(context, args);
+      msExportVertexFsInput(exportIndex, fsInput);
+    }
+  }
 #endif // FS_INPUT
-  }
-
-  // Export primitives. This is trivial since the final
-  // indices are already stored in shared memory.
-  MS_LOOP_WORKGROUP(index, outputPrimitiveCount, MAX_PRIM_COUNT) {
-    u8vec3 indices = msIndexDataShared[index].xyz;
-    msExportPrimitive(index, indices
-#ifndef MS_NO_UNIFORM_OUTPUT
-      , msUniform
-#endif // MS_NO_UNIFORM_OUTPUT
-    );
-  }
 }
 
 #endif // MS_INSTANCE_RENDER_H

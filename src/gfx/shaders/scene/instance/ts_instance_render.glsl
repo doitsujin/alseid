@@ -46,8 +46,7 @@ uint tsMain() {
 
   // Visibility mask for the meshlet emitted by the current invocation.
   // Initialize to 0, since the invocation may be inactive.
-  uint32_t viewMask = 0u;
-  uint32_t meshletOffset = 0u;
+  MsMeshletPayload payload = MsMeshletPayload(0u, 0u, 0u);
 
   if (context.invocation.isValid) {
     // Load scene header
@@ -85,7 +84,8 @@ uint tsMain() {
     // may emit multiple meshlets per invocation, e.g. when rendering cube
     // maps or shadow maps, each set bit corresponds to a sub-pass.
     MeshletMetadata meshlet = dataBuffer.meshlets[context.invocation.lodMeshletIndex];
-    meshletOffset = meshlet.dataOffset;
+    payload.offset = meshlet.dataOffset;
+    payload.groups = meshlet.primitiveGroupCount;
 
     // Load render pass info and default to rendering all views,
     // since meshlets may have all culling options disabled.
@@ -93,7 +93,7 @@ uint tsMain() {
     uint32_t passFlags = passBuffer.passes[context.invocation.passIndex].flags;
 
     uint32_t viewCount = (passFlags & RENDER_PASS_IS_CUBE_MAP_BIT) != 0u ? 6u : 1u;
-    viewMask = (1u << viewCount) - 1u;
+    payload.viewMask = (1u << viewCount) - 1u;
 
     if (meshlet.flags != 0u) {
       // Compute transform from model space to view space
@@ -145,11 +145,11 @@ uint tsMain() {
         }
 
         if (!testConeFacing(coneOrigin, coneAxis, coneCutoff))
-          viewMask = 0u;
+          payload.viewMask = 0u;
       }
 
       // Cull against the mirror plane and frustum planes if necessary.
-      if ((meshlet.flags & MESHLET_CULL_SPHERE_BIT) != 0u && viewMask != 0u) {
+      if ((meshlet.flags & MESHLET_CULL_SPHERE_BIT) != 0u && payload.viewMask != 0u) {
         float passViewDistanceLimit = passBuffer.passes[context.invocation.passIndex].viewDistanceLimit;
 
         vec3 sphereCenter = vec3(meshlet.sphereCenter);
@@ -165,7 +165,7 @@ uint tsMain() {
           // We also only need to test against the mirror plane once since
           // it is not dependent on the exact view orientation
           if (!testPlaneSphere(passMirrorPlane, sphereCenter, sphereRadius))
-            viewMask = 0u;
+            payload.viewMask = 0u;
 
           // Apply mirroring after culling to not negate the plane test
           sphereCenter = planeMirror(passMirrorPlane, sphereCenter);
@@ -178,10 +178,10 @@ uint tsMain() {
           float maxDistanceSq = passViewDistanceLimit * passViewDistanceLimit;
 
           if (!testSphereDistance(sphereCenter, sphereRadiusSq, maxDistanceSq))
-            viewMask = 0u;
+            payload.viewMask = 0u;
         }
 
-        if (viewMask != 0u) {
+        if (payload.viewMask != 0u) {
           // Test bounding sphere against the view frustum for each view. Ensure
           // that the view mask is uniform here so that memory loads and some
           // of the operation can be made more efficient.
@@ -204,22 +204,22 @@ uint tsMain() {
                             && testPlaneSphere(frustum.planes[5], sphereCenterView, sphereRadius);
 
             if (!frustumTest)
-              viewMask &= ~(1u << i);
+              payload.viewMask &= ~(1u << i);
           }
         }
       }
     }
   }
 
-  // Emit task shader payload
-  uint32_t outputCount = bitCount(viewMask);
-  uint32_t outputIndex = tsAllocateOutputs(outputCount);
+  // Compute total number of workgroups to emit for each meshlet
+  uint32_t meshletWorkgroups = msPayloadComputeWorkgroupCount(payload);
+  uint32_t outputCount = tsComputeOutputCount(meshletWorkgroups);
 
-  outputCount = tsGetOutputCount();
-
+  // Emit task shader payload. It is important that every active
+  // thread writes to its local section in the output payload.
   if (outputCount != 0u) {
     tsPayloadInit(context.invocation);
-    tsPayloadAddMeshlet(tid, meshletOffset, outputIndex, viewMask);
+    tsPayloadAddMeshlet(tid, payload);
   }
 
   return outputCount;

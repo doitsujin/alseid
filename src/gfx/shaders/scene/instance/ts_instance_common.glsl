@@ -11,12 +11,6 @@
 #include "as_instance.glsl"
 #include "as_instance_payload.glsl"
 
-// Encodes meshlet payload to store in the task shader payload.
-uint16_t tsEncodeMeshletPayload(uint32_t index, uint32_t viewMask) {
-  return uint16_t(viewMask | (index << 6));
-}
-
-
 // Task shader invocation info. Pulls data from the draw properties
 // and assigns semantic meanings to the various indices. Except for
 // the meshlet index, all these values are uniform.
@@ -160,9 +154,8 @@ void tsPayloadInit(
 
 // Adds a meshlet to the payload. This must be called once per
 // thread in a workgroup, or the payload will be undefined.
-void tsPayloadAddMeshlet(uint32_t tid, uint32_t offset, uint32_t index, uint32_t viewMask) {
-  tsPayload.meshletOffsets[tid] = offset;
-  tsPayload.meshletPayloads[tid] = tsEncodeMeshletPayload(index, viewMask);
+void tsPayloadAddMeshlet(uint32_t tid, in MsMeshletPayload payload) {
+  tsPayload.meshletPayloads[tid] = tsEncodeMeshletPayload(payload);
 }
 
 

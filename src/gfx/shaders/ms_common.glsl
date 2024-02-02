@@ -7,12 +7,12 @@ layout(local_size_x_id = SPEC_CONST_ID_MESH_SHADER_WORKGROUP_SIZE) in;
 
 // Restrict output to 128 vertices and primitives
 // by default, unless overridden by the application.
-#ifndef MAX_VERT_COUNT
-#define MAX_VERT_COUNT (128)
+#ifndef MS_MAX_VERT_COUNT
+#define MS_MAX_VERT_COUNT (128)
 #endif
 
-#ifndef MAX_PRIM_COUNT
-#define MAX_PRIM_COUNT (128)
+#ifndef MS_MAX_PRIM_COUNT
+#define MS_MAX_PRIM_COUNT (128)
 #endif
 
 // Convenience macro to perform count invocations of

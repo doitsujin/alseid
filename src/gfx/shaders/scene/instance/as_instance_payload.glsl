@@ -5,6 +5,39 @@
 
 #include "../as_scene.glsl"
 
+// Number of meshlet groups processed in a single mesh shader
+// workgroup. Depends on the mesh shader primitive output count.
+#define MeshletGroupsPerWorkgroup (128u / MESHLET_GROUP_SIZE)
+
+
+// Per-meshlet payload structure, and helper functions to encode
+// and decode the structure using a 32-bit integer.
+struct MsMeshletPayload {
+  uint32_t offset;
+  uint32_t groups;
+  uint32_t viewMask;
+};
+
+
+uint32_t tsEncodeMeshletPayload(in MsMeshletPayload p) {
+  return p.viewMask | (p.groups << 6u) | (p.offset << 2u);
+}
+
+
+MsMeshletPayload msDecodeMeshletPayload(uint32_t p) {
+  MsMeshletPayload result;
+  result.offset = bitfieldExtract(p, 10, 22) << 8u;
+  result.groups = bitfieldExtract(p, 6, 4);
+  result.viewMask = bitfieldExtract(p, 0, 6);
+  return result;
+}
+
+
+uint32_t msPayloadComputeWorkgroupCount(in MsMeshletPayload p) {
+  return bitCount(p.viewMask) * asComputeWorkgroupCount1D(p.groups, MeshletGroupsPerWorkgroup);
+}
+
+
 // Task shader payload. Stores uniform information about the render
 // pass, instance, and meshlets to render.
 struct TsPayload {
@@ -18,13 +51,10 @@ struct TsPayload {
   // Bit mask of task shader threads that begin a new draw.
   uint64_t            threadDrawMask;
 
-  // List of meshlets. This encodes a byte offset to the meshlet
-  // header within the meshlet buffer, in addition to extra data.
-  uint32_t            meshletOffsets[TsWorkgroupSize];
-  // Meshlet payloads. Encodes a 6-bit view mask in the lower bits,
-  // and a 10-bit workgroup index that denotes the first workgroup
-  // that can work on the meshlet at the given index.
-  uint16_t            meshletPayloads[TsWorkgroupSize];
+  // Meshlet payloads. Stores a packed meshlet offset (22 bits, as a
+  // multiple of 256), the number of primitive groups in the meshlet
+  // (4 bits, biased by 1), and the view mask (6 bits).
+  uint32_t            meshletPayloads[TsWorkgroupSize];
 };
 
 taskPayloadSharedEXT TsPayload tsPayload;
