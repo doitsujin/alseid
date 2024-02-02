@@ -28,9 +28,10 @@ class GfxRenderStateData;
  * mesh shader via specialization constants.
  */
 enum class GfxMeshShaderFlag : uint32_t {
-  ePreferLocalOutput            = (1u << 0),
-  ePreferCompactVertexOutput    = (1u << 1),
-  ePreferCompactPrimitiveOutput = (1u << 2),
+  ePreferLocalVertexOutput      = (1u << 0),
+  ePreferLocalPrimitiveOutput   = (1u << 1),
+  ePreferCompactVertexOutput    = (1u << 2),
+  ePreferCompactPrimitiveOutput = (1u << 3),
 
   eFlagEnum                     = 0
 };

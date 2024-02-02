@@ -1433,9 +1433,11 @@ GfxVulkanSpecConstantData GfxVulkanPipelineManager::getDefaultSpecConstants() co
 
   GfxMeshShaderFlags meshShaderFlags = 0;
 
-  if (properties.extMeshShader.prefersLocalInvocationVertexOutput
-   || properties.extMeshShader.prefersLocalInvocationPrimitiveOutput)
-    meshShaderFlags |= GfxMeshShaderFlag::ePreferLocalOutput;
+  if (properties.extMeshShader.prefersLocalInvocationVertexOutput)
+    meshShaderFlags |= GfxMeshShaderFlag::ePreferLocalVertexOutput;
+
+  if (properties.extMeshShader.prefersLocalInvocationPrimitiveOutput)
+    meshShaderFlags |= GfxMeshShaderFlag::ePreferLocalPrimitiveOutput;
 
   if (properties.extMeshShader.prefersCompactVertexOutput)
     meshShaderFlags |= GfxMeshShaderFlag::ePreferCompactVertexOutput;
