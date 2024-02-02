@@ -109,10 +109,10 @@ public:
       T rangeEnd = pickRange->offset + pickRange->size;
       T allocEnd = alignedOffset + size;
 
+      pickRange->size = alignedOffset - pickRange->offset;
+
       if (allocEnd < rangeEnd)
         m_freeList.push_back(Range(allocEnd, rangeEnd - allocEnd));
-
-      pickRange->size = alignedOffset - pickRange->offset;
     }
 
     return std::make_optional(alignedOffset);
