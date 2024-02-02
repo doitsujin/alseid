@@ -25,6 +25,11 @@ const uint MsWorkgroupSize = 128u;
 #endif
 
 #ifdef STAGE_MESH
+#define MS_PREFER_LOCAL_VERTEX_EXPORT                 (1u << 0)
+#define MS_PREFER_LOCAL_PRIMITIVE_EXPORT              (1u << 1)
+#define MS_PREFER_COMPACT_VERTEX_EXPORT               (1u << 2)
+#define MS_PREFER_COMPACT_PRIMITIVE_EXPORT            (1u << 3)
+
 layout(constant_id = SPEC_CONST_ID_MESH_SHADER_FLAGS)
 const uint MsFlags = 0u;
 #endif // STAGE_MESH

@@ -463,8 +463,8 @@ class GltfMeshletBuilder : public std::enable_shared_from_this<GltfMeshletBuilde
 public:
 
   // TODO bump to 240/240 once we support this properly
-  constexpr static uint32_t MaxVertexCount = 128u;
-  constexpr static uint32_t MaxPrimitiveCount = 128u;
+  constexpr static uint32_t MaxVertexCount = 240u;
+  constexpr static uint32_t MaxPrimitiveCount = 240u;
   constexpr static uint32_t MaxPrimitiveGroupSize = 32u;
   constexpr static uint32_t MeshletDataAlignment = 256u;
 
@@ -536,7 +536,7 @@ private:
     std::array<uint8_t, MaxPrimitiveGroupSize> verts = { };
   };
 
-  using PrimitiveGroups = small_vector<PrimitiveGroup, 8>;
+  using PrimitiveGroups = small_vector<PrimitiveGroup, 12>;
 
   std::shared_ptr<GltfMeshPrimitive>      m_primitive;
   std::shared_ptr<GltfPackedVertexLayout> m_packedLayout;
@@ -582,8 +582,9 @@ private:
           std::vector<std::pair<float, uint16_t>>& weights) const;
 
   void processMorphTargets(
-          std::vector<GfxMeshletMorphTargetInfo>& morphTargets,
+          std::vector<uint16_t>&        morphTargetIndices,
           std::vector<char>&            morphBuffer,
+          std::vector<GfxMeshletMorphTargetVertexInfo>& morphInfos,
     const uint32_t*                     vertexIndices);
 
   PrimitiveGroups buildPrimitiveGroups(
@@ -591,12 +592,15 @@ private:
 
   void buildMeshletBuffer(
     const PrimitiveGroups&              groups,
-    const uint8_t*                      primitiveIndices,
+          size_t                        vertexDataCount,
     const char*                         vertexData,
+          size_t                        shadingDataCount,
     const char*                         shadingData,
     const std::pair<uint8_t, uint8_t>*  dualIndexData,
-    const std::vector<GfxMeshletMorphTargetInfo>& morphTargets,
-    const std::vector<char>&            morphBuffer);
+          uint32_t                      morphTargetCount,
+    const uint16_t*                     morphTargetIndices,
+    const GfxMeshletMorphTargetVertexInfo* morphTargetInfos,
+    const char*                         morphData);
 
   static uint16_t allocateStorage(
           uint16_t&                       allocator,

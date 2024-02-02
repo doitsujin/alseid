@@ -200,7 +200,7 @@ struct MeshletMetadata {
   float16_t coneCutoff;
   uint16_t  jointIndex;
   uint32_t  dataOffset;
-  uint32_t  reserved;
+  uint32_t  primitiveGroupCount;
 };
 
 #define MESHLET_CULL_SPHERE_BIT         (1u << 0)
@@ -214,49 +214,58 @@ readonly buffer MeshletMetadataRef {
 };
 
 
+// Meshlet primitive group
+struct MeshletPrimitiveGroup {
+  uint8_t vertexCount;
+  uint8_t primitiveCount;
+};
+
+
 // Meshlet metadata
 //
 // Stores vertex data as well as morph target data
 // relevant for rendering the meshlet in question.
-#define MESHLET_LOCAL_JOINT_COUNT       (16u)
+#define MESHLET_LOCAL_JOINT_COUNT         (16u)
+#define MESHLET_LOCAL_MORPH_TARGET_COUNT  (16u)
+#define MESHLET_GROUP_SIZE                (32u)
 
 struct Meshlet {
-  uint16_t  flags;
-  uint8_t   vertexCount;
-  uint8_t   primitiveCount;
-  uint8_t   vertexDataCount;
-  uint8_t   shadingDataCount;
-  uint16_t  dualIndexOffset;
-  uint16_t  primitiveOffset;
+  uint16_t  groupVertexOffset;
+  uint16_t  groupPrimitiveOffset;
   uint16_t  vertexDataOffset;
   uint16_t  shadingDataOffset;
-  uint16_t  jointCountPerVertex;
+  uint8_t   vertexDataCount;
+  uint8_t   shadingDataCount;
+  uint8_t   jointCount;
+  uint8_t   jointCountPerVertex;
   uint16_t  jointDataOffset;
-  uint16_t  morphDataOffset;
-  uint16_t  morphTargetOffset;
-  uint16_t  morphTargetCount;
-  uint16_t  jointCount;
   uint16_t  jointIndex;
-  uint32_t  reserved1;
+  uint16_t  morphTargetCount;
+  uint16_t  morphTargetOffset;
+  uint16_t  morphDataOffset;
+  uint16_t  skinIndexOffset;
 };
 
-// Buffer reference type for meshlet data
+
+// Buffer reference type for meshlet data, immediately followed by a
+// tightly packed array of group properties. The group count itself
+// must be passed to the mesh shader through other means.
 layout(buffer_reference, buffer_reference_align = 16, scalar)
 readonly buffer MeshletRef {
-  Meshlet   header;
-  uint16_t  jointIndices[];
+  Meshlet               header;
+  MeshletPrimitiveGroup groups[];
 };
 
+MeshletRef meshletGetHeader(
+  in    MeshletMetadataRef            dataBuffer,
+  in    MeshletMetadata               meshlet) {
+  uint64_t address = uint64_t(dataBuffer) + meshlet.dataOffset;
+  return MeshletRef(address);
+}
 
 uint64_t meshletComputeAddress(uint64_t baseAddress, uint16_t offset) {
   // Offsets within a meshlet are stored as multiples of 16 bytes
   return baseAddress + (uint32_t(offset) * 16u);
-}
-
-
-MeshletRef meshletGetHeader(in MeshletMetadataRef dataBuffer, in MeshletMetadata meshlet) {
-  uint64_t address = uint64_t(dataBuffer) + meshlet.dataOffset;
-  return MeshletRef(address);
 }
 
 
@@ -266,51 +275,51 @@ struct JointInfluence {
   float     weight;
 };
 
-JointInfluence jointInfluenceUnpack(uint16_t data) {
-  uint u32 = uint(data);
-
-  return JointInfluence(bitfieldExtract(uint(u32), 11, 5),
-    float(bitfieldExtract(uint(u32), 0, 11)) / 2047.0f);
+JointInfluence meshletDecodeJointInfluence(uint32_t data) {
+  return JointInfluence(bitfieldExtract(data, 12, 4),
+    float(bitfieldExtract(data, 0, 12)) / 4095.0f);
 }
-
-
-// Morph target metadata
-//
-// Stores a mask of affected vertices, as well as
-// an offset relative to the meshlet that contains
-// morph data.
-struct MeshletMorphTarget {
-  uint16_t  targetIndex;
-  uint16_t  dataIndex;
-  uint32_t  vertexMask[4];
-};
-
-
-// Buffer reference type for morph target metadata
-layout(buffer_reference, buffer_reference_align = 16, scalar)
-readonly buffer MeshletMorphTargetRef {
-  MeshletMorphTarget metadata[];
-};
 
 
 // Buffer reference type for primitive data.
 layout(buffer_reference, buffer_reference_align = 16, scalar)
 readonly buffer MeshletPrimitiveDataRef {
-  u8vec3 primitives[];
+  uint16_t primitives[];
 };
 
 
-// Buffer reference type for flat index data.
-layout(buffer_reference, buffer_reference_align = 16, scalar)
-readonly buffer MeshletIndexDataRef {
-  uint8_t indices[];
-};
+// Helper function to decode primitive data
+u8vec3 meshletDecodePrimitive(uint32_t prim) {
+  return u8vec3(
+    bitfieldExtract(prim,  0, 5),
+    bitfieldExtract(prim,  5, 5),
+    bitfieldExtract(prim, 10, 5));
+}
 
 
-// Buffer reference type for dual vertex indices.
+// Buffer reference type for vertex indices.
 layout(buffer_reference, buffer_reference_align = 16, scalar)
-readonly buffer MeshletDualIndexDataRef {
+readonly buffer MeshletVertexIndexRef {
   u8vec2 vertices[];
+};
+
+
+// Buffer reference type for skin indices.
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+readonly buffer MeshletSkinIndexRef {
+  uint16_t indices[];
+};
+
+
+// Per-vertex morph target metadata
+struct MeshletMorphTargetVertexInfo {
+  uint16_t morphTargetMask;
+  uint16_t morphDataIndex;
+};
+
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+readonly buffer MeshletMorphTargetVertexInfoRef {
+  MeshletMorphTargetVertexInfo vertexInfos[];
 };
 
 

@@ -2,11 +2,11 @@
 
 #extension GL_GOOGLE_include_directive : enable
 
-#include "as_include_head.glsl"
+// #define MS_NO_MORPH_DATA
+// #define MS_NO_MOTION_VECTORS
+// #define MS_NO_SKINNING
 
-#ifdef STAGE_MESH
-#include "scene/instance/ms_instance_common.glsl"
-#endif
+#include "as_include_head.glsl"
 
 // Use existing template for mesh/vertex shader
 #define MS_MAIN msMain
@@ -73,12 +73,6 @@ void fsMain(in FsInput fsInput, in FsUniform fsUniform) {
 ////////////////////////////
 #ifdef STAGE_MESH
 
-struct MsContext {
-  MsInvocationInfo  invocation;
-  uint32_t          flags;
-};
-
-
 struct MsVertexIn {
   f16vec4   position;
 };
@@ -97,8 +91,18 @@ struct MsMorphIn {
 
 
 struct MsVertexOut {
-  vec4 position;
-  vec3 oldPosition;
+  vec4      position;
+  vec3      oldPosition;
+  f16vec4   jointRotation;
+};
+
+
+#include "scene/instance/ms_instance_common.glsl"
+
+
+struct MsContext {
+  MsInvocationInfo  invocation;
+  uint32_t          flags;
 };
 
 
@@ -136,18 +140,9 @@ void msMorphShading(
 }
 
 
-shared f16vec4 rotations[MAX_VERT_COUNT];
-
-
 MsVertexOut msComputeVertexOutput(
   in    MsContext                     context,
-        uint                          vertexIndex,
-  in    MsVertexIn                    vertex,
-  in    Transform                     nodeTransform,
-  in    Transform                     jointTransform,
-  in    MsVertexIn                    oldVertex,
-  in    Transform                     oldNodeTransform,
-  in    Transform                     oldJointTransform) {
+  in    MsVertexParameters            args) {
   PassInfoBufferIn passInfoBuffer = PassInfoBufferIn(globals.passInfoVa);
 
   Transform currPassTransform = passInfoBuffer.passes[context.invocation.passIndex].currTransform.transform;
@@ -156,18 +151,22 @@ MsVertexOut msComputeVertexOutput(
     vec4(context.invocation.meshInstance.transform),
     vec3(context.invocation.meshInstance.translate));
 
-  worldTransform = transChain(jointTransform, worldTransform);
-  worldTransform = transChain(nodeTransform, worldTransform);
+#ifndef MS_NO_SKINNING
+  worldTransform = transChain(args.currFrame.joint, worldTransform);
+#endif // MS_NO_SKINNING
+  worldTransform = transChain(args.currFrame.node, worldTransform);
 
   Transform currTransform = transChainNorm(currPassTransform, worldTransform);
-  vec3 currVertexPos = transApply(currTransform, vec3(vertex.position.xyz));
 
-  rotations[vertexIndex] = f16vec4(currTransform.rot);
+  vec3 currVertexPos = transApply(currTransform,
+    vec3(args.currFrame.vertexData.position.xyz));
 
   MsVertexOut result;
   result.position = projApply(passInfoBuffer.passes[context.invocation.passIndex].projection, currVertexPos);
   result.oldPosition = result.position.xyw;
+  result.jointRotation = f16vec4(currTransform.rot);
 
+#ifndef MS_NO_MOTION_VECTORS
   if (!asTest(context.flags, MS_NO_MOTION_VECTORS_BIT)) {
     Transform prevPassTransform = passInfoBuffer.passes[context.invocation.passIndex].prevTransform.transform;
 
@@ -176,15 +175,20 @@ MsVertexOut msComputeVertexOutput(
         vec4(context.invocation.meshInstance.transform),
         vec3(context.invocation.meshInstance.translate));
 
-      worldTransform = transChain(oldJointTransform, worldTransform);
-      worldTransform = transChain(oldNodeTransform, worldTransform);
+#ifndef MS_NO_SKINNING
+      worldTransform = transChain(args.prevFrame.joint, worldTransform);
+#endif // MS_NO_SKINNING
+      worldTransform = transChain(args.prevFrame.node, worldTransform);
     }
 
     Transform prevTransform = transChainNorm(prevPassTransform, worldTransform);
-    vec3 prevVertexPos = transApply(prevTransform, vec3(vertex.position.xyz));
+
+    vec3 prevVertexPos = transApply(prevTransform,
+      vec3(args.prevFrame.vertexData.position.xyz));
 
     result.oldPosition = projApply(passInfoBuffer.passes[context.invocation.passIndex].projection, prevVertexPos).xyw;
   }
+#endif // MS_NO_MOTION_VECTORS
 
   return result;
 }
@@ -192,17 +196,12 @@ MsVertexOut msComputeVertexOutput(
 
 FsInput msComputeFsInput(
   in    MsContext                     context,
-        uint                          vertexIndex,
-  in    MsVertexIn                    vertexIn,
-  in    MsVertexOut                   vertexOut,
-  in    MsShadingIn                   shadingIn,
-  in    MsUniformOut                  uniformOut) {
-  vec4 transform = vec4(rotations[vertexIndex]);
-
+  in    MsShadingParameters           args) {
   FsInput result;
-  result.normal = normalize(quatApplyNorm(transform, unpackSnorm3x10(shadingIn.normal)));
-  result.prevFramePos = vertexOut.oldPosition;
-  result.currFramePos = vertexOut.position.xyw;
+  result.normal = normalize(quatApply(args.vertexData.jointRotation,
+    unpackSnorm3x10(args.shadingData.normal)));
+  result.prevFramePos = args.vertexData.oldPosition;
+  result.currFramePos = args.vertexData.position.xyw;
   return result;
 }
 

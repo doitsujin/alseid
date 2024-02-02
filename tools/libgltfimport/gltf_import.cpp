@@ -1,6 +1,8 @@
+#include <algorithm>
 #include <cstdint>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 #include "gltf_import.h"
 
@@ -829,10 +831,6 @@ void GltfMeshletBuilder::buildMeshlet(
   const uint8_t*                      primitiveIndices,
   const uint32_t*                     vertexIndices,
   const GltfVertex*                   vertexData) {
-  // Set basic meshlet properties that we can already process
-  m_metadata.header.vertexCount = m_meshlet.vertex_count;
-  m_metadata.header.primitiveCount = m_meshlet.triangle_count;
-
   // Initialize joint index to be invalid so that task shaders
   // don't apply an incorrect transform for culling by accident.
   m_metadata.info.jointIndex = 0xffffu;
@@ -867,22 +865,28 @@ void GltfMeshletBuilder::buildMeshlet(
 
   // Generate morph target data. If the meshlet has any morph targets,
   // this will also adjust any culling parameters as necessary.
-  std::vector<GfxMeshletMorphTargetInfo> morphTargets;
+  // std::vector<GfxMeshletMorphTargetInfo> morphTargets;
+  std::vector<uint16_t> morphTargetIndices;
   std::vector<char> morphBuffer;
+  std::vector<GfxMeshletMorphTargetVertexInfo> morphInfos;
 
-  processMorphTargets(morphTargets, morphBuffer, vertexIndices);
-  m_metadata.header.morphTargetCount = morphTargets.size();
+  processMorphTargets(morphTargetIndices,
+    morphBuffer, morphInfos, vertexIndices);
 
   // Split meshlet into primitive groups. This only rearranges some index data.
   PrimitiveGroups groups = buildPrimitiveGroups(primitiveIndices);
 
   // Build the actual meshlet buffer
   buildMeshletBuffer(groups,
-    primitiveIndices,
+    vertexBuffer.size(),
     vertexBuffer.data(),
+    shadingBuffer.size(),
     shadingBuffer.data(),
     dualIndexData.data(),
-    morphTargets, morphBuffer);
+    morphTargetIndices.size(),
+    morphTargetIndices.data(),
+    morphInfos.data(),
+    morphBuffer.data());
 }
 
 
@@ -992,9 +996,6 @@ std::vector<std::pair<uint8_t, uint8_t>> GltfMeshletBuilder::computeDualIndexBuf
 
   vertexData.resize(vertexDataCount);
   shadingData.resize(shadingDataCount);
-
-  m_metadata.header.vertexDataCount = vertexDataCount;
-  m_metadata.header.shadingDataCount = shadingDataCount;
   return result;
 }
 
@@ -1228,8 +1229,9 @@ void GltfMeshletBuilder::renormalizeWeights(
 
 
 void GltfMeshletBuilder::processMorphTargets(
-        std::vector<GfxMeshletMorphTargetInfo>& morphTargets,
+        std::vector<uint16_t>&        morphTargetIndices,
         std::vector<char>&            morphBuffer,
+        std::vector<GfxMeshletMorphTargetVertexInfo>& morphInfos,
   const uint32_t*                     vertexIndices) {
   // Exit early if the final output does not store morph targets
   size_t morphDataStride = m_packedLayout->getStreamDataStride(
@@ -1288,32 +1290,42 @@ void GltfMeshletBuilder::processMorphTargets(
     std::vector<char> morphData = packVertices(
       GltfPackedVertexStream::eMorphData, vertices.data(), nullptr);
 
-    GfxMeshletMorphTargetInfo* metadata = nullptr;
+    int32_t targetIndex = -1;
 
     for (uint32_t v = 0; v < m_meshlet.vertex_count; v++) {
       if (!std::memcmp(&morphData[v * morphDataStride], &zeroVertex[0], morphDataStride))
         continue;
 
-      if (!metadata) {
-        metadata = &morphTargets.emplace_back();
-        metadata->targetIndex = entry->second;
-        metadata->dataIndex = morphBuffer.size() / morphDataStride;
+      if (targetIndex < 0) {
+        targetIndex = int32_t(morphTargetIndices.size());
+        morphTargetIndices.push_back(entry->second);
+
+        if (morphInfos.empty())
+          morphInfos.resize(m_meshlet.vertex_count);
+
+        morphBuffer.resize(morphBuffer.size() +
+          m_meshlet.vertex_count * morphDataStride);
       }
 
-      metadata->vertexMask.at(v / 32) |= (1u << (v % 32));
+      morphInfos[v].morphTargetMask |= 1u << targetIndex;
 
-      size_t offset = morphBuffer.size();
-      morphBuffer.resize(offset + morphDataStride);
-
-      std::memcpy(&morphBuffer[offset],
+      std::memcpy(&morphBuffer[morphDataStride * (m_meshlet.vertex_count * targetIndex + v)],
         &morphData[v * morphDataStride], morphDataStride);
     }
+  }
+
+  // Compute morph target data indices that describe the data layout
+  uint32_t morphDataStructures = 0u;
+
+  for (size_t i = 0; i < morphInfos.size(); i++) {
+    morphInfos[i].morphDataIndex = morphDataStructures;
+    morphDataStructures += popcnt(uint32_t(morphInfos[i].morphTargetMask));
   }
 
   // Disable cone culling if any morph targets are enabled and
   // vertex positions are morphed, since face normals may change
   // significantly. Also enlarge bounding sphere as necessary.
-  if (!morphTargets.empty() && sphereRadiusDelta > 0.0f) {
+  if (!morphTargetIndices.empty() && sphereRadiusDelta > 0.0f) {
     float sphereRadius = float(m_metadata.info.sphereRadius);
 
     m_metadata.info.flags -= GfxMeshletCullFlag::eCullCone;
@@ -1470,55 +1482,78 @@ GltfMeshletBuilder::PrimitiveGroups GltfMeshletBuilder::buildPrimitiveGroups(
 
 void GltfMeshletBuilder::buildMeshletBuffer(
   const PrimitiveGroups&              groups,
-  const uint8_t*                      primitiveIndices,
+        size_t                        vertexDataCount,
   const char*                         vertexData,
+        size_t                        shadingDataCount,
   const char*                         shadingData,
   const std::pair<uint8_t, uint8_t>*  dualIndexData,
-  const std::vector<GfxMeshletMorphTargetInfo>& morphTargets,
-  const std::vector<char>&            morphBuffer) {
+        uint32_t                      morphTargetCount,
+  const uint16_t*                     morphTargetIndices,
+  const GfxMeshletMorphTargetVertexInfo* morphTargetInfos,
+  const char*                         morphData) {
   uint16_t offset = 0;
-  allocateStorage(offset, sizeof(m_metadata.header));
 
-  // Local joint index data immediately follows the header
-  size_t localJointDataSize = sizeof(uint16_t) * m_localJoints.size();
-  allocateStorage(offset, localJointDataSize);
+  // Primitive group infos are stored immediately following
+  // the header, with no padding.
+  m_metadata.info.groupCount = groups.size();
 
-  // Dual index data is always accessed first
-  m_metadata.header.dualIndexOffset = allocateStorage(offset,
-    m_meshlet.vertex_count * 2);
+  allocateStorage(offset, sizeof(m_metadata.header) +
+    sizeof(GfxMeshletPrimitiveGroupInfo) * groups.size());
+
+  // Allocate storage for joint and morph target indices
+  m_metadata.header.skinIndexOffset = allocateStorage(offset,
+    sizeof(uint16_t) * (m_localJoints.size() + morphTargetCount));
+
+  // Allocate storage for group vertex indices and primitive data
+  uint32_t groupVertexCount = 0;
+  uint32_t groupPrimitiveCount = 0;
+
+  for (uint32_t i = 0; i < groups.size(); i++) {
+    groupVertexCount += groups[i].vertCount;
+    groupPrimitiveCount += groups[i].primCount;
+  }
+
+  m_metadata.header.groupVertexOffset = allocateStorage(offset,
+    sizeof(GfxMeshletDualIndex) * groupVertexCount);
+  m_metadata.header.groupPrimitiveOffset = allocateStorage(offset,
+    sizeof(GfxMeshletPrimitiveGroupIndices) * groupPrimitiveCount);
 
   // Joint data is always required for vertex processing if present.
   if (m_metadata.header.jointCountPerVertex) {
     m_metadata.header.jointDataOffset = allocateStorage(offset,
       m_metadata.header.jointCountPerVertex *
-      m_metadata.header.vertexDataCount *
-      sizeof(GfxMeshletJointData));
+      sizeof(GfxMeshletJointData) * vertexDataCount);
   }
 
   // Generally followed by vertex data. Ignore morph targets for
   // now, if those are used then access patterns are weird anyway.
   uint32_t vertexStride = m_packedLayout->getStreamDataStride(GltfPackedVertexStream::eVertexData);
-  m_metadata.header.vertexDataOffset = allocateStorage(
-    offset, m_metadata.header.vertexDataCount * vertexStride);
-
-  // Index data is used for primitive culling after vertex
-  // positions are computed, so we need it next.
-  m_metadata.header.primitiveOffset = allocateStorage(offset,
-    m_meshlet.triangle_count * sizeof(GfxMeshletPrimitive));
+  m_metadata.header.vertexDataOffset = allocateStorage(offset, vertexDataCount * vertexStride);
+  m_metadata.header.vertexDataCount = uint8_t(vertexDataCount);
 
   // Put shading data last since it is only used to compute
   // fragment shader inputs.
   uint32_t shadingStride = m_packedLayout->getStreamDataStride(GltfPackedVertexStream::eShadingData);
-  m_metadata.header.shadingDataOffset = allocateStorage(
-    offset, m_metadata.header.shadingDataCount * shadingStride);
+  m_metadata.header.shadingDataOffset = allocateStorage(offset, shadingDataCount * shadingStride);
+  m_metadata.header.shadingDataCount = uint8_t(shadingDataCount);
 
   // Allocate storage for morph target metadata, as well as
   // the morph data buffer.
-  if (!morphTargets.empty()) {
-    m_metadata.header.morphTargetOffset = allocateStorage(
-      offset, morphTargets.size() * sizeof(GfxMeshletMorphTargetInfo));
-    m_metadata.header.morphDataOffset = allocateStorage(
-      offset, morphBuffer.size());
+  size_t morphDataCount = 0u;
+  size_t morphDataStride = 0u;
+
+  if (morphTargetCount) {
+    morphDataStride = m_packedLayout->getStreamDataStride(
+      GltfPackedVertexStream::eMorphData);
+
+    for (uint32_t i = 0; i < m_meshlet.vertex_count; i++)
+      morphDataCount += popcnt(uint32_t(morphTargetInfos[i].morphTargetMask));
+
+    m_metadata.header.morphTargetCount = morphTargetCount;
+    m_metadata.header.morphTargetOffset = allocateStorage(offset,
+      groupVertexCount * sizeof(GfxMeshletMorphTargetVertexInfo));
+    m_metadata.header.morphDataOffset = allocateStorage(offset,
+      morphDataCount * morphDataStride);
   }
 
   // Put ray tracing index data at the end since we'll never access
@@ -1538,10 +1573,26 @@ void GltfMeshletBuilder::buildMeshletBuffer(
   m_buffer.resize(offset * 16);
   std::memcpy(&m_buffer[0], &m_metadata.header, sizeof(m_metadata.header));
 
-  if (localJointDataSize) {
-    std::memcpy(&m_buffer[sizeof(m_metadata.header)],
-      m_localJoints.data(), localJointDataSize);
+  // Write out primitive group infos
+  small_vector<GfxMeshletPrimitiveGroupInfo, 12> groupInfos;
+
+  for (uint32_t i = 0; i < groups.size(); i++) {
+    auto& info = groupInfos.emplace_back();
+    info.primitiveCount = groups[i].primCount;
+    info.vertexCount = groups[i].vertCount;
   }
+
+  std::memcpy(&m_buffer[sizeof(m_metadata.header)], groupInfos.data(),
+    groupInfos.size() * sizeof(GfxMeshletPrimitiveGroupInfo));
+
+  // Write out joint and morph target indices
+  auto dstSkinIndexData = reinterpret_cast<uint16_t*>(&m_buffer[m_metadata.header.skinIndexOffset * 16]);
+
+  for (uint32_t i = 0; i < m_metadata.header.jointCount; i++)
+    dstSkinIndexData[i] = m_localJoints[i];
+
+  for (uint32_t i = 0; i < morphTargetCount; i++)
+    dstSkinIndexData[i + m_metadata.header.jointCount] = morphTargetIndices[i];
 
   // Write out vertex and shading data
   size_t vertexInputStride = vertexStride +
@@ -1551,61 +1602,77 @@ void GltfMeshletBuilder::buildMeshletBuffer(
   char* dstShadingData = &m_buffer[m_metadata.header.shadingDataOffset * 16];
   char* dstJointData = &m_buffer[m_metadata.header.jointDataOffset * 16];
 
-  for (uint32_t i = 0; i < m_meshlet.vertex_count; i++) {
-    std::pair<uint8_t, uint8_t> dualIndex = dualIndexData[i];
+  for (uint32_t i = 0; i < vertexDataCount; i++) {
+    std::memcpy(&dstVertexData[i * vertexStride],
+      &vertexData[i * vertexInputStride], vertexStride);
 
-    auto dstDualIndexData = reinterpret_cast<uint8_t*>(&m_buffer[m_metadata.header.dualIndexOffset * 16]);
-    dstDualIndexData[2 * i + 0] = dualIndexData[i].first;
-    dstDualIndexData[2 * i + 1] = dualIndexData[i].second;
-    dualIndex = { i, i };
-
-    if (i < m_metadata.header.vertexDataCount) {
-      std::memcpy(&dstVertexData[i * vertexStride],
-        &vertexData[dualIndex.first * vertexInputStride], vertexStride);
-
-      for (uint32_t j = 0; j < m_metadata.header.jointCountPerVertex; j++) {
-        std::memcpy(&dstJointData[(j * m_metadata.header.vertexDataCount + i) * sizeof(GfxMeshletJointData)],
-          &vertexData[dualIndex.first * vertexInputStride + vertexStride + j * sizeof(GfxMeshletJointData)],
-          sizeof(GfxMeshletJointData));
-      }
-    }
-
-    if (i < m_metadata.header.shadingDataCount) {
-      std::memcpy(&dstShadingData[i * shadingStride],
-        &shadingData[dualIndex.second * shadingStride], shadingStride);
+    for (uint32_t j = 0; j < m_metadata.header.jointCountPerVertex; j++) {
+      std::memcpy(&dstJointData[(j * vertexDataCount + i) * sizeof(GfxMeshletJointData)],
+        &vertexData[i * vertexInputStride + vertexStride + j * sizeof(GfxMeshletJointData)],
+        sizeof(GfxMeshletJointData));
     }
   }
 
-  // Write out primitive data
-  auto dstPrimitiveData = reinterpret_cast<GfxMeshletPrimitive*>(
-    &m_buffer[m_metadata.header.primitiveOffset * 16]);
+  for (uint32_t i = 0; i < shadingDataCount; i++) {
+    std::memcpy(&dstShadingData[i * shadingStride],
+      &shadingData[i * shadingStride], shadingStride);
+  }
+
+  // Write out group vertex and primitive data
+  groupVertexCount = 0;
+  groupPrimitiveCount = 0;
+
+  auto dstVertexIndices = reinterpret_cast<GfxMeshletDualIndex*>(
+    &m_buffer[m_metadata.header.groupVertexOffset * 16]);
+  auto dstPrimitiveIndices = reinterpret_cast<GfxMeshletPrimitiveGroupIndices*>(
+    &m_buffer[m_metadata.header.groupPrimitiveOffset * 16]);
   auto dstBvhIndexData = reinterpret_cast<uint16_t*>(
     &m_buffer[m_metadata.rayTracing.indexOffset]);
 
-  for (uint32_t i = 0; i < m_meshlet.triangle_count; i++) {
-    dstPrimitiveData[i] = GfxMeshletPrimitive(
-      primitiveIndices[3 * i + 0],
-      primitiveIndices[3 * i + 1],
-      primitiveIndices[3 * i + 2]);
+  for (uint32_t i = 0; i < groups.size(); i++) {
+    for (uint32_t j = 0; j < groups[i].vertCount; j++) {
+      auto dualIndex = dualIndexData[groups[i].verts[j]];
+      dstVertexIndices[groupVertexCount + j].vertexDataIndex = dualIndex.first;
+      dstVertexIndices[groupVertexCount + j].shadingDataIndex = dualIndex.second;
 
-    for (uint32_t j = 0; j < 3; j++) {
-      uint8_t index = primitiveIndices[3 * i + j];
-      index = dualIndexData[index].first;
-
-      dstBvhIndexData[3 * i + j] = uint16_t(index);
+      if (morphTargetCount) {
+        auto dstMorphTargetInfos = reinterpret_cast<GfxMeshletMorphTargetVertexInfo*>(
+          &m_buffer[m_metadata.header.morphTargetOffset * 16]);
+        dstMorphTargetInfos[groupVertexCount + j] = morphTargetInfos[groups[i].verts[j]];
+      }
     }
+
+    for (uint32_t j = 0; j < groups[i].primCount; j++) {
+      dstPrimitiveIndices[groupPrimitiveCount + j] = GfxMeshletPrimitiveGroupIndices(groups[i].prims[j]);
+
+      for (uint32_t k = 0; k < 3; k++) {
+        dstBvhIndexData[3 * (groupPrimitiveCount + j) + k] =
+          dualIndexData[groups[i].verts[groups[i].prims[j][k]]].first;
+      }
+    }
+
+    groupVertexCount += groups[i].vertCount;
+    groupPrimitiveCount += groups[i].primCount;
   }
 
-  // Write out morph target data
-  if (!morphTargets.empty()) {
-    auto dstMorphTargetMetadata = reinterpret_cast<GfxMeshletMorphTargetInfo*>(
-      &m_buffer[m_metadata.header.morphTargetOffset * 16]);
+  // Write out morph data structures
+  if (morphTargetCount) {
     auto dstMorphTargetData = &m_buffer[m_metadata.header.morphDataOffset * 16];
 
-    for (size_t i = 0; i < morphTargets.size(); i++)
-      dstMorphTargetMetadata[i] = morphTargets.at(i);
+    for (uint32_t i = 0; i < m_meshlet.vertex_count; i++) {
+      auto morphInfo = morphTargetInfos[i];
 
-    std::memcpy(dstMorphTargetData, morphBuffer.data(), morphBuffer.size());
+      while (morphInfo.morphTargetMask) {
+        uint32_t morphTarget = tzcnt(uint32_t(morphInfo.morphTargetMask));
+
+        std::memcpy(&dstMorphTargetData[morphDataStride * morphInfo.morphDataIndex],
+          &morphData[morphDataStride * (m_meshlet.vertex_count * morphTarget + i)],
+          morphDataStride);
+
+        morphInfo.morphTargetMask &= morphInfo.morphTargetMask - 1u;
+        morphInfo.morphDataIndex += 1;
+      }
+    }
   }
 }
 
@@ -2924,7 +2991,10 @@ void GltfConverter::buildGeometry() {
 
   for (uint32_t i = 0; i < m_geometry->info.bufferCount; i++) {
     uint32_t metadataSize = 0u;
-    allocateStorage(metadataSize, sizeof(GfxMeshletInfo) * bufferMeshletCount.at(i));
+
+    allocateStorage(metadataSize, align<uint32_t>(
+      sizeof(GfxMeshletInfo) * bufferMeshletCount.at(i),
+      GltfMeshletBuilder::MeshletDataAlignment));
 
     bufferMetadataSizes.at(i) = metadataSize;
     bufferDataSizes.at(i) += metadataSize;
