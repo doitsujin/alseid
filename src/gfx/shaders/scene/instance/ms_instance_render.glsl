@@ -242,18 +242,20 @@ void msExportPrimitive(uint index, u8vec3 indices) {
 // Helper function to export uniforms as primitive data.
 #ifndef MS_NO_UNIFORM_OUTPUT
 void msExportUniform(uint count, in MsUniformOut msUniform) {
-  MS_LOOP_WORKGROUP(index, count, MS_MAX_PRIM_COUNT) {
+  uint32_t tid = gl_LocalInvocationIndex;
+
+  if (tid < count) {
 #ifdef MS_EXPORT_LAYER
-    gl_MeshPrimitivesEXT[index].gl_Layer = uint(msUniform.layer);
+    gl_MeshPrimitivesEXT[tid].gl_Layer = uint(msUniform.layer);
 #endif // MS_EXPORT_LAYER
 
 #ifdef MS_EXPORT_VIEWPORT
-    gl_MeshPrimitivesEXT[index].gl_ViewportIndex = uint(msUniform.viewport);
+    gl_MeshPrimitivesEXT[tid].gl_ViewportIndex = uint(msUniform.viewport);
 #endif // MS_EXPORT_VIEWPORT
 
 #ifdef FS_UNIFORM
 #undef FS_INPUT_VAR
-#define FS_INPUT_VAR(l, t, n) fs_##n[index] = msUniform.n;
+#define FS_INPUT_VAR(l, t, n) fs_##n[tid] = msUniform.n;
     FS_UNIFORM
 #endif // FS_UNIFORM
   }
@@ -769,29 +771,26 @@ bool msUseLocalInvocationPrimitiveExport() {
 
 // Output vertex cache. Stores vertex data computed by each invocation
 // either in shared memory, or a global array variable.
-#define MS_LOCAL_EXPORT_SIZE (MS_MAX_VERT_COUNT / gl_WorkGroupSize.x)
+shared MsVertexOut msVertexExportDataShared[gl_WorkGroupSize.x];
 
-shared MsVertexOut msVertexExportDataShared[MS_MAX_VERT_COUNT];
-
-MsVertexOut msVertexExportDataLocal[MS_LOCAL_EXPORT_SIZE];
+MsVertexOut msVertexExportDataLocal;
 uint32_t msVertexExportIndexLocal = 0u;
 
 
 #ifndef MS_NO_SHADING_DATA
-shared uint8_t msShadingDataIndexShared[MS_MAX_VERT_COUNT];
+shared uint8_t msShadingDataIndexShared[gl_WorkGroupSize.x];
 uint32_t msShadingDataIndexLocal = 0u;
 #endif // MS_NO_SHADING_DATA
 
 
 #ifndef MS_NO_MORPH_DATA
-shared MeshletMorphTargetVertexInfo msVertexMorphTargetInfosShared[MS_MAX_VERT_COUNT];
-MeshletMorphTargetVertexInfo msVertexMorphTargetInfosLocal[MS_LOCAL_EXPORT_SIZE];
+shared MeshletMorphTargetVertexInfo msVertexMorphTargetInfosShared[gl_WorkGroupSize.x];
+MeshletMorphTargetVertexInfo msVertexMorphTargetInfosLocal;
 #endif // MS_NO_MORPH_DATA
 
 
 // Helper function to store computed vertex output.
 void msStoreVertexExportData(
-        uint32_t                      iteration,
         uint32_t                      localGroup,
         uint32_t                      localIndex,
         u8vec2                        dualIndex,
@@ -813,17 +812,15 @@ void msStoreVertexExportData(
 #endif // MS_NO_MORPH_DATA
     }
   } else {
-    int bitIndex = int(iteration * 8u);
-
-    msVertexExportDataLocal[iteration] = vertexData;
-    msVertexExportIndexLocal = bitfieldInsert(msVertexExportIndexLocal, useVertex ? vertexIndex : MS_MAX_VERT_COUNT, bitIndex, 8);
+    msVertexExportDataLocal = vertexData;
+    msVertexExportIndexLocal = useVertex ? vertexIndex : gl_WorkGroupSize.x;
 
 #ifndef MS_NO_SHADING_DATA
-    msShadingDataIndexLocal = bitfieldInsert(msShadingDataIndexLocal, uint32_t(dualIndex.y), bitIndex, 8);
+    msShadingDataIndexLocal = uint32_t(dualIndex.y);
 #endif // MS_NO_SHADING_DATA
 
 #ifndef MS_NO_MORPH_DATA
-    msVertexMorphTargetInfosLocal[iteration] = morphInfo;
+    msVertexMorphTargetInfosLocal = morphInfo;
 #endif // MS_NO_MORPH_DATA
   }
 }
@@ -833,80 +830,70 @@ void msStoreVertexExportData(
 // allocating output storage for the mesh shader workgroup.
 void msExportVertexData(uint32_t exportCount) {
   if (msUseLocalInvocationVertexExport()) {
-    MS_LOOP_WORKGROUP(index, MS_MAX_VERT_COUNT, MS_MAX_VERT_COUNT) {
-      if (index < exportCount)
-        msExportVertex(index, msVertexExportDataShared[index]);
-    }
-  } else {
-    for (uint32_t i = 0; i < MS_LOCAL_EXPORT_SIZE; i++) {
-      uint32_t index = bitfieldExtract(msVertexExportIndexLocal, 8 * int(i), 8);
+    uint32_t index = gl_LocalInvocationIndex;
 
-      if (index < exportCount)
-        msExportVertex(index, msVertexExportDataLocal[i]);
-    }
+    if (index < exportCount)
+      msExportVertex(index, msVertexExportDataShared[index]);
+  } else {
+    if (msVertexExportIndexLocal < exportCount)
+      msExportVertex(msVertexExportIndexLocal, msVertexExportDataLocal);
   }
 }
 
 
 // Loads cached dual index data for a given output vertex
 uint32_t msLoadVertexDualIndexData(
-        uint32_t                      iteration,
         uint32_t                      exportIndex) {
   if (msUseLocalInvocationVertexExport()) {
     return msShadingDataIndexShared[exportIndex];
   } else {
-    int bitIndex = int(iteration * 8u);
-    return bitfieldExtract(msShadingDataIndexLocal, bitIndex, 8);
+    return msShadingDataIndexLocal;
   }
 }
 
 
 // Loads output vertex data for a given output vertex.
 MsVertexOut msLoadVertexOutputData(
-        uint32_t                      iteration,
         uint32_t                      exportIndex) {
   if (msUseLocalInvocationVertexExport())
     return msVertexExportDataShared[exportIndex];
   else
-    return msVertexExportDataLocal[iteration];
+    return msVertexExportDataLocal;
 }
 
 
 // Loads export index for a given output vertex. The returned
 // index may be out of bounds, in which case it must be ignored.
 uint32_t msLoadVertexExportIndex(
-        uint32_t                      iteration,
         uint32_t                      outputIndex) {
   if (msUseLocalInvocationVertexExport())
     return outputIndex;
   else
-    return bitfieldExtract(msVertexExportIndexLocal, int(iteration * 8u), 8);
+    return msVertexExportIndexLocal;
 }
 
 
 // Loads per-vertex morph target infos.
 #ifndef MS_NO_MORPH_DATA
 MeshletMorphTargetVertexInfo msLoadVertexMorphTargetInfo(
-        uint32_t                      iteration,
         uint32_t                      exportIndex) {
   if (msUseLocalInvocationVertexExport())
     return msVertexMorphTargetInfosShared[exportIndex];
   else
-    return msVertexMorphTargetInfosLocal[iteration];
+    return msVertexMorphTargetInfosLocal;
 }
 #endif // MS_NO_MORPH_DATA
 
 // Output primitive cache. Works essentially the same way as the
 // vertex cache, except that we only store vertex indices here.
-shared u8vec4 msPrimitiveExportDataShared[MS_MAX_PRIM_COUNT];
+shared u8vec4 msPrimitiveExportDataShared[gl_WorkGroupSize.x];
 
-uint32_t msPrimitiveExportDataLocal[MS_LOCAL_EXPORT_SIZE];
+uint32_t msPrimitiveExportDataLocal;
 uint32_t msPrimitiveExportIndexLocal = 0u;
 
 
 // Helper function to store primitive data for later use.
 void msStorePrimitiveExportData(
-        uint32_t                      iteration,
         uint32_t                      localGroup,
         uint32_t                      localIndex,
         uint32_t                      primitiveIndex,
@@ -918,9 +905,8 @@ void msStorePrimitiveExportData(
 
     barrier();
   } else {
-    msPrimitiveExportDataLocal[iteration] = pack32(u8vec4(primitiveData, 0u));
-    msPrimitiveExportIndexLocal = bitfieldInsert(msPrimitiveExportIndexLocal,
-      usePrimitive ? primitiveIndex : MS_MAX_PRIM_COUNT, 8 * int(iteration), 8);
+    msPrimitiveExportDataLocal = pack32(u8vec4(primitiveData, 0u));
+    msPrimitiveExportIndexLocal = usePrimitive ? primitiveIndex : gl_WorkGroupSize.x;
   }
 }
 
@@ -928,17 +914,13 @@ void msStorePrimitiveExportData(
 // Helper function to export primitive indices.
 void msExportPrimitiveIndices(uint32_t exportCount) {
   if (msUseLocalInvocationPrimitiveExport()) {
-    MS_LOOP_WORKGROUP(index, MS_MAX_PRIM_COUNT, MS_MAX_PRIM_COUNT) {
-      if (index < exportCount)
-        msExportPrimitive(index, msPrimitiveExportDataShared[index].xyz);
-    }
-  } else {
-    for (uint32_t i = 0; i < MS_LOCAL_EXPORT_SIZE; i++) {
-      uint32_t index = bitfieldExtract(msPrimitiveExportIndexLocal, 8 * int(i), 8);
+    uint32_t index = gl_LocalInvocationIndex;
 
-      if (index < exportCount)
-        msExportPrimitive(index, unpack8(msPrimitiveExportDataLocal[i]).xyz);
-    }
+    if (index < exportCount)
+      msExportPrimitive(index, msPrimitiveExportDataShared[index].xyz);
+  } else {
+    if (msPrimitiveExportIndexLocal < exportCount)
+      msExportPrimitive(msPrimitiveExportIndexLocal, unpack8(msPrimitiveExportDataLocal).xyz);
   }
 }
 
@@ -1112,8 +1094,10 @@ u8vec3 msRemapPrimitiveIndices(
     uint32_t baseIndex;
 
     if (gl_SubgroupSize == MESHLET_GROUP_SIZE) {
-      // Fast path where each subgroup processes exactly one group
-      baseIndex = subgroupBroadcastFirst(vertexIndex);
+      // Fast path where each subgroup processes exactly one group. For some
+      // reason, NV breaks with subgroupBroadcastFirst here despite control
+      // flow being uniform.
+      baseIndex = subgroupBroadcast(vertexIndex, 0u);
     } else if (gl_SubgroupSize == MESHLET_GROUP_SIZE * 2u) {
       // Operate on the assumption that this is faster than a shuffle,
       // which should be the case on AMD hardware in wave64 mode.
@@ -1397,162 +1381,153 @@ void msMain() {
   uint32_t localGroup = msComputeLocalGroup();
   uint32_t localIndex = msComputeLocalIndex();
 
-  [[unroll]]
-  for (uint32_t i = 0u; i < MS_LOCAL_EXPORT_SIZE; i++) {
-    uint32_t groupIndex = context.invocation.firstGroup + localGroup +
-      i * (gl_WorkGroupSize.x / MESHLET_GROUP_SIZE);
+  uint32_t groupIndex = context.invocation.firstGroup + localGroup;
 
-    // The group index can technically be out of bounds here, however
-    // this is not an issue as vertex and primitive counts would be 0.
-    MsMeshletPrimitiveGroupInfo groupInfo = msGetPrimitiveGroupInfo(groupIndex);
+  // The group index can technically be out of bounds here, however
+  // this is not an issue as vertex and primitive counts would be 0.
+  MsMeshletPrimitiveGroupInfo groupInfo = msGetPrimitiveGroupInfo(groupIndex);
 
-    // Load vertex indices first since we need them to load vertex data
-    u8vec2 dualIndex = u8vec2(0u);
+  // Load vertex indices first since we need them to load vertex data
+  u8vec2 dualIndex = u8vec2(0u);
 
-    if (localIndex < groupInfo.vertCount)
-      dualIndex = msLoadVertexIndicesFromMemory(context, meshlet, groupInfo.vertIndex + localIndex);
+  if (localIndex < groupInfo.vertCount)
+    dualIndex = msLoadVertexIndicesFromMemory(context, meshlet, groupInfo.vertIndex + localIndex);
 
-    // Load morph target data from memory
-    MeshletMorphTargetVertexInfo morphVertex = { };
+  // Load morph target data from memory
+  MeshletMorphTargetVertexInfo morphVertex = { };
 
 #ifndef MS_NO_MORPH_DATA
-    if (meshlet.morphTargetCount != 0u && localIndex < groupInfo.vertCount)
-      morphVertex = msLoadMorphTargetVertexInfoFromMemory(context, meshlet, groupInfo.vertIndex + localIndex);
+  if (meshlet.morphTargetCount != 0u && localIndex < groupInfo.vertCount)
+    morphVertex = msLoadMorphTargetVertexInfoFromMemory(context, meshlet, groupInfo.vertIndex + localIndex);
 #endif // MS_NO_MORPH_DATA
 
-    // Load primitive data immediately after, so that we can
-    // access it later with no additional latency.
-    uint16_t primitiveData = 0us;
+  // Load primitive data immediately after, so that we can
+  // access it later with no additional latency.
+  uint16_t primitiveData = 0us;
 
-    if (localIndex < groupInfo.primCount)
-      primitiveData = msLoadPrimitiveFromMemory(context, meshlet, groupInfo.primIndex + localIndex);
+  if (localIndex < groupInfo.primCount)
+    primitiveData = msLoadPrimitiveFromMemory(context, meshlet, groupInfo.primIndex + localIndex);
 
-    // Default-initialize vertex data since we we need to run the
-    // primitive culling code using it in uniform control flow.
-    MsVertexIn vertexIn = { };
-    MsVertexOut vertexOut = { };
+  // Default-initialize vertex data since we we need to run the
+  // primitive culling code using it in uniform control flow.
+  MsVertexIn vertexIn = { };
+  MsVertexOut vertexOut = { };
 
-    if (localIndex < groupInfo.vertCount) {
-      vertexIn = msLoadVertexDataFromMemory(context, meshlet, dualIndex.x);
+  if (localIndex < groupInfo.vertCount) {
+    vertexIn = msLoadVertexDataFromMemory(context, meshlet, dualIndex.x);
 
-      MsVertexParameters vertexArgs;
-      vertexArgs.currFrame.vertexData = vertexIn;
-      vertexArgs.currFrame.node = currNodeTransform;
+    MsVertexParameters vertexArgs;
+    vertexArgs.currFrame.vertexData = vertexIn;
+    vertexArgs.currFrame.node = currNodeTransform;
 
 #ifndef MS_NO_SKINNING
-      vertexArgs.currFrame.joint = msComputeJointTransform(
-        context, meshlet, 0u, dualIndex.x);
+    vertexArgs.currFrame.joint = msComputeJointTransform(
+      context, meshlet, 0u, dualIndex.x);
 #endif // MS_NO_SKINNING
 
 
 #ifndef MS_NO_MOTION_VECTORS
-      if (msInstanceUsesMotionVectors(context)) {
-        vertexArgs.prevFrame.vertexData = vertexIn;
-        vertexArgs.prevFrame.node = prevNodeTransform;
+    if (msInstanceUsesMotionVectors(context)) {
+      vertexArgs.prevFrame.vertexData = vertexIn;
+      vertexArgs.prevFrame.node = prevNodeTransform;
 
 #ifndef MS_NO_SKINNING
-        vertexArgs.prevFrame.joint = msComputeJointTransform(
-          context, meshlet, 1u, dualIndex.x);
+      vertexArgs.prevFrame.joint = msComputeJointTransform(
+        context, meshlet, 1u, dualIndex.x);
 #endif // MS_NO_SKINNING
-      } else {
-        // If motion vectors are disabled for the instance, just use
-        // the current frame's data to produce consistent results.
-        vertexArgs.prevFrame = vertexArgs.currFrame;
-      }
+    } else {
+      // If motion vectors are disabled for the instance, just use
+      // the current frame's data to produce consistent results.
+      vertexArgs.prevFrame = vertexArgs.currFrame;
+    }
 #endif // MS_NO_MOTION_VECTORS
 
 #ifndef MS_NO_MORPH_DATA
-      // Morphing vertex data is special in that we'll handle both
-      // old and new data in one go in order to reduce overhead.
-      msMorphVertexData(context, meshlet, vertexArgs, morphVertex);
+    // Morphing vertex data is special in that we'll handle both
+    // old and new data in one go in order to reduce overhead.
+    msMorphVertexData(context, meshlet, vertexArgs, morphVertex);
 #endif // MS_NO_MORPH_DATA
 
-      vertexOut = msComputeVertexOutput(context, vertexArgs);
-    }
-
-    // Perform primitive culling using the computed vertex positions.
-    // Default-initialized primitives implicitly get culled due to
-    // being degenerate.
-    u8vec3 primitive = meshletDecodePrimitive(primitiveData);
-
-    bool usePrimitive = msCullPrimitive(context, groupInfo.primCount,
-      localGroup, localIndex, primitive, vertexOut);
-
-    uint32_t vertexMask = msComputeVertexMask(
-      localGroup, localIndex, primitive, usePrimitive);
-
-    bool useVertex = bitfieldExtract(vertexMask, int(localIndex), 1) != 0u;
-
-    u32vec2 outputIndices = msAllocateVertexAndPrimitive(useVertex, usePrimitive);
-
-    msStoreVertexExportData(i, localGroup, localIndex,
-      dualIndex, outputIndices.x, morphVertex, vertexOut, useVertex);
-
-    primitive = msRemapPrimitiveIndices(localGroup, localIndex,
-      primitive, usePrimitive, outputIndices.x, vertexMask);
-
-    msStorePrimitiveExportData(i, localGroup, localIndex,
-      outputIndices.y, primitive, usePrimitive);
+    vertexOut = msComputeVertexOutput(context, vertexArgs);
   }
 
+  // Perform primitive culling using the computed vertex positions.
+  u8vec3 primitive = meshletDecodePrimitive(primitiveData);
 
-  // Allocate output storage and immediately export already
-  // available vertex data
+  bool usePrimitive = msCullPrimitive(context, groupInfo.primCount,
+    localGroup, localIndex, primitive, vertexOut);
+
+  // Compute active vertex mask for all primitives that were not culled.
+  uint32_t vertexMask = msComputeVertexMask(
+    localGroup, localIndex, primitive, usePrimitive);
+
+  bool useVertex = bitfieldExtract(vertexMask, int(localIndex), 1) != 0u;
+
+  // Allocate primitives in a way that allows us to compact the output,
+  // regarless of mesh shader flags.
+  u32vec2 outputIndices = msAllocateVertexAndPrimitive(useVertex, usePrimitive);
+
+  msStoreVertexExportData(localGroup, localIndex,
+    dualIndex, outputIndices.x, morphVertex, vertexOut, useVertex);
+
+  // Compute final vertex export indices for the local primitive.
+  primitive = msRemapPrimitiveIndices(localGroup, localIndex,
+    primitive, usePrimitive, outputIndices.x, vertexMask);
+
+  msStorePrimitiveExportData(localGroup, localIndex,
+    outputIndices.y, primitive, usePrimitive);
+
+  // Allocate output storage and immediately export already available
+  // vertex data to potentially free up some registers.
   u32vec2 outputCounts = msGetOutputCounts();
-  msSetMeshOutputs(outputCounts.x, outputCounts.y);
 
-  if (outputCounts.y == 0u)
+  if (!msSetMeshOutputs(outputCounts.x, outputCounts.y))
     return;
 
   msExportVertexData(outputCounts.x);
   msExportPrimitiveIndices(outputCounts.y);
 
+
 #ifndef MS_NO_UNIFORM_OUTPUT
+  // Compute uniform fragment shader inputs and export immediately.
   MsUniformOut msUniform = msComputeUniformOut(context);
   msExportUniform(outputCounts.y, msUniform);
 #endif // MS_NO_UNIFORM_OUTPUT
 
 
 #ifdef FS_INPUT
-  [[unroll]]
-  for (uint32_t i = 0u; i < MS_LOCAL_EXPORT_SIZE; i++) {
-    uint32_t groupIndex = context.invocation.firstGroup + localGroup +
-      i * (gl_WorkGroupSize.x / MESHLET_GROUP_SIZE);
+  // At this point, we will no longer need cross-thread communication,
+  // however we should make sure to export to the current local thread
+  // index on devices where local export is preferred.
+  uint32_t exportIndex = msLoadVertexExportIndex(gl_LocalInvocationIndex);
 
-    // At this point, we will no longer need cross-thread communication,
-    // however we should make sure to export to the current local thread
-    // index on devices where local export is preferred.
-    uint32_t outputIndex = MESHLET_GROUP_SIZE * i + gl_LocalInvocationIndex;
-    uint32_t exportIndex = msLoadVertexExportIndex(i, outputIndex);
-
-    if (exportIndex < outputCounts.x) {
-      MsShadingParameters args;
+  if (exportIndex < outputCounts.x) {
+    MsShadingParameters args;
 
 #ifndef MS_NO_VERTEX_DATA
-      args.vertexData = msLoadVertexOutputData(i, exportIndex);
+    args.vertexData = msLoadVertexOutputData(exportIndex);
 #endif // MS_NO_VERTEX_DATA
 
 
 #ifndef MS_NO_SHADING_DATA
-      uint32_t shadingDataIndex = msLoadVertexDualIndexData(i, exportIndex);
-      args.shadingData = msLoadShadingDataFromMemory(context, meshlet, shadingDataIndex);
+    uint32_t shadingDataIndex = msLoadVertexDualIndexData(exportIndex);
+    args.shadingData = msLoadShadingDataFromMemory(context, meshlet, shadingDataIndex);
 
 #ifndef MS_NO_MORPH_DATA
-      if (msGetMorphTargetMask(0u) != 0u) {
-        msMorphShadingData(context, meshlet, args.shadingData,
-          msLoadVertexMorphTargetInfo(i, exportIndex));
-      }
+    if (msGetMorphTargetMask(0u) != 0u) {
+      msMorphShadingData(context, meshlet, args.shadingData,
+        msLoadVertexMorphTargetInfo(exportIndex));
+    }
 #endif // MS_NO_MORPH_DATA
 #endif // MS_NO_SHADING_DATA
 
 
 #ifndef MS_NO_UNIFORM_OUTPUT
-      args.uniformData = msUniform;
+    args.uniformData = msUniform;
 #endif // MS_NO_UNIFORM_OUTPUT
 
-      FsInput fsInput = msComputeFsInput(context, args);
-      msExportVertexFsInput(exportIndex, fsInput);
-    }
+    FsInput fsInput = msComputeFsInput(context, args);
+    msExportVertexFsInput(exportIndex, fsInput);
   }
 #endif // FS_INPUT
 }

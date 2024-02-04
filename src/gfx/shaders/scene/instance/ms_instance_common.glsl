@@ -20,8 +20,8 @@ layout(local_size_x_id = SPEC_CONST_ID_MESH_SHADER_WORKGROUP_SIZE) in;
 // at runtime without patching the shader and we currently do
 // not have the means to do so.
 layout(triangles,
-  max_vertices = MS_MAX_VERT_COUNT,
-  max_primitives = MS_MAX_PRIM_COUNT) out;
+  max_vertices    = 1,
+  max_primitives  = 1) out;
 
 
 // Disable uniform output if no per-primitive outputs are used.

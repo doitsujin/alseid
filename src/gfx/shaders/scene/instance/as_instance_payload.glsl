@@ -7,7 +7,7 @@
 
 // Number of meshlet groups processed in a single mesh shader
 // workgroup. Depends on the mesh shader primitive output count.
-#define MeshletGroupsPerWorkgroup (128u / MESHLET_GROUP_SIZE)
+#define MeshletGroupsPerWorkgroup (MsWorkgroupSize / MESHLET_GROUP_SIZE)
 
 
 // Per-meshlet payload structure, and helper functions to encode
