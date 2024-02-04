@@ -621,6 +621,19 @@ private:
 
 
 /**
+ * \brief Shader binary patch info
+ *
+ * Stores information relevant for patching SPIR-V
+ * shader binaries at runtime.
+ */
+struct GfxVulkanShaderStagePatchInfo {
+  /** Mesh shader primitive and vertex count overrides. */
+  uint32_t maxVertexCount = 0u;
+  uint32_t maxPrimitiveCount = 0u;
+};
+
+
+/**
  * \brief Additional shader module parameters
  */
 struct GfxVulkanShaderStageExtraInfo {
@@ -635,7 +648,7 @@ struct GfxVulkanShaderStageExtraInfo {
 struct GfxVulkanGraphicsShaderStages {
   uint32_t freeMask = 0;
   VkSpecializationInfo specInfo = { };
-  small_vector<GfxVulkanShaderStageExtraInfo, 5> extaInfo;
+  small_vector<GfxVulkanShaderStageExtraInfo, 5> extraInfo;
   small_vector<VkPipelineShaderStageCreateInfo, 5> stageInfo;
 };
 
@@ -663,6 +676,7 @@ public:
   void getShaderStageInfo(
           GfxVulkanGraphicsShaderStages& result,
           GfxVulkanPipelineManager&     mgr,
+    const GfxVulkanShaderStagePatchInfo& patchInfo,
     const GfxVulkanSpecConstantData*    specData) const;
 
 private:
@@ -878,6 +892,8 @@ private:
 
   std::atomic<bool>                 m_isAvailable = { false };
 
+  GfxVulkanShaderStagePatchInfo     m_patchInfo = { };
+
   GfxVulkanGraphicsPipelineVariant lookupLinked(
     const GfxVulkanGraphicsPipelineVariantKey& key) const;
 
@@ -976,6 +992,8 @@ private:
   std::mutex                m_mutex;
   std::atomic<VkPipeline>   m_pipeline = { VK_NULL_HANDLE };
 
+  GfxVulkanShaderStagePatchInfo m_patchInfo = { };
+
   VkPipeline createPipelineLocked();
 
 };
@@ -1023,6 +1041,8 @@ public:
    * \param [in] specInfo Specialization info
    * \param [out] stageInfo Vulkan shader stage info
    * \param [out] extraInfo Additional stage parameters
+   * \param [in] patchInfo Shader patching info
+   * \param [in] specData Specialization constant data
    * \returns \c true if the code in the returned
    *    shader module create info must be freed
    */
@@ -1031,6 +1051,7 @@ public:
     const VkSpecializationInfo*         specInfo,
           VkPipelineShaderStageCreateInfo& stageInfo,
           GfxVulkanShaderStageExtraInfo& extraInfo,
+    const GfxVulkanShaderStagePatchInfo& patchInfo,
     const GfxVulkanSpecConstantData*    specData) const;
 
   /**
@@ -1274,6 +1295,16 @@ private:
           VkDescriptorType              type) const;
 
   void runWorker();
+
+  static bool shaderBinaryRequiresPatching(
+          GfxShaderStage                stage,
+    const GfxVulkanShaderStagePatchInfo& patchInfo);
+
+  static void patchShaderBinary(
+          GfxShaderStage                stage,
+    const GfxVulkanShaderStagePatchInfo& patchInfo,
+          size_t                        binarySize,
+          void*                         binary);
 
 };
 
