@@ -92,7 +92,9 @@ struct MsMorphIn {
 
 struct MsVertexOut {
   vec4      position;
+#ifndef MS_NO_MOTION_VECTORS
   vec3      oldPosition;
+#endif // MS_NO_MOTION_VECTORS
   f16vec4   jointRotation;
 };
 
@@ -163,10 +165,11 @@ MsVertexOut msComputeVertexOutput(
 
   MsVertexOut result;
   result.position = projApply(passInfoBuffer.passes[context.invocation.passIndex].projection, currVertexPos);
-  result.oldPosition = result.position.xyw;
   result.jointRotation = f16vec4(currTransform.rot);
 
 #ifndef MS_NO_MOTION_VECTORS
+  result.oldPosition = result.position.xyw;
+
   if (!asTest(context.flags, MS_NO_MOTION_VECTORS_BIT)) {
     Transform prevPassTransform = passInfoBuffer.passes[context.invocation.passIndex].prevTransform.transform;
 
@@ -200,7 +203,11 @@ FsInput msComputeFsInput(
   FsInput result;
   result.normal = normalize(quatApply(args.vertexData.jointRotation,
     unpackSnorm3x10(args.shadingData.normal)));
+#ifndef MS_NO_MOTION_VECTORS
   result.prevFramePos = args.vertexData.oldPosition;
+#else
+  result.prevFramePos = args.vertexData.position.xyw;
+#endif
   result.currFramePos = args.vertexData.position.xyw;
   return result;
 }
