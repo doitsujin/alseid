@@ -21,7 +21,7 @@ uint32_t tsComputeOutputCount(uint32_t localCount) {
     barrier();
 
     if (subgroupElect())
-      atomicAdd(tsOutputCountShared, tsOutputCountShared);
+      atomicAdd(tsOutputCountShared, result);
 
     barrier();
 
