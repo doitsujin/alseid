@@ -1,3 +1,5 @@
+#include <spirv_cross.hpp>
+
 #include "../../util/util_assert.h"
 #include "../../util/util_bitstream.h"
 #include "../../util/util_log.h"
@@ -699,15 +701,17 @@ GfxVulkanGraphicsShaders::GfxVulkanGraphicsShaders(
 void GfxVulkanGraphicsShaders::getShaderStageInfo(
         GfxVulkanGraphicsShaderStages& result,
         GfxVulkanPipelineManager&     mgr,
+  const GfxVulkanShaderStagePatchInfo& patchInfo,
   const GfxVulkanSpecConstantData*    specData) const {
   mgr.initSpecializationInfo(specData, result.specInfo);
 
-  result.extaInfo.resize(m_shaders.size());
+  result.extraInfo.resize(m_shaders.size());
   result.stageInfo.resize(m_shaders.size());
 
   for (uint32_t i = 0; i < m_shaders.size(); i++) {
     bool freeCode = mgr.initShaderStage(m_shaders[i],
-      &result.specInfo, result.stageInfo[i], result.extaInfo[i], specData);
+      &result.specInfo, result.stageInfo[i], result.extraInfo[i],
+      patchInfo, specData);
 
     if (freeCode)
       result.freeMask |= 1u << i;
@@ -793,19 +797,26 @@ GfxVulkanGraphicsPipeline::GfxVulkanGraphicsPipeline(
   if (desc.fragment)
     m_shaderIoMask.outputMask = desc.fragment->getIoMask().outputMask;
 
-  // If the mesh shader emits significantly fewer vertices and
-  // primitives than it has invocations, lower the workgroup size.
+  // If the mesh shader emits significantly fewer vertices and primitives than
+  // it has invocations, lower the workgroup size. Also check for the special
+  // value of (1,1), in which case we patch the shader at runtime to emit one
+  // vertex and primitive per thread based on the preferred workgroup size.
   GfxShaderMeshOutputInfo meshOutputs = desc.mesh->getMeshOutputInfo();
 
   uint32_t maxOutputCount = std::max(
     meshOutputs.maxVertexCount,
     meshOutputs.maxPrimitiveCount);
 
-  // Also don't ever go below the minimum subgroup size
-  maxOutputCount = std::max(maxOutputCount, m_specConstants.minSubgroupSize);
+  if (meshOutputs.maxVertexCount == 1u && meshOutputs.maxPrimitiveCount == 1u) {
+    m_patchInfo.maxVertexCount = m_specConstants.meshShaderWorkgroupSize;
+    m_patchInfo.maxPrimitiveCount = m_specConstants.meshShaderWorkgroupSize;
+  } else {
+    // Don't ever go below the minimum subgroup size
+    maxOutputCount = std::max(maxOutputCount, m_specConstants.minSubgroupSize);
 
-  while (m_specConstants.meshShaderWorkgroupSize >= 2 * maxOutputCount)
-    m_specConstants.meshShaderWorkgroupSize /= 2;
+    while (m_specConstants.meshShaderWorkgroupSize >= 2 * maxOutputCount)
+      m_specConstants.meshShaderWorkgroupSize /= 2;
+  }
 
   // Compute actual workgroup size based on specialization constants
   m_workgroupSize = getActualWorkgroupSize(
@@ -931,7 +942,7 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createLibraryLocked(
   // if graphics pipeline libraries are supported, we don't need
   // to worry about destroying shader modules later.
   GfxVulkanGraphicsShaderStages shaderStages;
-  m_shaders.getShaderStageInfo(shaderStages, m_mgr, &m_specConstants);
+  m_shaders.getShaderStageInfo(shaderStages, m_mgr, m_patchInfo, &m_specConstants);
 
   // All depth-stencil and rasteriaztion state is dynamic. Additionally,
   // multisample state is dynamic if sample rate shading is used.
@@ -1044,9 +1055,9 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createLibraryLocked(
   VkResult vr = vk.vkCreateGraphicsPipelines(vk.device,
     VK_NULL_HANDLE, 1, &info, nullptr, &m_library.pipeline);
 
-  for (uint32_t i = 0; i < shaderStages.extaInfo.size(); i++) {
+  for (uint32_t i = 0; i < shaderStages.extraInfo.size(); i++) {
     if (shaderStages.freeMask & (1u << i))
-      std::free(const_cast<uint32_t*>(shaderStages.extaInfo[i].moduleInfo.pCode));
+      std::free(const_cast<uint32_t*>(shaderStages.extraInfo[i].moduleInfo.pCode));
   }
 
   if (vr)
@@ -1067,7 +1078,7 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
 
   // Set up shader stages.
   GfxVulkanGraphicsShaderStages shaderStages;
-  m_shaders.getShaderStageInfo(shaderStages, m_mgr, &m_specConstants);
+  m_shaders.getShaderStageInfo(shaderStages, m_mgr, m_patchInfo, &m_specConstants);
 
   // Set up state objects. We typically don't have
   // a large number of dynamic states here.
@@ -1159,7 +1170,7 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
       vk.vkDestroyShaderModule(vk.device, shaderStages.stageInfo[i].module, nullptr);
 
     if (shaderStages.freeMask & (1u << i))
-      std::free(const_cast<uint32_t*>(shaderStages.extaInfo[i].moduleInfo.pCode));
+      std::free(const_cast<uint32_t*>(shaderStages.extraInfo[i].moduleInfo.pCode));
   }
 
   if (vr)
@@ -1377,7 +1388,7 @@ VkPipeline GfxVulkanComputePipeline::createPipelineLocked() {
   pipelineInfo.basePipelineIndex = -1;
 
   bool freeCode = m_mgr.initShaderStage(m_desc.compute,
-    &specInfo, pipelineInfo.stage, extraInfo, &m_specConstants);
+    &specInfo, pipelineInfo.stage, extraInfo, m_patchInfo, &m_specConstants);
 
   VkPipeline pipeline = VK_NULL_HANDLE;
   VkResult vr = vk.vkCreateComputePipelines(vk.device,
@@ -1451,7 +1462,8 @@ GfxVulkanSpecConstantData GfxVulkanPipelineManager::getDefaultSpecConstants() co
   result.taskShaderWorkgroupSize = clamp(std::min(
     properties.extMeshShader.maxPreferredTaskWorkGroupInvocations,
     properties.vk13.maxSubgroupSize), 16u, 64u);
-  result.meshShaderWorkgroupSize = properties.extMeshShader.maxPreferredMeshWorkGroupInvocations;
+  result.meshShaderWorkgroupSize = std::max(32u,
+    properties.extMeshShader.maxPreferredMeshWorkGroupInvocations);
   result.meshShaderFlags = uint32_t(meshShaderFlags);
   return result;
 }
@@ -1462,32 +1474,51 @@ bool GfxVulkanPipelineManager::initShaderStage(
   const VkSpecializationInfo*         specInfo,
         VkPipelineShaderStageCreateInfo& stageInfo,
         GfxVulkanShaderStageExtraInfo& extraInfo,
+  const GfxVulkanShaderStagePatchInfo& patchInfo,
   const GfxVulkanSpecConstantData*    specData) const {
   auto& vk = m_device.vk();
 
   GfxShaderStage stage = shader->getShaderStage();
   GfxShaderBinary binary = shader->getShaderBinary();
 
+  bool patchBinary = shaderBinaryRequiresPatching(stage, patchInfo);
+
+  void* codeBuffer = nullptr;
+  size_t codeSize = 0u;
+
   switch (binary.format) {
     case GfxShaderFormat::eVulkanSpirv: {
-      extraInfo.moduleInfo.codeSize = binary.size;
-      extraInfo.moduleInfo.pCode = reinterpret_cast<const uint32_t*>(binary.data);
+      if (patchBinary) {
+        codeBuffer = std::malloc(binary.size);
+        codeSize = binary.size;
+
+        std::memcpy(codeBuffer, binary.data, codeSize);
+
+        extraInfo.moduleInfo.codeSize = codeSize;
+        extraInfo.moduleInfo.pCode = reinterpret_cast<const uint32_t*>(codeBuffer);
+      } else {
+        extraInfo.moduleInfo.codeSize = binary.size;
+        extraInfo.moduleInfo.pCode = reinterpret_cast<const uint32_t*>(binary.data);
+      }
     } break;
 
     case GfxShaderFormat::eVulkanSpirvCompressed: {
       RdMemoryView compressed(binary.data, binary.size);
-      size_t size = spirvGetDecodedSize(compressed);
+      codeSize = spirvGetDecodedSize(compressed);
 
-      void* buffer = std::malloc(size);
-      extraInfo.moduleInfo.codeSize = size;
-      extraInfo.moduleInfo.pCode = reinterpret_cast<uint32_t*>(buffer);
+      codeBuffer = std::malloc(codeSize);
+      spirvDecodeBinary(WrMemoryView(codeBuffer, codeSize), compressed);
 
-      spirvDecodeBinary(WrMemoryView(buffer, size), compressed);
+      extraInfo.moduleInfo.codeSize = codeSize;
+      extraInfo.moduleInfo.pCode = reinterpret_cast<uint32_t*>(codeBuffer);
     } break;
 
     default:
       throw VulkanError("Vulkan: Unsupported shader binary format", VK_ERROR_UNKNOWN);
   }
+
+  if (patchBinary)
+    patchShaderBinary(stage, patchInfo, codeSize, codeBuffer);
 
   stageInfo = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO };
   stageInfo.stage = getVkShaderStage(stage);
@@ -1519,22 +1550,28 @@ bool GfxVulkanPipelineManager::initShaderStage(
       stageInfo.flags |= VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT;
 
     if (deviceProperties.vk13.requiredSubgroupSizeStages & stageInfo.stage) {
+      uint32_t requiredSubgroupSize = 0u;
+
       // If the workgroup size is less than the maximum subgroup size, we should
       // ensure that the driver does not give us larger subgroups in order to
       // benefit from subgroup-optimized code paths.
       if ((localSize.at<0>() < deviceProperties.vk13.maxSubgroupSize) &&
           (localSize.at<0>() >= deviceProperties.vk13.minSubgroupSize) &&
           (!(localSize.at<0>() & (localSize.at<0>() - 1u))) &&
-          (localSize.at<1>() == 1u && localSize.at<2>() == 1u)) {
+          (localSize.at<1>() == 1u && localSize.at<2>() == 1u))
+        requiredSubgroupSize = localSize.at<0>();
+
+      // Apply structure only if we actually require a specific subgroup size
+      if (requiredSubgroupSize) {
         stageInfo.flags &= ~VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT;
 
         extraInfo.requiredSubgroupSize.pNext = const_cast<void*>(std::exchange(stageInfo.pNext, &extraInfo.requiredSubgroupSize));
-        extraInfo.requiredSubgroupSize.requiredSubgroupSize = localSize.at<0>();
+        extraInfo.requiredSubgroupSize.requiredSubgroupSize = requiredSubgroupSize;
       }
     }
   }
 
-  return binary.format != GfxShaderFormat::eVulkanSpirv;
+  return codeBuffer != nullptr;
 }
 
 
@@ -1939,6 +1976,59 @@ void GfxVulkanPipelineManager::runWorker() {
         item.graphicsPipeline->createVariant(item.graphicsState);
         break;
     }
+  }
+}
+
+
+bool GfxVulkanPipelineManager::shaderBinaryRequiresPatching(
+        GfxShaderStage                stage,
+  const GfxVulkanShaderStagePatchInfo& patchInfo) {
+  switch (stage) {
+    case GfxShaderStage::eMesh:
+      return patchInfo.maxPrimitiveCount || patchInfo.maxVertexCount;
+
+    default:
+      return false;
+  }
+}
+
+
+void GfxVulkanPipelineManager::patchShaderBinary(
+        GfxShaderStage                stage,
+  const GfxVulkanShaderStagePatchInfo& patchInfo,
+        size_t                        binarySize,
+        void*                         binary) {
+  auto* dwords = reinterpret_cast<uint32_t*>(binary);
+
+  for (uint32_t i = 5; i < binarySize / sizeof(*dwords); ) {
+    uint32_t len = dwords[i] >> 16;
+
+    switch (spv::Op(dwords[i] & 0xffffu)) {
+      case spv::OpExecutionMode: {
+        switch (spv::ExecutionMode(dwords[i + 2])) {
+          case spv::ExecutionModeOutputVertices: {
+            if (patchInfo.maxVertexCount)
+              dwords[i + 3] = patchInfo.maxVertexCount;
+          } break;
+
+          case spv::ExecutionModeOutputPrimitivesEXT: {
+            if (patchInfo.maxPrimitiveCount)
+              dwords[i + 3] = patchInfo.maxPrimitiveCount;
+          } break;
+
+          default:
+            break;
+        }
+      } break;
+
+      case spv::OpFunction:
+        return;
+
+      default:
+        break;
+    }
+
+    i += len;
   }
 }
 
