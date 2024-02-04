@@ -16,15 +16,12 @@ GfxSceneDrawBuffer::~GfxSceneDrawBuffer() {
 }
 
 
-GfxDescriptor GfxSceneDrawBuffer::getDrawCountDescriptor(
+uint32_t GfxSceneDrawBuffer::getDrawCount(
         uint32_t                      drawGroup) const {
-  if (m_buffer == nullptr || drawGroup >= m_header.drawGroupCount)
-    return GfxDescriptor();
+  if (drawGroup >= m_header.drawGroupCount)
+    return 0u;
 
-  size_t offset = m_header.drawCountOffset + sizeof(uint32_t) * drawGroup;
-  size_t size = sizeof(uint32_t);
-
-  return m_buffer->getDescriptor(GfxUsage::eParameterBuffer, offset, size);
+  return m_entries[drawGroup].dispatchCount;
 }
 
 
@@ -70,10 +67,8 @@ void GfxSceneDrawBuffer::updateLayout(
   uint64_t newSize = 0;
   allocateStorage(newSize, drawGroupListSize);
 
-  m_header = GfxSceneDrawListHeader{};
+  m_header = GfxSceneDrawListHeader { };
   m_header.drawGroupCount = desc.drawGroupCount;
-  m_header.drawCountOffset = allocateStorage(newSize,
-    sizeof(uint32_t) * desc.drawGroupCount);
   m_header.drawParameterOffset = allocateStorage(newSize,
     sizeof(GfxDispatchArgs) * totalDispatchCount);
   m_header.drawInfoOffset = allocateStorage(newSize,

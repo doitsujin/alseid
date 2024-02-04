@@ -30,10 +30,6 @@ constexpr uint32_t GfxSceneDrawMaxTsWorkgroupsPerDispatch = 32768u;
 struct GfxSceneDrawListHeader {
   /** Number of draw groups in the draw group buffer. */
   uint32_t drawGroupCount;
-  /** Offset of indirect draw counts, in bytes, relative to the start
-   *  of the buffer. Stores the number of task shader dispatches for
-   *  each individual draw group. */
-  uint32_t drawCountOffset;
   /** Offset of indirect draw parameters, in bytes, relative to the
    *  start of the buffer. This stores a packed array of task shader
    *  workgroup counts for each possible draw. */
@@ -41,6 +37,8 @@ struct GfxSceneDrawListHeader {
   /** Offset of draw infos, in bytes, relative to the start of the
    *  buffer. This stores a  */
   uint32_t drawInfoOffset;
+  /** Reserved for future use. */
+  uint32_t reserved;
 };
 
 static_assert(sizeof(GfxSceneDrawListHeader) == 16);
@@ -181,7 +179,7 @@ public:
    * \param [in] drawGroup Draw group index
    * \returns Descriptor for indirect draw count
    */
-  GfxDescriptor getDrawCountDescriptor(
+  uint32_t getDrawCount(
           uint32_t                      drawGroup) const;
 
   /**

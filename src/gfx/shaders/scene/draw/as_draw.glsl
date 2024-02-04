@@ -6,9 +6,9 @@
 // Draw list header. Stores the layout of the draw buffer.
 struct DrawListHeader {
   uint32_t  drawGroupCount;
-  uint32_t  drawCountOffset;
   uint32_t  drawParameterOffset;
   uint32_t  drawInfoOffset;
+  uint32_t  reserved;
 };
 
 

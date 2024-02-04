@@ -175,8 +175,8 @@ void GfxSceneMaterialManager::dispatchDraws(
 
       context->drawMeshIndirect(
         drawBuffers[j]->getDrawParameterDescriptor(i),
-        drawBuffers[j]->getDrawCountDescriptor(i),
-        m_drawGroups[i].drawCount);
+        GfxDescriptor(),
+        drawBuffers[j]->getDrawCount(i));
     }
 
     m_materials[i].end(context);

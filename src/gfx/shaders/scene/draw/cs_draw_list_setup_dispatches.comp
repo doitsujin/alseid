@@ -50,7 +50,6 @@ void csEmitDrawParameters() {
 
   // Compute all relevant pointers from draw list header right away
   DrawListBuffer drawList = DrawListBuffer(globals.drawListVa);
-  DrawCountBufferOut drawCounts = DrawCountBufferOut(globals.drawListVa + drawList.header.drawCountOffset);
   DrawParameterBufferOut drawParameters = DrawParameterBufferOut(globals.drawListVa + drawList.header.drawParameterOffset);
   DrawInstanceInfoBufferIn drawInfos = DrawInstanceInfoBufferIn(globals.drawListVa + drawList.header.drawInfoOffset);
 
@@ -177,10 +176,8 @@ void csEmitDrawParameters() {
   uint32_t tsWorkgroups = asComputeWorkgroupCount1D(tsThreads, TsWorkgroupSize);
   uint32_t tsDispatches = asComputeWorkgroupCount1D(tsWorkgroups, DRAW_LIST_TS_WORKGROUPS_PER_DRAW);
 
-  if (tid == 0u) {
+  if (tid == 0u)
     drawList.drawGroups[drawGroup].taskShaderThreadCount = tsThreads;
-    drawCounts.drawCounts[drawGroup] = min(tsDispatches, dispatchCount);
-  }
 
   // We shouldn't ever have to do more than one iteration here, but support
   // it anyway just in case.
