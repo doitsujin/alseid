@@ -280,6 +280,35 @@ uvec2 asGetWorkgroupCount2D(uint32_t workgroupCount) {
 }
 
 
+// Finds the index of the n-th set bit in a bit mask.
+// Allows all parameters to be non-uniform.
+int32_t asFindIndexOfSetBit(
+        uint32_t                      bitMask,
+        uint32_t                      setIndex) {
+  // Check whether we have enough bits set in the first place, for
+  // consistency with the cooperative version of this function.
+  uint32_t count = bitCount(bitMask);
+
+  if (setIndex >= count)
+    return -1;
+
+  // If we do, perform a binary search on the integer to find the
+  // correct number of bits to look at.
+  uint32_t bits = 32;
+
+  [[unroll]]
+  for (uint32_t i = 16u; i != 0u; i >>= 1u) {
+    // Explicitly mask the lower 5 bits to help compilers
+    uint32_t count = bitCount(bitfieldExtract(
+      bitMask, 0, int32_t(bits - i) & 31));
+
+    bits = count <= setIndex ? bits : bits - i;
+  }
+
+  return int32_t(bits) - 1;
+}
+
+
 #if defined(STAGE_COMP) || defined(STAGE_MESH) || defined(STAGE_TASK)
 // Cooperatively finds the index of the n-th set bit in a bit mask. Requires
 // that all parameters are uniform, as well as full subgroups and uniform

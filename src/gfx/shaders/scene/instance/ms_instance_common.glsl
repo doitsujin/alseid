@@ -209,7 +209,7 @@ MsInvocationInfo msGetInvocationInfo(
 
   u32vec3 drawIndices = csGetDrawSubIndicesForInvocation(draw, localDrawThread.y);
 
-  MsInvocationInfo result;
+  MsInvocationInfo result = { };
 
   // Load instance node and instance properties from the buffer.
   uint32_t instanceIndex = csGetPackedInstanceIndexFromDraw(draw.instanceIndexAndLod);

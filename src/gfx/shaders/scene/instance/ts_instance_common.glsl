@@ -43,7 +43,7 @@ uint64_t tsCombineThreadMask(
 
   if (!IsSingleSubgroup) {
     if (tid < 2u)
-      tsThreadMaskShared[tid] =0u;
+      tsThreadMaskShared[tid] = 0u;
 
     barrier();
 
@@ -72,7 +72,9 @@ TsInvocationInfo tsGetInvocationInfo(
 
   // Look up first draw info index for the global task shader thread ID
   uint32_t drawInfoIndex = drawList.drawGroups[drawGroup].drawIndex;
+  uint32_t drawInfoCount = drawList.drawGroups[drawGroup].drawCount;
   uint32_t taskShaderThreadCount = drawList.drawGroups[drawGroup].taskShaderThreadCount;
+
   uint32_t layer0Offset = drawList.drawGroups[drawGroup].searchTreeLayerOffsets[0u];
 
   uint32_t lookupThreadId = TsWorkgroupSize *
@@ -85,36 +87,49 @@ TsInvocationInfo tsGetInvocationInfo(
   // will never dispatch task shader workgroups with more than 64 threads.
   DrawSearchTreeLayerIn layer0 = DrawSearchTreeLayerIn(drawListVa + layer0Offset);
 
-  uint32_t threadCount = layer0.threadCount[searchResult.nextOffset + tid];
+  // Make sure to bound-check the read so that we don't read stale or
+  // uninitialized data that could later lead to integer overflows.
+  uint32_t threadCount = 0u;
 
+  if (lookupThreadId + tid < taskShaderThreadCount)
+    threadCount = layer0.threadCount[searchResult.nextOffset + tid];
+
+  // For the first draw in particular, subtract the number of meshlets
+  // processed by workgroups with a lower index.
   if (tid == 0u)
     threadCount -= searchResult.nextThreadId;
 
-  uint32_t firstThreadsForDraw = csWorkgroupInclusiveAdd(tid, threadCount);
-
+  // Compute a bit mask of threads that begin a new draw.
   uint64_t threadMask = 0u;
+  uint32_t firstThreadsForDraw = csWorkgroupInclusiveAdd(tid, threadCount);
 
   if (firstThreadsForDraw < TsWorkgroupSize)
     threadMask |= 1ul << firstThreadsForDraw;
 
   threadMask = tsCombineThreadMask(tid, threadMask);
 
+  // Using the bit mask, compute the relative draw index and meshlet
+  // index within the draw for every active thread.
   u32vec2 localDrawThread = csComputeLocalDrawThreadIndex(
     threadMask, searchResult.nextThreadId, tid);
 
-  // Set up results
-  TsInvocationInfo result;
+  // Set up returned data structure
+  TsInvocationInfo result = { };
   result.firstDraw = searchResult.nextOffset + drawInfoIndex;
   result.firstThread = searchResult.nextThreadId;
   result.threadDrawMask = threadMask;
   result.isValid = lookupThreadId + tid < taskShaderThreadCount;
+
+  // Add an extra layer of robustness to make sure we do not access any
+  // invalid draw infos. This should not happen unless there is a bug
+  // somewhere in the search tree, but the consequence is usually a hang.
+  result.isValid = result.isValid && result.firstDraw + localDrawThread.x < drawInfoCount;
 
   if (result.isValid) {
     DrawInstanceInfoBufferIn drawInfos = DrawInstanceInfoBufferIn(
       drawListVa + drawList.header.drawInfoOffset);
 
     DrawInstanceInfo draw = drawInfos.draws[result.firstDraw + localDrawThread.x];
-
     u32vec3 subIndices = csGetDrawSubIndicesForInvocation(draw, localDrawThread.y);
 
     result.meshletBuffer = draw.meshletBufferAddress;
@@ -123,18 +138,8 @@ TsInvocationInfo tsGetInvocationInfo(
     result.lodIndex = csGetPackedLodFromDraw(draw.instanceIndexAndLod);
     result.lodMeshletIndex = draw.meshletIndex + subIndices.x;
     result.passIndex = passGroupGetPassIndex(passGroupVa,
-      asFindIndexOfSetBitCooperative(draw.passMask, subIndices.z, PASS_GROUP_PASS_COUNT));
+      asFindIndexOfSetBit(draw.passMask, subIndices.z));
     result.drawIndex = draw.instanceDrawIndex;
-  } else {
-    // Default-initialize everything, but mark the invocation
-    // as invalid. Any memory accesses must be skipped.
-    result.meshletBuffer = 0ul;
-    result.instanceIndex = 0u;
-    result.localMeshInstance = 0u;
-    result.lodIndex = 0u;
-    result.lodMeshletIndex = 0u;
-    result.passIndex = 0u;
-    result.drawIndex = 0u;
   }
 
   return result;

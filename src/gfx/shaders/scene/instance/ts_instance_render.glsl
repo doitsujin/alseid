@@ -44,7 +44,6 @@ uint tsMain() {
 
   TsContext context = tsGetInstanceContext();
 
-  // Visibility mask for the meshlet emitted by the current invocation.
   // Initialize to 0, since the invocation may be inactive.
   MsMeshletPayload payload = MsMeshletPayload(0u, 0u, 0u);
 
