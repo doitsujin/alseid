@@ -8,6 +8,7 @@
 
 #include "../gfx.h"
 #include "../gfx_spirv.h"
+#include "../gfx_spirv_opt.h"
 
 #include "gfx_vulkan_device.h"
 #include "gfx_vulkan_descriptor_handle.h"
@@ -709,12 +710,8 @@ void GfxVulkanGraphicsShaders::getShaderStageInfo(
   result.stageInfo.resize(m_shaders.size());
 
   for (uint32_t i = 0; i < m_shaders.size(); i++) {
-    bool freeCode = mgr.initShaderStage(m_shaders[i],
-      &result.specInfo, result.stageInfo[i], result.extraInfo[i],
-      patchInfo, specData);
-
-    if (freeCode)
-      result.freeMask |= 1u << i;
+    mgr.initShaderStage(m_shaders[i], &result.specInfo,
+      result.stageInfo[i], result.extraInfo[i], patchInfo, specData);
   }
 }
 
@@ -1064,11 +1061,6 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createLibraryLocked(
   VkResult vr = vk.vkCreateGraphicsPipelines(vk.device,
     VK_NULL_HANDLE, 1, &info, nullptr, &m_library.pipeline);
 
-  for (uint32_t i = 0; i < shaderStages.extraInfo.size(); i++) {
-    if (shaderStages.freeMask & (1u << i))
-      std::free(const_cast<uint32_t*>(shaderStages.extraInfo[i].moduleInfo.pCode));
-  }
-
   if (vr)
     throw VulkanError("Vulkan: Failed to create shader library", vr);
 
@@ -1177,9 +1169,6 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createVariantLocked(
   for (size_t i = 0; i < shaderStages.stageInfo.size(); i++) {
     if (shaderStages.stageInfo[i].module)
       vk.vkDestroyShaderModule(vk.device, shaderStages.stageInfo[i].module, nullptr);
-
-    if (shaderStages.freeMask & (1u << i))
-      std::free(const_cast<uint32_t*>(shaderStages.extraInfo[i].moduleInfo.pCode));
   }
 
   if (vr)
@@ -1396,8 +1385,8 @@ VkPipeline GfxVulkanComputePipeline::createPipelineLocked() {
   pipelineInfo.layout = m_layout.getLayout();
   pipelineInfo.basePipelineIndex = -1;
 
-  bool freeCode = m_mgr.initShaderStage(m_desc.compute,
-    &specInfo, pipelineInfo.stage, extraInfo, m_patchInfo, &m_specConstants);
+  m_mgr.initShaderStage(m_desc.compute, &specInfo,
+    pipelineInfo.stage, extraInfo, m_patchInfo, &m_specConstants);
 
   VkPipeline pipeline = VK_NULL_HANDLE;
   VkResult vr = vk.vkCreateComputePipelines(vk.device,
@@ -1406,9 +1395,6 @@ VkPipeline GfxVulkanComputePipeline::createPipelineLocked() {
   // Destroy the shader module if we had to create one
   if (pipelineInfo.stage.module)
     vk.vkDestroyShaderModule(vk.device, pipelineInfo.stage.module, nullptr);
-
-  if (freeCode)
-    std::free(const_cast<uint32_t*>(extraInfo.moduleInfo.pCode));
 
   if (vr)
     throw VulkanError(strcat("Vulkan: Failed to create compute pipeline (shader: ", m_desc.compute->getDebugName(), ")").c_str(), vr);
@@ -1490,7 +1476,7 @@ GfxVulkanSpecConstantData GfxVulkanPipelineManager::getDefaultSpecConstants() co
 }
 
 
-bool GfxVulkanPipelineManager::initShaderStage(
+void GfxVulkanPipelineManager::initShaderStage(
   const GfxShader&                    shader,
   const VkSpecializationInfo*         specInfo,
         VkPipelineShaderStageCreateInfo& stageInfo,
@@ -1502,65 +1488,41 @@ bool GfxVulkanPipelineManager::initShaderStage(
   GfxShaderStage stage = shader->getShaderStage();
   GfxShaderBinary binary = shader->getShaderBinary();
 
-  bool patchBinary = shaderBinaryRequiresPatching(stage, patchInfo);
-
-  void* codeBuffer = nullptr;
-  size_t codeSize = 0u;
+  SpirvCodeBuffer codeBuffer;
 
   switch (binary.format) {
     case GfxShaderFormat::eVulkanSpirv: {
-      if (patchBinary) {
-        codeBuffer = std::malloc(binary.size);
-        codeSize = binary.size;
-
-        std::memcpy(codeBuffer, binary.data, codeSize);
-
-        extraInfo.moduleInfo.codeSize = codeSize;
-        extraInfo.moduleInfo.pCode = reinterpret_cast<const uint32_t*>(codeBuffer);
-      } else {
-        extraInfo.moduleInfo.codeSize = binary.size;
-        extraInfo.moduleInfo.pCode = reinterpret_cast<const uint32_t*>(binary.data);
-      }
+      codeBuffer = SpirvCodeBuffer(binary.size,
+        reinterpret_cast<const uint32_t*>(binary.data));
     } break;
 
     case GfxShaderFormat::eVulkanSpirvCompressed: {
       RdMemoryView compressed(binary.data, binary.size);
-      codeSize = spirvGetDecodedSize(compressed);
+      size_t codeSize = spirvGetDecodedSize(compressed);
 
-      codeBuffer = std::malloc(codeSize);
-      spirvDecodeBinary(WrMemoryView(codeBuffer, codeSize), compressed);
+      std::vector<uint32_t> code(codeSize / sizeof(uint32_t));
+      spirvDecodeBinary(WrMemoryView(code.data(), codeSize), compressed);
 
-      extraInfo.moduleInfo.codeSize = codeSize;
-      extraInfo.moduleInfo.pCode = reinterpret_cast<uint32_t*>(codeBuffer);
+      codeBuffer = SpirvCodeBuffer(std::move(code));
     } break;
 
     default:
       throw VulkanError("Vulkan: Unsupported shader binary format", VK_ERROR_UNKNOWN);
   }
 
-  if (patchBinary)
-    patchShaderBinary(stage, patchInfo, codeSize, codeBuffer);
-
   stageInfo = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO };
   stageInfo.stage = getVkShaderStage(stage);
   stageInfo.pName = "main";
   stageInfo.pSpecializationInfo = specInfo;
 
-  if (m_device.getVkFeatures().extGraphicsPipelineLibrary.graphicsPipelineLibrary) {
-    // Chain shader module info if possible
-    stageInfo.pNext = &extraInfo.moduleInfo;
-  } else {
-    VkResult vr = vk.vkCreateShaderModule(vk.device,
-      &extraInfo.moduleInfo, nullptr, &stageInfo.module);
-
-    if (vr)
-      throw VulkanError("Vulkan: Failed to create shader module", vr);
-  }
-
   // Ensure that gl_SubgroupSize and friends actually behave as expected in
   // compute and mesh shaders, and ensure full subgroups whenever possible.
+  const auto& deviceProperties = m_device.getVkProperties();
+
+  uint32_t minSubgroupSize = deviceProperties.vk13.minSubgroupSize;
+  uint32_t maxSubgroupSize = deviceProperties.vk13.maxSubgroupSize;
+
   if (gfxShaderStageHasWorkgroupSize(stage)) {
-    const auto& deviceProperties = m_device.getVkProperties();
     stageInfo.flags |= VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT;
 
     Extent3D localSize = specData
@@ -1588,11 +1550,48 @@ bool GfxVulkanPipelineManager::initShaderStage(
 
         extraInfo.requiredSubgroupSize.pNext = const_cast<void*>(std::exchange(stageInfo.pNext, &extraInfo.requiredSubgroupSize));
         extraInfo.requiredSubgroupSize.requiredSubgroupSize = requiredSubgroupSize;
+
+        minSubgroupSize = requiredSubgroupSize;
+        maxSubgroupSize = requiredSubgroupSize;
       }
     }
   }
 
-  return codeBuffer != nullptr;
+  // With all the information provided above, we can patch the SPIR-V binary
+  SpirvOptimizer optimizer(std::move(codeBuffer));
+  optimizer.setSubgroupSize(minSubgroupSize, maxSubgroupSize);
+
+  for (uint32_t i = 0; i < specInfo->mapEntryCount; i++) {
+    auto specDwords = reinterpret_cast<const uint32_t*>(specInfo->pData);
+
+    if (specInfo->pMapEntries[i].size == sizeof(uint32_t) &&
+        specInfo->pMapEntries[i].offset + specInfo->pMapEntries[i].size <= specInfo->dataSize) {
+      optimizer.setSpecConstant(specInfo->pMapEntries[i].constantID,
+        specDwords[specInfo->pMapEntries[i].offset / sizeof(*specDwords)]);
+    }
+  }
+
+  if (stage == GfxShaderStage::eMesh) {
+    optimizer.adjustMeshOutputCounts(
+      patchInfo.maxVertexCount,
+      patchInfo.maxPrimitiveCount);
+  }
+
+  extraInfo.codeBuffer = optimizer.getCodeBuffer();
+
+  // Set up shader module info and create module if necessary
+  extraInfo.moduleInfo.codeSize = extraInfo.codeBuffer.getSize();
+  extraInfo.moduleInfo.pCode = extraInfo.codeBuffer.getCode();
+
+  if (m_device.getVkFeatures().extGraphicsPipelineLibrary.graphicsPipelineLibrary) {
+    extraInfo.moduleInfo.pNext = std::exchange(stageInfo.pNext, &extraInfo.moduleInfo);
+  } else {
+    VkResult vr = vk.vkCreateShaderModule(vk.device,
+      &extraInfo.moduleInfo, nullptr, &stageInfo.module);
+
+    if (vr)
+      throw VulkanError("Vulkan: Failed to create shader module", vr);
+  }
 }
 
 
@@ -1997,59 +1996,6 @@ void GfxVulkanPipelineManager::runWorker() {
         item.graphicsPipeline->createVariant(item.graphicsState);
         break;
     }
-  }
-}
-
-
-bool GfxVulkanPipelineManager::shaderBinaryRequiresPatching(
-        GfxShaderStage                stage,
-  const GfxVulkanShaderStagePatchInfo& patchInfo) {
-  switch (stage) {
-    case GfxShaderStage::eMesh:
-      return patchInfo.maxPrimitiveCount || patchInfo.maxVertexCount;
-
-    default:
-      return false;
-  }
-}
-
-
-void GfxVulkanPipelineManager::patchShaderBinary(
-        GfxShaderStage                stage,
-  const GfxVulkanShaderStagePatchInfo& patchInfo,
-        size_t                        binarySize,
-        void*                         binary) {
-  auto* dwords = reinterpret_cast<uint32_t*>(binary);
-
-  for (uint32_t i = 5; i < binarySize / sizeof(*dwords); ) {
-    uint32_t len = dwords[i] >> 16;
-
-    switch (spv::Op(dwords[i] & 0xffffu)) {
-      case spv::OpExecutionMode: {
-        switch (spv::ExecutionMode(dwords[i + 2])) {
-          case spv::ExecutionModeOutputVertices: {
-            if (patchInfo.maxVertexCount)
-              dwords[i + 3] = patchInfo.maxVertexCount;
-          } break;
-
-          case spv::ExecutionModeOutputPrimitivesEXT: {
-            if (patchInfo.maxPrimitiveCount)
-              dwords[i + 3] = patchInfo.maxPrimitiveCount;
-          } break;
-
-          default:
-            break;
-        }
-      } break;
-
-      case spv::OpFunction:
-        return;
-
-      default:
-        break;
-    }
-
-    i += len;
   }
 }
 

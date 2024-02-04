@@ -10,6 +10,7 @@ as_files = files([
   'gfx/gfx_scratch.cpp',
   'gfx/gfx_shader.cpp',
   'gfx/gfx_spirv.cpp',
+  'gfx/gfx_spirv_opt.cpp',
   'gfx/gfx_submission.cpp',
   'gfx/gfx_transfer.cpp',
 

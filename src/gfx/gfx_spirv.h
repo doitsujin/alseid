@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <vector>
 
@@ -56,5 +57,21 @@ size_t spirvGetDecodedSize(
 std::optional<GfxShaderDesc> spirvReflectBinary(
         size_t                        size,
   const void*                         code);
+
+
+/**
+ * \brief Pass to change output vertex and primitive counts at runtime
+ *
+ * Useful to specialize mesh shaders at runtime.
+ * \param [in] dwordCount Code size, in dwords
+ * \param [in] dwords Code, in dwords
+ * \param [in] vertexCount New vertex count, or 0 to keep the original value.
+ * \param [in] primitiveCount New primitive count, or 0 to keep the original value.
+ */
+std::vector<uint32_t> spirvPatchVertexPrimitiveCount(
+        size_t                        dwordCount,
+  const uint32_t*                     dwords,
+        uint32_t                      vertexCount,
+        uint32_t                      primitiveCount);
 
 }

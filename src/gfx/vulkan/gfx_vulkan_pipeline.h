@@ -16,6 +16,7 @@
 
 #include "../gfx_pipeline.h"
 #include "../gfx_shader.h"
+#include "../gfx_spirv_opt.h"
 
 #include "gfx_vulkan_loader.h"
 
@@ -637,6 +638,7 @@ struct GfxVulkanShaderStagePatchInfo {
  * \brief Additional shader module parameters
  */
 struct GfxVulkanShaderStageExtraInfo {
+  SpirvCodeBuffer codeBuffer;
   VkShaderModuleCreateInfo moduleInfo = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
   VkPipelineShaderStageRequiredSubgroupSizeCreateInfo requiredSubgroupSize = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO };
 };
@@ -646,7 +648,6 @@ struct GfxVulkanShaderStageExtraInfo {
  * \brief Helper to build shader stage arrays
  */
 struct GfxVulkanGraphicsShaderStages {
-  uint32_t freeMask = 0;
   VkSpecializationInfo specInfo = { };
   small_vector<GfxVulkanShaderStageExtraInfo, 5> extraInfo;
   small_vector<VkPipelineShaderStageCreateInfo, 5> stageInfo;
@@ -1043,10 +1044,8 @@ public:
    * \param [out] extraInfo Additional stage parameters
    * \param [in] patchInfo Shader patching info
    * \param [in] specData Specialization constant data
-   * \returns \c true if the code in the returned
-   *    shader module create info must be freed
    */
-  bool initShaderStage(
+  void initShaderStage(
     const GfxShader&                    shader,
     const VkSpecializationInfo*         specInfo,
           VkPipelineShaderStageCreateInfo& stageInfo,
@@ -1295,16 +1294,6 @@ private:
           VkDescriptorType              type) const;
 
   void runWorker();
-
-  static bool shaderBinaryRequiresPatching(
-          GfxShaderStage                stage,
-    const GfxVulkanShaderStagePatchInfo& patchInfo);
-
-  static void patchShaderBinary(
-          GfxShaderStage                stage,
-    const GfxVulkanShaderStagePatchInfo& patchInfo,
-          size_t                        binarySize,
-          void*                         binary);
 
 };
 
