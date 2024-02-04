@@ -811,11 +811,20 @@ GfxVulkanGraphicsPipeline::GfxVulkanGraphicsPipeline(
     m_patchInfo.maxVertexCount = m_specConstants.meshShaderWorkgroupSize;
     m_patchInfo.maxPrimitiveCount = m_specConstants.meshShaderWorkgroupSize;
   } else {
-    // Don't ever go below the minimum subgroup size
-    maxOutputCount = std::max(maxOutputCount, m_specConstants.minSubgroupSize);
+    const auto& properties = m_mgr.device().getVkProperties();
 
-    while (m_specConstants.meshShaderWorkgroupSize >= 2 * maxOutputCount)
-      m_specConstants.meshShaderWorkgroupSize /= 2;
+    // Ignore size preferences if the implementation wants local export, and
+    // ensure that the workgroup size remains a multiple of the subgroup size.
+    if (properties.extMeshShader.prefersLocalInvocationPrimitiveOutput ||
+        properties.extMeshShader.prefersLocalInvocationVertexOutput ||
+        maxOutputCount < m_specConstants.meshShaderWorkgroupSize) {
+      m_specConstants.meshShaderWorkgroupSize = std::min(
+        align(maxOutputCount, properties.vk13.maxSubgroupSize),
+        properties.extMeshShader.maxMeshWorkGroupSize[0]);
+
+      if (maxOutputCount < properties.vk13.minSubgroupSize)
+        m_specConstants.meshShaderWorkgroupSize = properties.vk13.maxSubgroupSize;
+    }
   }
 
   // Compute actual workgroup size based on specialization constants
@@ -1459,12 +1468,23 @@ GfxVulkanSpecConstantData GfxVulkanPipelineManager::getDefaultSpecConstants() co
   GfxVulkanSpecConstantData result = { };
   result.minSubgroupSize = properties.vk13.minSubgroupSize;
   result.maxSubgroupSize = properties.vk13.maxSubgroupSize;
+
+  // Limit task shader workgroup sizes for subgroup optimizations,
+  // and to provide a general upper bound that is easy to work with.
   result.taskShaderWorkgroupSize = clamp(std::min(
     properties.extMeshShader.maxPreferredTaskWorkGroupInvocations,
     properties.vk13.maxSubgroupSize), 16u, 64u);
+
+  // For mesh shaders, clamp the workgroup size into a wide range.
+  // On AMD, testing shows higher perf when running one subgroup.
   result.meshShaderWorkgroupSize = clamp(
     properties.extMeshShader.maxPreferredMeshWorkGroupInvocations,
     32u, 256u);
+
+  if (properties.core.properties.vendorID == GfxAdapterVendorId::eAmd &&
+      properties.vk13.maxSubgroupSize > 32u)
+    result.meshShaderWorkgroupSize = properties.vk13.maxSubgroupSize;
+
   result.meshShaderFlags = uint32_t(meshShaderFlags);
   return result;
 }

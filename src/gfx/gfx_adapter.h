@@ -5,6 +5,16 @@
 namespace as {
 
 /**
+ * \brief PCI vendor IDs
+ */
+struct GfxAdapterVendorId {
+  constexpr static uint32_t eAmd      = 0x1002u;
+  constexpr static uint32_t eIntel    = 0x8086u;
+  constexpr static uint32_t eNvidia   = 0x10deu;
+};
+
+
+/**
  * \brief Adapter info
  */
 struct GfxAdapterInfo {
