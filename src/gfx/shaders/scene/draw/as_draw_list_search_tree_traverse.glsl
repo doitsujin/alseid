@@ -68,6 +68,10 @@ uint32_t csWorkgroupFindFirstInvocation(uint32_t tid, bool value) {
 
     if (!IsSingleSubgroup) {
       result += gl_SubgroupID * gl_SubgroupSize;
+      // On the single subgroup path we can assume that the
+      // condition is true for one thread, but here we may
+      // need to discard invalid results.
+      result = subgroupAny(value) ? result : TsWorkgroupSize;
 
       if (tid == 0u)
         csInvocationIndexShared = TsWorkgroupSize;
