@@ -647,7 +647,12 @@ Transform msLoadInstanceJointTransform(
   InstanceJointBufferIn jointBuffer = InstanceJointBufferIn(
     context.invocation.instanceNode.propertyBuffer +
     context.invocation.instanceInfo.jointAbsoluteOffset);
-  return jointBuffer.joints[jointIndex + jointSet * context.invocation.instanceInfo.jointCount].transform;
+
+  jointIndex = jointSet != 0u
+    ? jointIndex + context.invocation.instanceInfo.jointCount
+    : jointIndex;
+
+  return jointBuffer.joints[jointIndex].transform;
 }
 
 
@@ -733,8 +738,10 @@ Transform msComputeJointTransform(
       accum.r.w = 1.0f;
 
     for (uint32_t i = 1; i < meshlet.jointCountPerVertex; i++) {
+      vertexIndex += meshlet.vertexDataCount;
+
       JointInfluence joint = meshletDecodeJointInfluence(
-        jointData.data[i * meshlet.vertexDataCount + vertexIndex]);
+        jointData.data[vertexIndex]);
 
       if (joint.weight == 0.0f)
         break;
