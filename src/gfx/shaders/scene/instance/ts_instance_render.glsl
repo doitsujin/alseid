@@ -91,8 +91,9 @@ uint tsMain() {
     PassInfoBufferIn passBuffer = PassInfoBufferIn(context.passInfoVa);
     uint32_t passFlags = passBuffer.passes[context.invocation.passIndex].flags;
 
-    uint32_t viewCount = (passFlags & RENDER_PASS_IS_CUBE_MAP_BIT) != 0u ? 6u : 1u;
-    payload.viewMask = (1u << viewCount) - 1u;
+    // TODO implement cube maps. We should get by with only testing against
+    // four planes in that case and check both sign and distance for each view.
+    payload.viewMask = 1u;
 
     if (meshlet.flags != 0u) {
       // Compute transform from model space to view space
@@ -186,25 +187,18 @@ uint tsMain() {
           // of the operation can be made more efficient.
           ViewFrustum frustum = passBuffer.passes[context.invocation.passIndex].frustum;
 
-          for (uint32_t i = 0; i < viewCount; i++) {
-            // If necessary, apply view rotation to the sphere center
-            // so that we can test it against the view frustum.
-            vec3 sphereCenterView = sphereCenter;
+          vec3 sphereCenterView = sphereCenter;
 
-            if ((passFlags & RENDER_PASS_IS_CUBE_MAP_BIT) != 0u)
-              sphereCenterView = quatApply(passBuffer.cubeFaceRotations[i], sphereCenterView);
+          // Don't trust compilers to deal with local arrays here
+          bool frustumTest = testPlaneSphere(frustum.planes[0], sphereCenterView, sphereRadius)
+                          && testPlaneSphere(frustum.planes[1], sphereCenterView, sphereRadius)
+                          && testPlaneSphere(frustum.planes[2], sphereCenterView, sphereRadius)
+                          && testPlaneSphere(frustum.planes[3], sphereCenterView, sphereRadius)
+                          && testPlaneSphere(frustum.planes[4], sphereCenterView, sphereRadius)
+                          && testPlaneSphere(frustum.planes[5], sphereCenterView, sphereRadius);
 
-            // Don't trust compilers to deal with local arrays here
-            bool frustumTest = testPlaneSphere(frustum.planes[0], sphereCenterView, sphereRadius)
-                            && testPlaneSphere(frustum.planes[1], sphereCenterView, sphereRadius)
-                            && testPlaneSphere(frustum.planes[2], sphereCenterView, sphereRadius)
-                            && testPlaneSphere(frustum.planes[3], sphereCenterView, sphereRadius)
-                            && testPlaneSphere(frustum.planes[4], sphereCenterView, sphereRadius)
-                            && testPlaneSphere(frustum.planes[5], sphereCenterView, sphereRadius);
-
-            if (!frustumTest)
-              payload.viewMask &= ~(1u << i);
-          }
+          if (!frustumTest)
+            payload.viewMask = 0u;
         }
       }
     }
