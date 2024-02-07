@@ -1,0 +1,217 @@
+// Instance update preparation shader. Used to submit stream requests
+// and instance update requests as necessary, using one thread per
+// visible instance.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csCullInstances
+
+#include "../../as_include_head.glsl"
+
+#include "../group/as_group.glsl"
+
+#include "../renderpass/as_renderpass.glsl"
+
+#include "../as_scene.glsl"
+
+#include "as_instance.glsl"
+
+layout(local_size_x = PASS_GROUP_WORKGROUP_SIZE) in;
+
+
+// Shader parameters
+layout(push_constant)
+uniform PushData {
+  InstanceNodeBuffer  instanceVa;
+  uint64_t            sceneVa;
+  uint64_t            passInfoVa;
+  uint64_t            passGroupVa;
+  uint32_t            frameId;
+} globals;
+
+
+// Helper function to load an instance node from memory.
+InstanceNode csLoadInstanceNode(uint32_t instanceIndex) {
+  InstanceNodeBuffer instanceNodes = InstanceNodeBuffer(globals.instanceVa);
+  return instanceNodes.nodes[instanceIndex];
+}
+
+
+// Convenience method to transform a model space vertex to view space,
+// including any mirroring etc. from the render pass.
+vec3 csTransformVertex(
+  in    PassInfo                      passInfo,
+  in    Transform                     transform,
+        vec3                          vertex) {
+  vertex = transApply(transform, vertex);
+
+  if (asTest(passInfo.flags, RENDER_PASS_USES_MIRROR_PLANE_BIT))
+    vertex = planeMirror(passInfo.currMirrorPlane, vertex);
+
+  return vertex;
+}
+
+
+// Helper function to perform distance culling against a bounding box
+bool csTestViewDistance(
+        Aabb                          aabb,
+  in    PassInfo                      passInfo,
+  in    Transform                     transform) {
+  float maxDistSq = passInfo.viewDistanceLimit * passInfo.viewDistanceLimit;
+
+  // Scale bounding box with the transform as needed
+  float scale = quatGetScale(transform.rot);
+
+  aabb.lo *= scale;
+  aabb.hi *= scale;
+
+  // Compute the view origin relative to the bounding box.
+  Transform inverseTransform = transInverse(transform);
+  vec3 pos = inverseTransform.pos;
+
+  if (asTest(passInfo.flags, RENDER_PASS_USES_MIRROR_PLANE_BIT)) {
+    // If the pass is mirrored, we need to do reverse the mirroring
+    // first by essentially mirroring a null vector, and then
+    // apply the inverse transform to it.
+    pos = -2.0f * passInfo.currMirrorPlane.w * passInfo.currMirrorPlane.xyz;
+    pos = transApply(inverseTransform, pos);
+  }
+
+  // Compute point on the box that is closest to the view.
+  vec3 rel = (pos - aabb.lo) / (aabb.hi - aabb.lo);
+  vec3 near = mix(aabb.lo, aabb.hi, clamp(rel, 0.0f, 1.0f)) - pos;
+
+  return dot(near, near) < maxDistSq;
+}
+
+
+struct CsInstanceInfo {
+  Transform worldTransform;
+  Aabb aabb;
+};
+
+
+void csCullInstances() {
+  uint32_t gid = gl_GlobalInvocationID.x;
+
+  uint32_t tid = IsFullSubgroup
+    ? gl_SubgroupInvocationID + gl_SubgroupID * gl_SubgroupSize
+    : gl_LocalInvocationIndex;
+
+  SceneHeader scene = SceneHeaderIn(globals.sceneVa).header;
+  SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(globals.sceneVa + scene.nodeTransformOffset);
+
+  PassGroupBuffer group = PassGroupBuffer(globals.passGroupVa);
+
+  PassGroupNodeList nodeList = PassGroupNodeList(globals.passGroupVa +
+    group.nodeListOffsets[NODE_TYPE_INSTANCE - NODE_TYPE_BUILTIN_COUNT].nodeList);
+  PassGroupNodeListHeader nodeListHeader = nodeList.header;
+
+  // Load instance properties and check whether we need to update it.
+  PassGroupNodeListItem nodeItem = { };
+
+  CsInstanceInfo instanceInfo = { };
+
+  if (gid < nodeListHeader.localEntryCount) {
+    nodeItem = nodeList.items[nodeListHeader.localEntryIndex + gid];
+    uint32_t instanceIndex = getNodeIndexFromRef(nodeItem.nodeRef);
+
+    // Load relevant instance data from memory.
+    InstanceNode instance = csLoadInstanceNode(instanceIndex);
+
+    if (asTest(instance.flags, INSTANCE_RESIDENT_BIT)) {
+      InstanceDataBufferIn instanceData = InstanceDataBufferIn(instance.propertyBuffer);
+
+      instanceInfo.worldTransform = nodeTransforms.nodeTransforms[
+        nodeComputeTransformIndices(instance.nodeIndex, scene.nodeCount, globals.frameId).x].absoluteTransform;
+
+      instanceInfo.aabb = Aabb(
+        vec3(instanceData.header.aabb.lo),
+        vec3(instanceData.header.aabb.hi));
+    } else {
+      // Mark instance as invisible in all passes if not resident
+      nodeItem.visibilityMask = 0u;
+    }
+  }
+
+  // New visibility mask for the node we're working on
+  uint32_t visibilityMask = nodeItem.visibilityMask;
+
+  // Scalarize render passes. We're not expecting this to diverge
+  // much anyway due to the way BVH traversal is implemented.
+  uint32_t passMask = subgroupOr(visibilityMask);
+
+  while (passMask != 0u) {
+    uint32_t passIndex = findLSB(passMask);
+    uint32_t passBit = passMask & -passMask;
+
+    // Remap pass index and load render pass metadata
+    passIndex = passGroupGetPassIndex(globals.passGroupVa, passIndex);
+    PassInfo passInfo = PassInfoBufferIn(globals.passInfoVa).passes[passIndex];
+
+    // Don't redundantly test instances that are already invisible
+    // anyway, this also sort of doubles as a bound check.
+    if (asTest(visibilityMask, passBit)) {
+      // If the bounding box is empty, ignore it and always render the instance.
+      // This essentially assumes that the instance is infinitely large.
+      bool isVisible = true;
+
+      if (all(lessThan(instanceInfo.aabb.lo, instanceInfo.aabb.hi))) {
+        // Compute final view transform. Used for both distance and frustum tests.
+        Transform viewTransform = transChainNorm(passInfo.currTransform.transform, instanceInfo.worldTransform);
+
+        // Perform frustum culling. The idea is to test every transformed vertex of
+        // the bounding box against the view frustum for non-cube map passes. Control
+        // flow is expected to be relatively uniform up until this point; do not try
+        // to parallelize instance-level culling any further.
+        if (!asTest(passInfo.flags, RENDER_PASS_IS_CUBE_MAP_BIT)) {
+          vec3 v0 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(instanceInfo.aabb, 0u));
+          vec3 v1 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(instanceInfo.aabb, 1u));
+          vec3 v2 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(instanceInfo.aabb, 2u));
+          vec3 v3 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(instanceInfo.aabb, 3u));
+          vec3 v4 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(instanceInfo.aabb, 4u));
+          vec3 v5 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(instanceInfo.aabb, 5u));
+          vec3 v6 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(instanceInfo.aabb, 6u));
+          vec3 v7 = csTransformVertex(passInfo, viewTransform, aabbComputeVertex(instanceInfo.aabb, 7u));
+
+          for (uint32_t i = 0; i < 6 && isVisible; i++) {
+            vec4 frustumPlane = passInfo.frustum.planes[i];
+
+            float d012 = max(max(
+              planeDistanceToPoint(frustumPlane, v0),
+              planeDistanceToPoint(frustumPlane, v1)),
+              planeDistanceToPoint(frustumPlane, v2));
+            float d345 = max(max(
+              planeDistanceToPoint(frustumPlane, v3),
+              planeDistanceToPoint(frustumPlane, v4)),
+              planeDistanceToPoint(frustumPlane, v5));
+            float d67 = max(
+              planeDistanceToPoint(frustumPlane, v6),
+              planeDistanceToPoint(frustumPlane, v7));
+
+            isVisible = max(max(d012, d345), d67) >= 0.0f;
+          }
+        }
+
+        // If the current render pass has a limited view distance, test
+        // the distance to the closest point on the bounding box.
+        if (isVisible && passInfo.viewDistanceLimit > 0.0f)
+          isVisible = csTestViewDistance(instanceInfo.aabb, passInfo, viewTransform);
+      }
+
+      // Remove pass from the visibility mask as necessary
+      if (!isVisible)
+        visibilityMask &= ~passBit;
+    }
+
+    // Next iteration
+    passMask -= passBit;
+  }
+
+  // Write back new visibility mask
+  if (nodeItem.visibilityMask != visibilityMask)
+    nodeList.items[nodeListHeader.localEntryIndex + gid].visibilityMask = visibilityMask;
+}
+
+#include "../../as_include_tail.glsl"

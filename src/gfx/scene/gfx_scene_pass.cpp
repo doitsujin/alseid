@@ -1,6 +1,6 @@
 #include "gfx_scene_pass.h"
 #include "gfx_scene_node.h"
-#include <cstdint>
+#include "gfx_scene_instance.h"
 
 namespace as {
 
@@ -134,6 +134,39 @@ void GfxScenePassGroupBuffer::resetUpdateLists(
   context->memoryBarrier(
     GfxUsage::eShaderStorage | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
     GfxUsage::eShaderStorage | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
+
+  context->endDebugLabel();
+}
+
+
+void GfxScenePassGroupBuffer::passBarrier(
+  const GfxContext&                   context) {
+  context->memoryBarrier(
+    GfxUsage::eShaderResource | GfxUsage::eShaderStorage | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
+    GfxUsage::eShaderResource | GfxUsage::eShaderStorage | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
+}
+
+
+void GfxScenePassGroupBuffer::cullInstances(
+  const GfxContext&                   context,
+  const GfxScenePipelines&            pipelines,
+  const GfxSceneNodeManager&          nodeManager,
+  const GfxSceneInstanceManager&      instanceManager,
+  const GfxScenePassManager&          passManager,
+        uint32_t                      frameId) {
+  context->beginDebugLabel("Cull instances", 0xff78f0ff);
+
+  GfxDescriptor dispatch = this->getDispatchDescriptors(
+    GfxSceneNodeType::eInstance).processNew;
+
+  GfxSceneInstanceCullArgs args = { };
+  args.instanceBufferVa = instanceManager.getGpuAddress();
+  args.sceneBufferVa = nodeManager.getGpuAddress();
+  args.passInfoVa = passManager.getGpuAddress();
+  args.passGroupVa = getGpuAddress();
+  args.frameId = frameId;
+
+  pipelines.cullInstances(context, dispatch, args);
 
   context->endDebugLabel();
 }

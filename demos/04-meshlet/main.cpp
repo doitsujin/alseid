@@ -184,7 +184,15 @@ public:
       m_sceneInstanceManager->processPassGroupInstances(context,
         *m_scenePipelines, *m_sceneNodeManager, *m_scenePassGroup, m_frameId);
 
+      // Cull instances
+      m_scenePassGroup->passBarrier(context);
+
+      m_scenePassGroup->cullInstances(context, *m_scenePipelines,
+        *m_sceneNodeManager, *m_sceneInstanceManager, *m_scenePassManager, m_frameId);
+
       // Generate initial set of draws
+      m_scenePassGroup->passBarrier(context);
+
       m_sceneDrawBufferPrimary->generateDraws(context, *m_scenePipelines,
         m_scenePassManager->getGpuAddress(), *m_sceneNodeManager, *m_sceneInstanceManager,
         *m_scenePassGroup, m_frameId, 0x1, 0);
@@ -248,7 +256,15 @@ public:
       m_sceneInstanceManager->processPassGroupInstances(context,
         *m_scenePipelines, *m_sceneNodeManager, *m_scenePassGroup, m_frameId);
 
+      // Cull newly added instances
+      m_scenePassGroup->passBarrier(context);
+
+      m_scenePassGroup->cullInstances(context, *m_scenePipelines,
+        *m_sceneNodeManager, *m_sceneInstanceManager, *m_scenePassManager, m_frameId);
+
       // Generate secondary list of draws
+      m_scenePassGroup->passBarrier(context);
+
       m_sceneDrawBufferSecondary->generateDraws(context, *m_scenePipelines,
         m_scenePassManager->getGpuAddress(), *m_sceneNodeManager, *m_sceneInstanceManager,
         *m_scenePassGroup, m_frameId, 0x1, 0);

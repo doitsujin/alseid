@@ -5,7 +5,6 @@
 #include "../gfx.h"
 
 #include "gfx_scene_common.h"
-#include <cstdint>
 
 namespace as {
 
@@ -114,6 +113,21 @@ struct GfxSceneInstanceUpdateExecuteArgs {
 };
 
 static_assert(sizeof(GfxSceneInstanceUpdateExecuteArgs) == 16);
+
+
+/**
+ * \brief Instance culling arguments
+ */
+struct GfxSceneInstanceCullArgs {
+  uint64_t instanceBufferVa;
+  uint64_t sceneBufferVa;
+  uint64_t passInfoVa;
+  uint64_t passGroupVa;
+  uint32_t frameId;
+  uint32_t reserved;
+};
+
+static_assert(sizeof(GfxSceneInstanceCullArgs) == 40);
 
 
 /**
@@ -350,6 +364,21 @@ public:
     const GfxSceneInstanceUpdateExecuteArgs& args) const;
 
   /**
+   * \brief Performs instance-level visibility tests
+   *
+   * Performs per-instance frustum and distance tests for all passes in
+   * a pass group, but deliberately ignores BVH occlusion test results
+   * so that instances can be made visible as necessary.
+   * \param [in] context Context object
+   * \param [in] dispatch Indirect dispatch descriptor
+   * \param [in] args Arguments to pass to the shader
+   */
+  void cullInstances(
+    const GfxContext&                   context,
+    const GfxDescriptor&                dispatch,
+    const GfxSceneInstanceCullArgs&     args) const;
+
+  /**
    * \brief Initializes draw list buffer
    *
    * Copies draw group properties from a host buffer to the GPU, but resets
@@ -514,6 +543,7 @@ private:
   GfxComputePipeline  m_csGroupTraversePrepare;
   GfxComputePipeline  m_csGroupTraverseReset;
 
+  GfxComputePipeline  m_csInstanceCull;
   GfxComputePipeline  m_csInstanceUpdateExecute;
   GfxComputePipeline  m_csInstanceUpdateNode;
   GfxComputePipeline  m_csInstanceUpdatePrepare;

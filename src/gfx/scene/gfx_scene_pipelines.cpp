@@ -15,6 +15,7 @@
 #include <cs_group_traverse_prepare.h>
 #include <cs_group_traverse_reset.h>
 
+#include <cs_instance_cull.h>
 #include <cs_instance_update_execute.h>
 #include <cs_instance_update_node.h>
 #include <cs_instance_update_prepare.h>
@@ -45,6 +46,7 @@ GfxScenePipelines::GfxScenePipelines(
 , m_csGroupTraverseInit     (createComputePipeline("cs_group_traverse_init", cs_group_traverse_init))
 , m_csGroupTraversePrepare  (createComputePipeline("cs_group_traverse_prepare", cs_group_traverse_prepare))
 , m_csGroupTraverseReset    (createComputePipeline("cs_group_traverse_reset", cs_group_traverse_reset))
+, m_csInstanceCull          (createComputePipeline("cs_instance_cull", cs_instance_cull))
 , m_csInstanceUpdateExecute (createComputePipeline("cs_instance_update_execute", cs_instance_update_execute))
 , m_csInstanceUpdateNode    (createComputePipeline("cs_instance_update_node", cs_instance_update_node))
 , m_csInstanceUpdatePrepare (createComputePipeline("cs_instance_update_prepare", cs_instance_update_prepare))
@@ -145,6 +147,16 @@ void GfxScenePipelines::executeInstanceUpdates(
   const GfxDescriptor&                dispatch,
   const GfxSceneInstanceUpdateExecuteArgs& args) const {
   context->bindPipeline(m_csInstanceUpdateExecute);
+  context->setShaderConstants(0, args);
+  context->dispatchIndirect(dispatch);
+}
+
+
+void GfxScenePipelines::cullInstances(
+  const GfxContext&                   context,
+  const GfxDescriptor&                dispatch,
+  const GfxSceneInstanceCullArgs&     args) const {
+  context->bindPipeline(m_csInstanceCull);
   context->setShaderConstants(0, args);
   context->dispatchIndirect(dispatch);
 }

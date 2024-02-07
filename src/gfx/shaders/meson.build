@@ -56,6 +56,7 @@ as_shader_builtins = [
   [ 'scene/occlusion/fs_occlusion_test.frag', 'fs' ],
   [ 'scene/occlusion/ms_occlusion_test.mesh', 'ms' ],
 
+  [ 'scene/instance/cs_instance_cull.comp', 'cs' ],
   [ 'scene/instance/cs_instance_update_execute.comp', 'cs' ],
   [ 'scene/instance/cs_instance_update_node.comp', 'cs' ],
   [ 'scene/instance/cs_instance_update_prepare.comp', 'cs' ],

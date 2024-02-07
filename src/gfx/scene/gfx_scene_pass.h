@@ -7,6 +7,7 @@
 
 namespace as {
 
+class GfxSceneInstanceManager;
 class GfxScenePassManager;
 
 /**
@@ -423,6 +424,37 @@ public:
   void resetUpdateLists(
     const GfxContext&                   context,
     const GfxScenePipelines&            pipelines);
+
+  /**
+   * \brief Inserts a full compute barrier
+   *
+   * Waits for prior compute shader passes to complete and makes any
+   * memory written by them visible to subsequent passes. Uses of this
+   * should be kept to a minimum in order to allow parallel execution
+   * of passes that do not have any data dependencies.
+   * \param [in] context Context object
+   */
+  void passBarrier(
+    const GfxContext&                   context);
+
+  /**
+   * \brief Performs instance-level visibility test for all passes
+   *
+   * Must be run after instance updates have completed.
+   * \param [in] context Context object
+   * \param [in] pipelines Update pipelines
+   * \param [in] nodeManager Scene node manager
+   * \param [in] instanceManager Scene instance manager
+   * \param [in] passManager Render pass manager
+   * \param [in] frameId Current frame ID
+   */
+  void cullInstances(
+    const GfxContext&                   context,
+    const GfxScenePipelines&            pipelines,
+    const GfxSceneNodeManager&          nodeManager,
+    const GfxSceneInstanceManager&      instanceManager,
+    const GfxScenePassManager&          passManager,
+          uint32_t                      frameId);
 
   /**
    * \brief Performs BVH occlusion testing for a given render pass
