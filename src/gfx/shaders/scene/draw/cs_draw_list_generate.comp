@@ -350,11 +350,18 @@ void csGenerateDraws() {
     instanceDrawInfo.passMask = 0u;
 
     InstanceNode instance = csLoadInstanceNode(instanceDrawInfo.instanceIndex);
-    InstanceHeader instanceInfo = InstanceDataBufferIn(instance.propertyBuffer).header;
 
     SceneHeader scene = SceneHeaderIn(globals.sceneVa).header;
 
-    if (instanceInfo.geometryVa != 0ul) {
+    if (asTest(instance.flags, INSTANCE_RESIDENT_BIT)) {
+      InstanceDataBufferIn instanceData = InstanceDataBufferIn(instance.propertyBuffer);
+      uint64_t geometryVa = instanceData.header.geometryVa;
+      uint32_t drawCount = instanceData.header.drawCount;
+
+      Aabb aabb = Aabb(
+        vec3(instanceData.header.aabb.lo),
+        vec3(instanceData.header.aabb.hi));
+
       PassGroupBvhVisibility bvhVisibility = bvhVisibilityBuffer.bvhs[
         getNodeIndexFromRef(nodeItem.bvhRef)];
 
@@ -384,10 +391,6 @@ void csGenerateDraws() {
         if (isVisible) {
           // If the bounding box is empty, ignore it and always render the instance.
           // This essentially assumes that the instance is infinitely large.
-          Aabb aabb = Aabb(
-            vec3(instanceInfo.aabb.lo),
-            vec3(instanceInfo.aabb.hi));
-
           if (all(lessThan(aabb.lo, aabb.hi))) {
             // Compute final view transform. Used for both distance and frustum tests.
             Transform viewTransform = transChainNorm(passInfo.currTransform.transform, worldTransform);
@@ -439,9 +442,8 @@ void csGenerateDraws() {
       }
 
       if (instanceDrawInfo.passMask != 0u) {
-        instanceDrawInfo.drawCount = instanceInfo.drawCount;
-        instanceDrawInfo.viewDistanceSq = csComputeLodDistance(
-          instanceInfo.geometryVa, worldTransform);
+        instanceDrawInfo.drawCount = drawCount;
+        instanceDrawInfo.viewDistanceSq = csComputeLodDistance(geometryVa, worldTransform);
 
         // Write back rendered pass mask
         nodeList.items[gid].renderPassMask =

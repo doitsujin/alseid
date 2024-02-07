@@ -27,8 +27,226 @@ uniform PushData {
   uint32_t            frameId;
 };
 
+
+// Asset residency helper. Stores one bit for each asset that has a
+// required non-resident resource, so that residency flags can be set
+// accordingly after performing an asset list update.
+shared uint32_t csAssetNonResidencyShared[gl_WorkGroupSize.x / 32u];
+
+void csMarkNonResident(
+        uint32_t                      localIndex) {
+  if (subgroupElect()) {
+    uint32_t index = localIndex / 32u;
+    uint32_t bit = 1u << (localIndex & 31u);
+
+    atomicOr(csAssetNonResidencyShared[index], bit);
+  }
+}
+
+
+// Helper function to query the residency status of the current instance.
+// Only produces valid results if the instance had an asset update.
+bool csCheckResidencyStatus(
+        uint32_t                      tid) {
+  barrier();
+
+  uint32_t index = tid / 32u;
+  uint32_t bit = tid % 31u;
+
+  return bitfieldExtract(csAssetNonResidencyShared[index], int32_t(bit), 1) == 0u;
+}
+
+
+// Helper to allocate and perform asset updates within the workgroup.
+// This is used to distribute work across subgroups.
+shared uint32_t csAssetUpdateWriteIndexShared;
+shared uint32_t csAssetUpdateReadIndexShared;
+
+void csInitAssetUpdateInfos(
+        uint32_t                      tid) {
+  if (tid == 0u) {
+    csAssetUpdateWriteIndexShared = 0u;
+    csAssetUpdateReadIndexShared = 0u;
+  }
+
+  if (tid < gl_WorkGroupSize.x / 32u)
+    csAssetNonResidencyShared[tid] = 0u;
+
+  barrier();
+}
+
+
+// Adds an asset update to the list. Packs the local thread index as
+// well as the absolute instance index into a single 32-bit integer.
+uint32_t csAllocateAssetUpdate(
+        bool                          needsUpdate) {
+  u32vec4 ballot = subgroupBallot(needsUpdate);
+
+  uint32_t updateCount = subgroupBallotBitCount(ballot);
+  uint32_t updateIndex = subgroupBallotExclusiveBitCount(ballot);
+
+  if (updateCount == 0u)
+    return 0u;
+
+  uint32_t first;
+
+  if (subgroupElect())
+    first = atomicAdd(csAssetUpdateWriteIndexShared, updateCount);
+
+  return subgroupBroadcastFirst(first) + updateIndex;
+}
+
+
+// Takes an asset update from the list for the entire subgroup.
+// This may return an index greater than or equal to the total
+// update count, in which case iteration must end.
+uint32_t csGetAssetUpdateIndex() {
+  uint32_t index;
+
+  if (subgroupElect())
+    index = atomicAdd(csAssetUpdateReadIndexShared, 1u);
+
+  return subgroupBroadcastFirst(index);
+}
+
+
+// Returns total number of registered asset updates.
+uint32_t csGetAssetUpdateCount() {
+  return csAssetUpdateWriteIndexShared;
+}
+
+
+// Executes asset update for a single instance using the entire subgroup.
+// This helps reduce some overhead while still allowing for parallelism.
+shared uint64_t csInstancePropertyVaShared[gl_WorkGroupSize.x];
+shared uint64_t csInstanceAssetListVaShared[gl_WorkGroupSize.x];
+shared uint32_t csInstanceAssetLocalIndicesShared[gl_WorkGroupSize.x];
+
+void csExecuteInstanceAssetUpdate(
+        uint32_t                      updateIndex) {
+  uint64_t instanceVa = csInstancePropertyVaShared[updateIndex];
+  uint64_t assetListVa = csInstanceAssetListVaShared[updateIndex];
+  uint32_t localIndex = csInstanceAssetLocalIndicesShared[updateIndex];
+
+  // Use two different buffer types to write resource parameters. This
+  // may enable a fast path when writing buffer addresses on some drivers.
+  InstanceRawBufferOut32 instanceData32 = InstanceRawBufferOut32(instanceVa);
+  InstanceRawBufferOut64 instanceData64 = InstanceRawBufferOut64(instanceVa);
+
+  InstanceHeader instance = InstanceDataBufferIn(instanceVa).header;
+
+  // Ensure that it is safe to dereference the asset list pointer.
+  AssetListBufferIn assetList = AssetListBufferIn(assetListVa);
+  bool hasAssetList = assetListVa != 0ul;
+
+  // Interpret instance info offsets and compute buffer VAs
+  InstanceResourceIndirectionBufferIn indirectionBuffer = InstanceResourceIndirectionBufferIn(instanceVa + instance.indirectionOffset);
+  InstanceResourceBufferIn resourceBuffer = InstanceResourceBufferIn(instanceVa + instance.resourceOffset);
+
+  // Per-thread resource residency flag, initialize to resident
+  // so that unused threads do not contribute incorrect results.
+  bool nonResident = false;
+
+  for (uint32_t i = 0u; i < instance.indirectionCount; i += gl_SubgroupSize) {
+    uint32_t index = i + gl_SubgroupInvocationID;
+
+    if (index < instance.indirectionCount) {
+      InstanceResourceIndirection indirection = indirectionBuffer.entries[index];
+
+      bool isBuffer = indirection.type == INSTANCE_RESOURCE_TYPE_BUFFER_ADDRESS;
+      bool isRequired = !asTest(indirection.flags, INSTANCE_RESOURCE_OPTIONAL_BIT);
+
+      // Interpret the 64-bit encoded entry. If the least significant bit
+      // is set, the upper 32 bits store an index into the asset list.
+      u32vec2 srcData = resourceBuffer.entries[uint32_t(indirection.srcEntry)];
+      u32vec2 dstData = srcData;
+
+      if (asTest(srcData.x, 1u)) {
+        dstData = u32vec2(0u);
+
+        if (hasAssetList) {
+          // Asset lists are padded so this is never out of bounds
+          dstData.x = assetList.dwords[srcData.y + 0u];
+          dstData.y = assetList.dwords[srcData.y + 1u];
+        }
+
+        dstData.y = isBuffer ? dstData.y : dstData.x;
+      }
+
+      if (isBuffer)
+        instanceData64.data[indirection.dstOffset / 8u] = dstData;
+      else
+        instanceData32.data[indirection.dstOffset / 4u] = dstData.y;
+
+      // Update residency status for the current thread
+      nonResident = nonResident || (isRequired && (dstData.x | dstData.y) == 0u);
+    }
+  }
+
+  if (subgroupAny(nonResident))
+    csMarkNonResident(localIndex);
+}
+
+
+// Executes asset updates for all instances. Returns true if all
+// required assets for the instance are resident. Must be called
+// from uniform control flow.
+bool csUpdateInstanceAssets(
+        uint32_t                      tid,
+        uint32_t                      instanceIndex,
+  in    InstanceNode                  instanceNode,
+        bool                          needsUpdate) {
+  csInitAssetUpdateInfos(tid);
+
+  // Check whether the instance needs an asset update. This can either
+  // happen when local assets were updated and the respective flag is
+  // set, or if the asset list has been updated more recently than the
+  // instance itself.
+  needsUpdate = needsUpdate && asTest(instanceNode.flags, INSTANCE_DIRTY_ASSETS_BIT);
+
+  if (!needsUpdate && instanceNode.assetListBuffer != 0ul) {
+    AssetListBufferIn assetList = AssetListBufferIn(instanceNode.assetListBuffer);
+    needsUpdate = assetList.updateFrameId > instanceNode.updateFrameId;
+  }
+
+  // Write pointers for required updates to LDS so we can avoid loading
+  // data from memory redundantly.
+  uint32_t updateIndex = csAllocateAssetUpdate(needsUpdate);
+
+  if (needsUpdate) {
+    csInstancePropertyVaShared[updateIndex] = instanceNode.propertyBuffer;
+    csInstanceAssetListVaShared[updateIndex] = instanceNode.assetListBuffer;
+    csInstanceAssetLocalIndicesShared[updateIndex] = tid;
+  }
+
+  barrier();
+
+  // Let each subgroup work on a single instance at a time. This is also
+  // the reason why this shader generally prefers small subgroups.
+  uint32_t updateCount = csGetAssetUpdateCount();
+
+  while ((updateIndex = csGetAssetUpdateIndex()) < updateCount)
+    csExecuteInstanceAssetUpdate(updateIndex);
+
+  barrier();
+
+  // Return previous residency status if no update was performed,
+  // or the new residency status otherwise.
+  bool isResident = asTest(instanceNode.flags, INSTANCE_RESIDENT_BIT);
+
+  if (needsUpdate)
+    isResident = csCheckResidencyStatus(tid);
+
+  return isResident;
+}
+
+
 void csPrepareUpdate() {
   uint32_t gid = gl_GlobalInvocationID.x;
+
+  uint32_t tid = IsFullSubgroup
+    ? gl_SubgroupInvocationID + gl_SubgroupID * gl_SubgroupSize
+    : gl_LocalInvocationIndex;
 
   // Exit early if the thread ID is out of bounds
   PassGroupBuffer group = PassGroupBuffer(groupBuffer);
@@ -37,87 +255,105 @@ void csPrepareUpdate() {
     group.nodeListOffsets[NODE_TYPE_INSTANCE - NODE_TYPE_BUILTIN_COUNT].nodeList);
   PassGroupNodeListHeader nodeListHeader = nodeList.header;
 
-  if (gid >= nodeListHeader.localEntryCount)
-    return;
-
   // Load instance properties and check whether we need to update it.
-  uint32_t instanceNodeRef = nodeList.items[nodeListHeader.localEntryIndex + gid].nodeRef;
-  uint32_t instanceIndex = getNodeIndexFromRef(instanceNodeRef);
+  bool instanceNeedsUpdate = gid < nodeListHeader.localEntryCount;
 
-  InstanceNode instance = instanceBuffer.nodes[instanceIndex];
+  InstanceNode instance =  { };
+  uint32_t instanceNodeRef = 0u;
+  uint32_t instanceIndex = 0u; 
 
-  // Exit early if the instance has already been updated this frame
-  if (instance.updateFrameId == frameId)
+  if (instanceNeedsUpdate) {
+    instanceNodeRef = nodeList.items[nodeListHeader.localEntryIndex + gid].nodeRef;
+    instanceIndex = getNodeIndexFromRef(instanceNodeRef);
+    instance = instanceBuffer.nodes[instanceIndex];
+
+    instanceNeedsUpdate = instance.updateFrameId < frameId;
+  }
+
+  // Update assets. This requires all threads to be alive.
+  bool wasResident = asTest(instance.flags, INSTANCE_RESIDENT_BIT);
+  bool isResident = csUpdateInstanceAssets(tid,
+    instanceIndex, instance, instanceNeedsUpdate);
+
+  // Exit early if the current instance has already been updated
+  if (!instanceNeedsUpdate)
     return;
 
-  // Disable motion vectors for the instance if the instance node itself has
-  // been updated, since this indicates that it has been made resident.
-  instance.flags &= ~INSTANCE_NO_MOTION_VECTORS_BIT;
+  // Reset a bunch of flags that we recalculate every frame, and
+  // update residency status according to the asset updates.
+  if (isResident) {
+    instance.flags &= ~(INSTANCE_NO_MOTION_VECTORS_BIT | INSTANCE_RESIDENT_BIT | INSTANCE_DIRTY_ASSETS_BIT);
+    instance.flags |= INSTANCE_RESIDENT_BIT;
 
-  if (instance.updateFrameId == 0u)
-    instance.flags |= INSTANCE_NO_MOTION_VECTORS_BIT;
+    // Disable motion vectors for the instance if the instance node itself has
+    // been updated, since this indicates that it has been made resident.
+    if (instance.updateFrameId == 0u)
+      instance.flags |= INSTANCE_NO_MOTION_VECTORS_BIT;
 
-  // Also disable motion vectors if the previous frame's node transform is not
-  // up to date. This can happen if the containing BVH node got culled.
-  SceneHeader scene = SceneHeaderIn(sceneBuffer).header;
-  SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(sceneBuffer + scene.nodeTransformOffset);
+    // Also disable motion vectors if the previous frame's node transform is not
+    // up to date. This can happen if the containing BVH node got culled.
+    SceneHeader scene = SceneHeaderIn(sceneBuffer).header;
+    SceneNodeTransformBufferIn nodeTransforms = SceneNodeTransformBufferIn(sceneBuffer + scene.nodeTransformOffset);
 
-  uvec2 nodeTransformIndices = nodeComputeTransformIndices(instance.nodeIndex, scene.nodeCount, frameId);
-  uint nodeTransformUpdate = nodeTransforms.nodeTransforms[nodeTransformIndices.y].updateFrameId;
+    uvec2 nodeTransformIndices = nodeComputeTransformIndices(instance.nodeIndex, scene.nodeCount, frameId);
+    uint nodeTransformUpdate = nodeTransforms.nodeTransforms[nodeTransformIndices.y].updateFrameId;
 
-  if (nodeTransformUpdate + 1u < frameId)
-    instance.flags |= INSTANCE_NO_MOTION_VECTORS_BIT;
+    if (nodeTransformUpdate + 1u < frameId)
+      instance.flags |= INSTANCE_NO_MOTION_VECTORS_BIT;
 
-  if ((instance.flags & INSTANCE_DEFORM_BIT) != 0) {
-    // Always dispatch one extra update after the instance has last been
-    // changed, so that the previous frame's animation data is valid.
-    if (instance.updateFrameId <= instance.dirtyFrameId)
-      instance.flags |= INSTANCE_DIRTY_DEFORM_BIT;
+    if (asTest(instance.flags, INSTANCE_DEFORM_BIT)) {
+      // Always dispatch one extra update after the instance has last been
+      // changed, so that the previous frame's animation data is valid.
+      if (instance.updateFrameId <= instance.dirtyFrameId)
+        instance.flags |= INSTANCE_DIRTY_DEFORM_BIT;
 
-    if (instance.updateFrameId < instance.dirtyFrameId) {
-      // Ensure that we do actually dispatch another update next frame.
-      instance.dirtyFrameId = frameId;
+      if (instance.updateFrameId < instance.dirtyFrameId) {
+        // Ensure that we do actually dispatch another update next frame.
+        instance.dirtyFrameId = frameId;
 
-      // If the instance hasn't been rendered since the last change to its
-      // animation data more than one frame ago, motion vectors are invalid.
-      if (instance.updateFrameId + 1u < frameId)
-        instance.flags |= INSTANCE_NO_MOTION_VECTORS_BIT;
-    }
-  }
-
-  // Check if the asset list has changed since the last update
-  if (instance.assetListBuffer != uint64_t(0u)) {
-    AssetListBufferIn assetList = AssetListBufferIn(instance.assetListBuffer);
-
-    if (assetList.updateFrameId > instance.updateFrameId)
-      instance.flags |= INSTANCE_DIRTY_ASSETS_BIT;
-  }
-
-  // Dispatch the node update if necessary.
-  if ((instance.flags & INSTANCE_DIRTY_FLAGS) != 0u) {
-    uint32_t payload = instance.flags >> INSTANCE_DIRTY_SHIFT;
-    nodeListAddUpdate(groupBuffer, instanceNodeRef, payload, 1);
-  }
-
-  if ((instance.flags & INSTANCE_STATIC_BIT) != 0) {
-    // Data from the previous frame is irrelevant for rendering shadow maps
-    bool requiresUpdate = instance.updateFrameId < instance.dirtyFrameId;
-
-    // Also check whether the absolute transform has changed between frames
-    if (!requiresUpdate) {
-      Transform currTransform = nodeTransforms.nodeTransforms[nodeTransformIndices.x].absoluteTransform;
-      Transform prevTransform = nodeTransforms.nodeTransforms[nodeTransformIndices.y].absoluteTransform;
-
-      requiresUpdate = any(notEqual(currTransform.rot, prevTransform.rot))
-                    || any(notEqual(currTransform.pos, currTransform.pos));
+        // If the instance hasn't been rendered since the last change to its
+        // animation data more than one frame ago, motion vectors are invalid.
+        if (instance.updateFrameId + 1u < frameId)
+          instance.flags |= INSTANCE_NO_MOTION_VECTORS_BIT;
+      }
     }
 
-    // TODO add node to list of updated static nodes so that static
-    // shadow maps can decide whether an update is required or not
+    // Dispatch the node update if necessary.
+    if (asTest(instance.flags, INSTANCE_DIRTY_FLAGS)) {
+      uint32_t payload = instance.flags >> INSTANCE_DIRTY_SHIFT;
+      nodeListAddUpdate(groupBuffer, instanceNodeRef, payload, 1);
+    }
+
+    if (asTest(instance.flags, INSTANCE_STATIC_BIT)) {
+      // Data from the previous frame is irrelevant for rendering shadow maps
+      bool requiresUpdate = instance.updateFrameId < instance.dirtyFrameId;
+
+      // Also check whether the absolute transform has changed between frames
+      if (!requiresUpdate) {
+        Transform currTransform = nodeTransforms.nodeTransforms[nodeTransformIndices.x].absoluteTransform;
+        Transform prevTransform = nodeTransforms.nodeTransforms[nodeTransformIndices.y].absoluteTransform;
+
+        requiresUpdate = any(notEqual(currTransform.rot, prevTransform.rot))
+                      || any(notEqual(currTransform.pos, currTransform.pos));
+      }
+
+      // TODO add node to list of updated static nodes so that static
+      // shadow maps can decide whether an update is required or not
+    }
+
+    // All updates have been processed, mark instance as non-dirty
+    instance.flags &= ~INSTANCE_DIRTY_FLAGS;
+  } else {
+    // If the instance is non-resident, we need to mark certain
+    // states as dirty for when it is made non-resident again.
+    instance.flags &= ~INSTANCE_DIRTY_ASSETS_BIT;
+
+    if (asTest(instance.flags, INSTANCE_DEFORM_BIT))
+      instance.flags |= INSTANCE_DIRTY_DEFORM_BIT | INSTANCE_NO_MOTION_VECTORS_BIT;
   }
 
   // Write back any updated node properties, as well as the frame ID.
-  instanceBuffer.nodes[instanceIndex].flags = instance.flags & ~INSTANCE_DIRTY_FLAGS;
+  instanceBuffer.nodes[instanceIndex].flags = instance.flags;
   instanceBuffer.nodes[instanceIndex].dirtyFrameId = instance.dirtyFrameId;
   instanceBuffer.nodes[instanceIndex].updateFrameId = frameId;
 }

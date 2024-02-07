@@ -17,26 +17,29 @@ struct GfxSceneInstanceDesc;
  * \brief Instance node flags
  */
 enum class GfxSceneInstanceFlag : uint32_t {
+  /** Indicates that all required resources, including the geometry buffer,
+   *  are fully resident. This flag is managed entirely by GPU shaders. */
+  eResident         = (1u << 0),
   /** Indicates that the geometry of this instance is largely static. This
    *  enables some optimizations for local shadow map rendering, and should
    *  only be used for geometry that has no animations so that it does not
    *  frequently trigger re-rendering of cached shadows. However, shaders
    *  remain responsible to detect changes to the instance regardless. */
-  eStatic           = (1u << 0),
+  eStatic           = (1u << 1),
   /** The instance does has joints or morph targets that can deform the
    *  geometry. Useful to determine whether to update the instance without
    *  having to access the instance data buffer or geometry buffer. */
-  eDeform           = (1u << 1),
+  eDeform           = (1u << 2),
   /** The instance has animations. This implies that whenever a geometry
    *  buffer is specified, an animation buffer must also be present, and
    *  the animation count for this instance must not be zero. */
-  eAnimation        = (1u << 2),
+  eAnimation        = (1u << 3),
   /** Indicates that motion vectors should not be calculated when rendering
    *  an instance during the next frame. This flag may be set internally if
    *  the instance has not been visible during the previous frame, which means
    *  there is no valid data to compute motion vectors with, but may also be
    *  set externally if instance parameters have changed significantly. */
-  eNoMotionVectors  = (1u << 3),
+  eNoMotionVectors  = (1u << 4),
 
   /** Indicates that joints and morph target weights are dirty and need
    *  to be updated. This flag is primarily managed by GPU shaders. */

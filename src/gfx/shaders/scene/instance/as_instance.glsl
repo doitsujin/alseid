@@ -1,10 +1,11 @@
 #ifndef AS_INSTANCE_H
 #define AS_INSTANCE_H
 
-#define INSTANCE_STATIC_BIT             (1u << 0)
-#define INSTANCE_DEFORM_BIT             (1u << 1)
-#define INSTANCE_ANIMATION_BIT          (1u << 2)
-#define INSTANCE_NO_MOTION_VECTORS_BIT  (1u << 3)
+#define INSTANCE_RESIDENT_BIT           (1u << 0)
+#define INSTANCE_STATIC_BIT             (1u << 1)
+#define INSTANCE_DEFORM_BIT             (1u << 2)
+#define INSTANCE_ANIMATION_BIT          (1u << 3)
+#define INSTANCE_NO_MOTION_VECTORS_BIT  (1u << 4)
 
 #define INSTANCE_DIRTY_DEFORM_BIT       (1u << 24)
 #define INSTANCE_DIRTY_ASSETS_BIT       (1u << 25)
@@ -257,8 +258,11 @@ readonly buffer InstanceResourceBufferIn {
 #define INSTANCE_RESOURCE_TYPE_DESCRIPTOR_INDEX   (0u)
 #define INSTANCE_RESOURCE_TYPE_BUFFER_ADDRESS     (1u)
 
+#define INSTANCE_RESOURCE_OPTIONAL_BIT            (1u << 0u)
+
 struct InstanceResourceIndirection {
-  uint16_t type;
+  uint8_t  type;
+  uint8_t  flags;
   uint16_t srcEntry;
   uint32_t dstOffset;
 };

@@ -58,6 +58,13 @@ const uint MsFlags = 0u;
     if (processed_ = (value == subgroupBroadcastFirst(value)))
 
 
+// Conditional scalarization loop. Same as above, but discards invocations
+// for which the given condition is false right away.
+#define SUBGROUP_SCALARIZE_COND(value, cond)                                \
+  for (bool processed_ = !cond; !processed_ && subgroupAny(!processed_); )  \
+    if (processed_ = (value == subgroupBroadcastFirst(value)))
+
+
 // Convenience helpers for ternary min/max. Common enough that
 // this may help reduce the amount of typing required.
 #define asMin3(a, b, c) min(min(a, b), c)

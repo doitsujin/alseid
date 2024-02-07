@@ -255,70 +255,6 @@ void csUpdateDeform(in InstanceNode instanceNode) {
 }
 
 
-void csUpdateAssets(in InstanceNode instanceNode) {
-  InstanceHeader instanceInfo = InstanceDataBuffer(instanceNode.propertyBuffer).header;
-  AssetListBufferIn assetList = AssetListBufferIn(instanceNode.assetListBuffer);
-
-  // Use two different buffer types to write resource parameters. This
-  // may enable a fast path when writing buffer addresses on some drivers.
-  InstanceRawBufferOut32 instanceData32 = InstanceRawBufferOut32(instanceNode.propertyBuffer);
-  InstanceRawBufferOut64 instanceData64 = InstanceRawBufferOut64(instanceNode.propertyBuffer);
-
-  InstanceResourceBufferIn resourceBuffer = InstanceResourceBufferIn(instanceNode.propertyBuffer + instanceInfo.resourceOffset);
-
-  // The indirection data offset is not stored anywhere, we need to compute it manually.
-  InstanceResourceIndirectionBufferIn indirectionBuffer = InstanceResourceIndirectionBufferIn(instanceNode.propertyBuffer + instanceInfo.indirectionOffset);
-
-  // Ensure that it is safe to dereference the asset list pointer. If not,
-  // default to null pointers and invalid descriptor indices when needed.
-  bool hasAssetList = instanceNode.assetListBuffer != uint64_t(0u);
-
-  for (uint32_t i = 0; i < instanceInfo.indirectionCount; i += gl_WorkGroupSize.x) {
-    uint32_t index = i + gl_LocalInvocationIndex;
-
-    if (index < instanceInfo.indirectionCount) {
-      InstanceResourceIndirection indirection = indirectionBuffer.entries[index];
-
-      // Interpret the 64-bit encoded entry. If the least significant bit is
-      // set, the upper 32 bits store an index into the asset list.
-      uvec2 srcData = resourceBuffer.entries[uint32_t(indirection.srcEntry)];
-      bool useAssetList = (srcData.x & 1) != 0;
-
-      if (uint32_t(indirection.type) == INSTANCE_RESOURCE_TYPE_BUFFER_ADDRESS) {
-        uvec2 dstData = srcData;
-
-        if (useAssetList) {
-          dstData = uvec2(0u, 0u);
-
-          if (hasAssetList) {
-            dstData = uvec2(
-              assetList.dwords[srcData.y + 0u],
-              assetList.dwords[srcData.y + 1u]);
-          }
-        }
-
-        instanceData64.data[indirection.dstOffset / 8u] = dstData;
-      } else {
-        uint32_t dstData = srcData.y;
-
-        if (useAssetList) {
-          dstData = ~0u;
-
-          if (hasAssetList)
-            dstData = assetList.dwords[srcData.y + 0u];
-        }
-
-        instanceData32.data[indirection.dstOffset / 4u] = dstData;
-      }
-    }
-  }
-
-  // Ensure that we can properly read the geometry buffer address later
-  controlBarrier(gl_ScopeWorkgroup, gl_ScopeWorkgroup,
-    gl_StorageSemanticsBuffer, gl_SemanticsAcquireRelease);
-}
-
-
 void csExecuteUpdate() {
   PassGroupUpdateListIn instanceList = getNodeTypeUpdateList(globals.groupBuffer, NODE_TYPE_INSTANCE);
 
@@ -333,9 +269,6 @@ void csExecuteUpdate() {
 
   // Update assets first since this may make the geometry buffer resident
   InstanceNode instanceNode = globals.instanceBuffer.nodes[instanceIndex];
-
-  if ((dirtyFlags & INSTANCE_DIRTY_ASSETS_BIT) != 0)
-    csUpdateAssets(instanceNode);
 
   if ((dirtyFlags & INSTANCE_DIRTY_DEFORM_BIT) != 0)
     csUpdateDeform(instanceNode);
