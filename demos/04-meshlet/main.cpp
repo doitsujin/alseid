@@ -181,9 +181,6 @@ public:
         *m_scenePassManager, *m_scenePassGroup, 1, &m_sceneRootRef,
         m_frameId, 0);
 
-      m_sceneInstanceManager->processPassGroupAnimations(context,
-        *m_scenePipelines, *m_scenePassGroup, m_frameId);
-      m_scenePassGroup->resetUpdateLists(context, *m_scenePipelines);
       m_sceneInstanceManager->processPassGroupInstances(context,
         *m_scenePipelines, *m_sceneNodeManager, *m_scenePassGroup, m_frameId);
 
@@ -248,9 +245,6 @@ public:
         *m_scenePassManager, *m_scenePassGroup, 0, nullptr, m_frameId, 0);
 
       // Process instances made visible by the secondary traversal pass
-      m_sceneInstanceManager->processPassGroupAnimations(context,
-        *m_scenePipelines, *m_scenePassGroup, m_frameId);
-      m_scenePassGroup->resetUpdateLists(context, *m_scenePipelines);
       m_sceneInstanceManager->processPassGroupInstances(context,
         *m_scenePipelines, *m_sceneNodeManager, *m_scenePassGroup, m_frameId);
 

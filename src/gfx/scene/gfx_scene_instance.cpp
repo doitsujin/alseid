@@ -446,42 +446,6 @@ void GfxSceneInstanceManager::commitUpdates(
 }
 
 
-void GfxSceneInstanceManager::processPassGroupAnimations(
-  const GfxContext&                   context,
-  const GfxScenePipelines&            pipelines,
-  const GfxScenePassGroupBuffer&      groupBuffer,
-        uint32_t                      frameId) {
-  context->beginDebugLabel("Process animations", 0xff78f0ff);
-  context->beginDebugLabel("Prepare dispatch", 0xffb4f6ff);
-
-  auto dispatches = groupBuffer.getDispatchDescriptors(GfxSceneNodeType::eInstance);
-
-  GfxSceneInstanceAnimateArgs args = { };
-  args.instanceNodeBufferVa = m_gpuResources.getGpuAddress();
-  args.groupBufferVa = groupBuffer.getGpuAddress();
-  args.frameId = frameId;
-
-  pipelines.prepareInstanceAnimations(context, dispatches.processNew, args);
-
-  context->memoryBarrier(
-    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
-    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
-
-  context->endDebugLabel();
-
-  context->beginDebugLabel("Execute dispatch", 0xffb4f6ff);
-
-  pipelines.processInstanceAnimations(context, dispatches.update, args);
-
-  context->memoryBarrier(
-    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute,
-    GfxUsage::eShaderStorage | GfxUsage::eShaderResource | GfxUsage::eParameterBuffer, GfxShaderStage::eCompute);
-
-  context->endDebugLabel();
-  context->endDebugLabel();
-}
-
-
 void GfxSceneInstanceManager::processPassGroupInstances(
   const GfxContext&                   context,
   const GfxScenePipelines&            pipelines,

@@ -112,7 +112,7 @@ readonly buffer InstanceDrawBuffer {
 };
 
 layout(buffer_reference, buffer_reference_align = 16, scalar)
-buffer InstanceJointBuffer {
+workgroupcoherent buffer InstanceJointBuffer {
   InstanceJoint   joints[];
 };
 
@@ -122,7 +122,7 @@ readonly buffer InstanceJointBufferIn {
 };
 
 layout(buffer_reference, buffer_reference_align = 16, scalar)
-buffer InstanceWeightBuffer {
+workgroupcoherent buffer InstanceWeightBuffer {
   int16_t         weights[];
 };
 
@@ -142,29 +142,6 @@ InstanceDraw instanceLoadDraw(
 }
 
 
-// Loads an input joint from the instance buffer.
-Transform instanceLoadRelativeJoint(
-        uint64_t                      instanceVa,
-        uint32_t                      jointSet,
-        uint32_t                      jointIndex) {
-  InstanceDataBufferIn instanceData = InstanceDataBufferIn(instanceVa);
-  InstanceJointBufferIn jointBuffer = InstanceJointBufferIn(instanceVa + instanceData.header.jointRelativeOffset);
-  return jointBuffer.joints[jointIndex + jointSet * instanceData.header.jointCount].transform;
-}
-
-
-// Stores a relative joint in the instance buffer.
-void instanceStoreRelativeJoint(
-        uint64_t                      instanceVa,
-        uint32_t                      jointSet,
-        uint32_t                      jointIndex,
-  in    Transform                     transform) {
-  InstanceDataBuffer instanceData = InstanceDataBuffer(instanceVa);
-  InstanceJointBuffer jointBuffer = InstanceJointBuffer(instanceVa + instanceData.header.jointRelativeOffset);
-  jointBuffer.joints[jointIndex + jointSet * instanceData.header.jointCount] = InstanceJoint(transform, 0);
-}
-
-
 // Loads an absolute joint transform from the instance buffer.
 // The joint set should be either 0 or 1, and will return the
 // transform for the current or previous frame, respectively.
@@ -178,19 +155,6 @@ Transform instanceLoadJoint(
 }
 
 
-// Stores an asbolute joint transform in the instance buffer.
-// Indexing works the same way as it does for loading.
-void instanceStoreJoint(
-        uint64_t                      instanceVa,
-        uint32_t                      jointSet,
-        uint32_t                      jointIndex,
-  in    Transform                     transform) {
-  InstanceDataBuffer instanceData = InstanceDataBuffer(instanceVa);
-  InstanceJointBuffer jointBuffer = InstanceJointBuffer(instanceVa + instanceData.header.jointAbsoluteOffset);
-  jointBuffer.joints[jointIndex + jointSet * instanceData.header.jointCount] = InstanceJoint(transform, 0);
-}
-
-
 // Loads a morph target weight. The first two sets store weights
 // for the current and previous frames, and the last set contains
 // updated morph target weights.
@@ -201,20 +165,6 @@ int16_t instanceLoadMorphTargetWeight(
   InstanceDataBufferIn instanceData = InstanceDataBufferIn(instanceVa);
   InstanceWeightBufferIn weightBuffer = InstanceWeightBufferIn(instanceVa + instanceData.header.weightOffset);
   return weightBuffer.weights[weightIndex + weightSet * instanceData.header.weightCount];
-}
-
-
-// Loads a morph target weight. The first two sets store weights
-// for the current and previous frames, and the third set contains
-// updated morph target weights.
-void instanceStoreMorphTargetWeight(
-        uint64_t                      instanceVa,
-        uint32_t                      weightSet,
-        uint32_t                      weightIndex,
-        int16_t                       weightValue) {
-  InstanceDataBuffer instanceData = InstanceDataBuffer(instanceVa);
-  InstanceWeightBuffer weightBuffer = InstanceWeightBuffer(instanceVa + instanceData.header.weightOffset);
-  weightBuffer.weights[weightIndex + weightSet * instanceData.header.weightCount] = weightValue;
 }
 
 

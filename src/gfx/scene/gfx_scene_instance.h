@@ -913,23 +913,6 @@ public:
           uint32_t                      lastFrameId);
 
   /**
-   * \brief Processes animations for visible instances
-   *
-   * Iterates over potentially visible instances in the given pass
-   * group and processes active animations for the current frame,
-   * recomputing relative joint transforms and morph target weights.
-   * \param [in] context Context object
-   * \param [in] pipelines Update pipelines
-   * \param [in] groupBuffer Pass group buffer
-   * \param [in] frameId Current frame ID
-   */
-  void processPassGroupAnimations(
-    const GfxContext&                   context,
-    const GfxScenePipelines&            pipelines,
-    const GfxScenePassGroupBuffer&      groupBuffer,
-          uint32_t                      frameId);
-
-  /**
    * \brief Processes visible instances
    *
    * Iterates over potentially visible instances in the given
@@ -950,7 +933,7 @@ public:
           uint32_t                      frameId);
 
 private:
-#
+
   GfxSceneInstanceBuffer              m_gpuResources;
 
   ObjectMap<GfxSceneInstanceNodeInfo> m_instanceNodeData;

@@ -304,6 +304,7 @@ void csPrepareUpdate() {
     if (asTest(instance.flags, INSTANCE_DEFORM_BIT)) {
       // Always dispatch one extra update after the instance has last been
       // changed, so that the previous frame's animation data is valid.
+      // This check also takes care of any active animations.
       if (instance.updateFrameId <= instance.dirtyFrameId)
         instance.flags |= INSTANCE_DIRTY_DEFORM_BIT;
 

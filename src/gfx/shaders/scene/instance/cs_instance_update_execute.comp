@@ -9,6 +9,8 @@
 
 #include "../../as_include_head.glsl"
 
+#include "../animation/as_animation.glsl"
+
 #include "../group/as_group.glsl"
 
 #include "../renderpass/as_renderpass.glsl"
@@ -17,9 +19,11 @@
 
 #include "as_instance.glsl"
 
-layout(local_size_x_id = SPEC_CONST_ID_MIN_SUBGROUP_SIZE) in;
+// Use a fixed workgroup size of 32 threads since the animation
+// group data structures are built around that.
+#define CS_WORKGROUP_SIZE (32u)
 
-const uint CsJointCacheSize = CsMinSubgroupSize;
+layout(local_size_x = CS_WORKGROUP_SIZE) in;
 
 
 layout(push_constant)
@@ -27,6 +31,413 @@ uniform PushData {
   InstanceNodeBufferIn  instanceBuffer;
   uint64_t              groupBuffer;
 } globals;
+
+
+// Keyframe pair. Stores the data indices of two keyframes to
+// interpolate between, as well as the interpolation coefficient.
+struct CsKeyframePair {
+  uint32_t              loIndex;
+  uint32_t              hiIndex;
+  float t;
+};
+
+
+// Loads joint transform for a given keyframe.
+Transform csLoadKeyframeJoint(
+  in    AnimationJointRef             jointBuffer,
+  in    AnimationGroup                group,
+        uint32_t                      keyframeIndex,
+        uint32_t                      localIndex) {
+  uint32_t absoluteIndex = group.jointTransformIndex + group.jointCount * keyframeIndex + localIndex;
+  return jointBuffer.joints[absoluteIndex].transform;
+}
+
+
+// Loads morph target weight for a given keyframe.
+float csLoadKeyframeMorphTargetWeight(
+  in    AnimationMorphTargetRef       weightBuffer,
+  in    AnimationGroup                group,
+        uint32_t                      keyframeIndex,
+        uint32_t                      localIndex) {
+  uint32_t absoluteIndex = group.morphTargetWeightIndex + group.morphTargetCount * keyframeIndex + localIndex;
+  return weightBuffer.weights[absoluteIndex];
+}
+
+
+// Interpolates morph target weight between two keyframes.
+float csInterpolateMorphTargetWeight(
+  in    AnimationMorphTargetRef       weightBuffer,
+  in    AnimationGroup                group,
+  in    CsKeyframePair                keyframePair,
+        uint32_t                      localIndex) {
+  return mix(
+    csLoadKeyframeMorphTargetWeight(weightBuffer, group, keyframePair.loIndex, localIndex),
+    csLoadKeyframeMorphTargetWeight(weightBuffer, group, keyframePair.hiIndex, localIndex),
+    keyframePair.t);
+}
+
+
+// Helper function to read keyframe data from another thread.
+// This is useful because subgroupShuffle for some reason only
+// supports basic types, unlike subgroupBroadcast* functions.
+KeyframePacked csShuffleKeyframe(
+        KeyframePacked                keyframe,
+        uint32_t                      wantedIndex) {
+  return KeyframePacked(
+    subgroupShuffle(keyframe.timestamp,         wantedIndex),
+    subgroupShuffle(keyframe.nextIndexAndCount, wantedIndex));
+}
+
+
+// Function to cooperatively find the correct pair of keyframes
+// for the given timestamp. This works by cooperatively traversing
+// a search tree, and therefore this function must be called from
+// within uniform control flow and uniform arguments.
+shared KeyframePacked csKeyframesShared[2u];
+
+shared uint32_t csPickIndexShared;
+
+CsKeyframePair csFindKeyframe(
+        uint32_t                      tid,
+  in    KeyframeRef                   keyframeBuffer,
+  in    AnimationGroup                group,
+        float                         timestamp) {
+  // The group keyframe data essentially serves as a root node
+  // for the keyframe search tree.
+  uint32_t nextIndex = 0;
+  uint32_t nextCount = group.keyframeCount;
+
+  Keyframe loFrame;
+  Keyframe hiFrame;
+
+  do {
+    KeyframePacked keyframe;
+    bool pick = false;
+
+    if (tid < nextCount) {
+      keyframe = keyframeBuffer.keyframes[group.keyframeIndex + nextIndex + tid];
+      pick = timestamp >= keyframe.timestamp;
+    }
+
+    // Since keyframes are ordered, the number of threads passing
+    // the test is equivalent to the second keyframe we need to
+    // interpolate with. This is true for both code paths.
+    uint32_t pickIndex = subgroupBallotBitCount(subgroupBallot(pick));
+
+    if (!IsSingleSubgroup) {
+      if (gl_LocalInvocationIndex == 0)
+        csPickIndexShared = 0u;
+
+      barrier();
+
+      if (subgroupElect() && pickIndex != 0)
+        atomicAdd(csPickIndexShared, pickIndex);
+
+      barrier();
+
+      // We don't need a barrier after this read since the
+      // keyframe broadcast code below will emit one anyway.
+      pickIndex = csPickIndexShared;
+    }
+
+    // Ensure that we do not access invalid keyframes, and also avoid
+    // loading the same keyframe twice in order to simplify some math.
+    uint32_t hiIndex = clamp(pickIndex, 1u, nextCount - 1u);
+    uint32_t loIndex = hiIndex - 1u;
+
+    // Broadcast selected keyframes to the entire workgroup. On the
+    // optimized subgroup path, we can do so simply by reading the
+    // correct lanes.
+    if (IsSingleSubgroup) {
+      loFrame = keyframeUnpack(csShuffleKeyframe(keyframe, loIndex));
+      hiFrame = keyframeUnpack(csShuffleKeyframe(keyframe, hiIndex));
+    } else {
+      uint32_t sharedIndex = tid - loIndex;
+
+      if (sharedIndex <= 1u)
+        csKeyframesShared[sharedIndex] = keyframe;
+
+      barrier();
+
+      loFrame = keyframeUnpack(csKeyframesShared[0]);
+      hiFrame = keyframeUnpack(csKeyframesShared[1]);
+      barrier();
+    }
+
+    // Prepare next iteration
+    bool hi = timestamp >= hiFrame.timestamp;
+
+    nextIndex = hi ? hiFrame.nextIndex : loFrame.nextIndex;
+    nextCount = hi ? hiFrame.nextCount : loFrame.nextCount;
+  } while (nextCount != 0u);
+
+  // Found a leaf node, store the data indices and compute the
+  // interpolation step value based on the keyframe timestamps.
+  // The returned step value may not be in the [0.0, 1.0] range.
+  CsKeyframePair result;
+  result.loIndex = loFrame.nextIndex;
+  result.hiIndex = hiFrame.nextIndex;
+  result.t = clamp((timestamp - loFrame.timestamp) /
+    (hiFrame.timestamp - loFrame.timestamp), 0.0f, 1.0f);
+  return result;
+}
+
+
+// Interpolates joint transform between two keyframes.
+Transform csInterpolateJoint(
+  in    AnimationJointRef             jointBuffer,
+  in    AnimationGroup                group,
+  in    CsKeyframePair                keyframePair,
+        uint32_t                      localIndex) {
+  Transform loTransform = csLoadKeyframeJoint(jointBuffer, group, keyframePair.loIndex, localIndex);
+  Transform hiTransform = csLoadKeyframeJoint(jointBuffer, group, keyframePair.hiIndex, localIndex);
+
+  vec4 rotation = quatSlerp(loTransform.rot, hiTransform.rot, keyframePair.t);
+  return Transform(rotation, mix(loTransform.pos, hiTransform.pos, keyframePair.t));
+}
+
+
+// Applies a blend operation to a joint transform
+shared Transform csJointsShared[AS_INSTANCE_MAX_ANIMATION_CHANNELS][CS_WORKGROUP_SIZE];
+
+void csBlendTransform(
+        uint32_t                      tid,
+  in    InstanceAnimationParameters   args,
+        Transform                     transform) {
+  switch (uint32_t(args.blendOp)) {
+    case AS_INSTANCE_ANIMATION_BLEND_OP_NONE:
+      break;
+
+    case AS_INSTANCE_ANIMATION_BLEND_OP_CHAIN:
+      transform = transChain(transform, csJointsShared[args.blendChannel][tid]);
+      break;
+
+    case AS_INSTANCE_ANIMATION_BLEND_OP_SLERP:
+      transform = transSlerp(csJointsShared[args.blendChannel][tid],
+        transform, unpackUnorm2x16(uint(args.blendWeight)).x);
+      break;
+  }
+
+  csJointsShared[args.blendChannel][tid] = transform;
+}
+
+
+// Applies a blend operation to a morph target weight
+shared float csWeightsShared[AS_INSTANCE_MAX_ANIMATION_CHANNELS][CS_WORKGROUP_SIZE];
+
+void csBlendWeight(
+        uint32_t                      tid,
+  in    InstanceAnimationParameters   args,
+        float                         weight) {
+  switch (uint32_t(args.blendOp)) {
+    case AS_INSTANCE_ANIMATION_BLEND_OP_NONE:
+      break;
+
+    case AS_INSTANCE_ANIMATION_BLEND_OP_CHAIN:
+      weight += csWeightsShared[args.blendChannel][tid];
+      break;
+
+    case AS_INSTANCE_ANIMATION_BLEND_OP_SLERP:
+      weight = mix(csWeightsShared[args.blendChannel][tid],
+        weight, unpackUnorm2x16(uint(args.blendWeight)).x);
+      break;
+  }
+
+  csWeightsShared[args.blendChannel][tid] = weight;
+}
+
+
+// Convenience method to find the local joint indices which affect
+// the joints and weights affected by the current workgroup.
+shared uint8_t csLocalIndicesShared[2u][CS_WORKGROUP_SIZE];
+
+u32vec2 csFindLocalIndices(
+        uint32_t                      tid,
+  in    AnimationBufferRef            animationBuffer,
+        uint32_t                      animationGroup,
+        uint32_t                      indexOffset) {
+  // This leads to weird code gen if we pass in the animation group
+  // struct directly, so do it the long and tedious way instead.
+  uint32_t jointIndex = animationBuffer.groups[animationGroup].jointIndices[tid];
+  uint32_t weightIndex = animationBuffer.groups[animationGroup].morphTargetIndices[tid];
+
+  csLocalIndicesShared[0u][tid] = uint8_t(CS_WORKGROUP_SIZE);
+  csLocalIndicesShared[1u][tid] = uint8_t(CS_WORKGROUP_SIZE);
+
+  barrier();
+
+  if (tid < animationBuffer.groups[animationGroup].jointCount &&
+      jointIndex >= indexOffset &&
+      jointIndex < indexOffset + CS_WORKGROUP_SIZE)
+    csLocalIndicesShared[0u][jointIndex - indexOffset] = uint8_t(tid);
+
+  if (tid < animationBuffer.groups[animationGroup].morphTargetCount &&
+      weightIndex >= indexOffset &&
+      weightIndex < indexOffset + CS_WORKGROUP_SIZE)
+    csLocalIndicesShared[1u][weightIndex - indexOffset] = uint8_t(tid);
+
+  barrier();
+
+  u32vec2 result = u32vec2(
+    csLocalIndicesShared[0u][tid],
+    csLocalIndicesShared[1u][tid]);
+
+  barrier();
+
+  return result;
+}
+
+
+// Convenience method to broadcast a boolean value
+// across the entire workgroup.
+shared uint32_t csAnyShared;
+
+bool csWorkgroupAny(uint32_t tid, bool cond) {
+  bool result = subgroupAny(cond);
+
+  if (!IsSingleSubgroup) {
+    if (tid == 0u)
+      csAnyShared = 0u;
+
+    barrier();
+
+    if (subgroupElect())
+      atomicOr(csAnyShared, result ? 1u : 0u);
+
+    barrier();
+    result = csAnyShared != 0u;
+  }
+
+  return result;
+}
+
+
+// Animation processing shader function. 
+void csProcessAnimation(
+  in    InstanceNode                  instanceNode,
+  in    InstanceHeader                instanceInfo) {
+  uint32_t tid = IsSingleSubgroup
+    ? gl_SubgroupInvocationID
+    : gl_LocalInvocationIndex;
+
+  GeometryRef geometryBuffer = GeometryRef(instanceInfo.geometryVa);
+
+  uint64_t instanceVa = instanceNode.propertyBuffer;
+  uint64_t animationVa = instanceInfo.geometryVa + geometryBuffer.geometry.animationDataOffset;
+
+  InstanceJointBuffer instanceJoints = InstanceJointBuffer(instanceVa + instanceInfo.jointRelativeOffset);
+  InstanceWeightBuffer instanceWeights = InstanceWeightBuffer(instanceVa + instanceInfo.weightOffset);
+
+  InstanceAnimationBufferIn animationParameters = instanceGetAnimationProperties(instanceVa);
+
+  // Load animation properties from the instance buffer
+  AnimationBufferRef animationBuffer = AnimationBufferRef(animationVa);
+  AnimationBuffer animationHeader = animationBuffer.header;
+
+  for (uint32_t i = 0u; i < max(instanceInfo.jointCount, instanceInfo.weightCount); i += CS_WORKGROUP_SIZE) {
+    // Joint and morph target index for the current thread
+    uint32_t elementIndex = i + tid;
+
+    for (uint32_t j = 0u; j < animationParameters.header.animationCount; j++) {
+      InstanceAnimationParameters args = animationParameters.params[j];
+
+      if (args.groupIndex == 0xffffu) {
+        // Special code path that loads the app-defined transforms and weights
+        if (elementIndex < instanceInfo.jointCount) {
+          Transform inputTransform = instanceJoints.joints[elementIndex + instanceInfo.jointCount].transform;
+          csBlendTransform(tid, args, inputTransform);
+        }
+
+        if (elementIndex < instanceInfo.weightCount) {
+          float inputWeight = unpackSnorm2x16(uint(
+            instanceWeights.weights[elementIndex + instanceInfo.weightCount * 3u])).x;
+          csBlendWeight(tid, args, inputWeight);
+        }
+      } else if (args.groupCount == 0u) {
+        // Special code path that blends two animation channels into one
+        if (elementIndex < instanceInfo.jointCount) {
+          Transform inputTransform = csJointsShared[args.groupIndex][tid];
+          csBlendTransform(tid, args, inputTransform);
+        }
+
+        if (elementIndex < instanceInfo.weightCount) {
+          float inputWeight = csWeightsShared[args.groupIndex][tid];
+          csBlendWeight(tid, args, inputWeight);
+        }
+      } else {
+        // Standard code path that handles animation groups
+        bool validJoint = false;
+        bool validWeight = false;
+
+        for (uint32_t k = 0u; k < args.groupCount; k++) {
+          // Ignore joints and weights not affected by the current animation group.
+          // This generally works because all full animations should specify identity
+          // transforms in that case. Exit early if possible.
+          u32vec2 localIndices = csFindLocalIndices(tid, animationBuffer, args.groupIndex + k, i);
+
+          uint32_t localJoint = localIndices.x;
+          uint32_t localWeight = localIndices.y;
+
+          if (!csWorkgroupAny(tid, localJoint < CS_WORKGROUP_SIZE || localWeight < CS_WORKGROUP_SIZE))
+            continue;
+
+          // Load remaining animation group properties into memory
+          AnimationGroup animationGroup = animationBuffer.groups[args.groupIndex + k];
+
+          // Find the pair of keyframes to interpolate between
+          KeyframeRef keyframeBuffer = animationGetKeyframeBuffer(animationVa, animationHeader);
+
+          CsKeyframePair keyframePair = csFindKeyframe(tid,
+            keyframeBuffer, animationGroup, args.timestamp);
+
+          // Interpolate joints for the current animation group
+          AnimationJointRef jointBuffer = animationGetJointBuffer(animationVa, animationHeader);
+
+          if (elementIndex < instanceInfo.jointCount && localJoint < CS_WORKGROUP_SIZE) {
+            Transform inputTransform = csInterpolateJoint(jointBuffer, animationGroup, keyframePair, localJoint);
+            csBlendTransform(tid, args, inputTransform);
+            validJoint = true;
+          }
+
+          // Interpolate morph target weights in the same manner
+          AnimationMorphTargetRef weightBuffer = animationGetMorphTargetBuffer(animationVa, animationHeader);
+
+          if (elementIndex < instanceInfo.weightCount && localWeight < CS_WORKGROUP_SIZE) {
+            float inputWeight = csInterpolateMorphTargetWeight(weightBuffer, animationGroup, keyframePair, localWeight);
+            csBlendWeight(tid, args, inputWeight);
+            validWeight = true;
+          }
+        }
+
+        // If the joint or weight were not written, pretend that they were defined as
+        // identity transforms or zero weights. This may be neeed for initialization.
+        if (args.blendOp != AS_INSTANCE_ANIMATION_BLEND_OP_CHAIN) {
+          if (!validJoint)
+            csBlendTransform(tid, args, transIdentity());
+
+          if (!validWeight)
+            csBlendWeight(tid, args, 0.0f);
+        }
+      }
+    }
+
+    // Write transforms to the instance buffer
+    if (elementIndex < instanceInfo.jointCount)
+      instanceJoints.joints[elementIndex] = InstanceJoint(csJointsShared[0u][tid], 0u);
+
+    // Write morph target weights to the instance buffer, converting
+    // them to a signed normalized representation.
+    if (elementIndex < instanceInfo.weightCount) {
+      instanceWeights.weights[elementIndex + 2u * instanceInfo.weightCount] =
+        int16_t(packSnorm2x16(vec2(csWeightsShared[0u][tid], 0.0f)).x);
+    }
+  }
+
+  // Ensure that all written joints and weights are visible to the workgroup
+  controlBarrier(gl_ScopeWorkgroup, gl_ScopeWorkgroup,
+    gl_StorageSemanticsShared | gl_StorageSemanticsBuffer,
+    gl_SemanticsAcquireRelease);
+}
 
 
 // Helper function to compute the axis-aligned bounding box for
@@ -49,7 +460,7 @@ Aabb csAccumulateAabb(Aabb aabb) {
 
     // Ignore performance and just do something that works without
     // requiring weird features like atomic floats.
-    for (uint i = 1; i < gl_NumSubgroups; i++) {
+    for (uint32_t i = 1u; i < gl_NumSubgroups; i++) {
       if (gl_SubgroupID == i) {
         if (subgroupElect()) {
           csAabbShared.lo = min(aabb.lo, csAabbShared.lo);
@@ -89,27 +500,35 @@ Transform csComputeAbsoluteTransform(in Transform parentTransform, in Transform 
 // the joints buffer, using relative transforms from the input buffer,
 // and writes the final transforms to the result buffer. Must be called
 // from uniform control flow within the workgroup.
-shared Transform csTransformJointOutputCache[CsJointCacheSize];
+shared uint32_t csTransformJointCountShared;
 
-shared uint csTransformJointCountShared;
-
-void csTransformJoints(in GeometryRef geometryBuffer, uint64_t instanceBuffer, uint32_t hostSetOffset) {
+void csTransformJoints(
+        uint64_t                      instanceBuffer,
+  in    InstanceHeader                instanceInfo,
+        uint32_t                      hostSetOffset) {
+  GeometryRef geometryBuffer = GeometryRef(instanceInfo.geometryVa);
   Geometry geometry = geometryBuffer.geometry;
+
   JointRef jointBuffer = geometryGetJointData(geometryBuffer, geometry);
+
+  InstanceJointBuffer relativeJoints = InstanceJointBuffer(instanceBuffer + instanceInfo.jointRelativeOffset);
+  InstanceJointBuffer absoluteJoints = InstanceJointBuffer(instanceBuffer + instanceInfo.jointAbsoluteOffset);
+
+  uint32_t jointOffset = instanceInfo.jointCount * hostSetOffset;
 
   Aabb aabb = Aabb(
     vec3(geometry.aabb.lo),
     vec3(geometry.aabb.hi));
 
-  uint firstJoint = 0;
-  uint firstCachedOutput = 0;
+  uint32_t firstJoint = 0u;
+  uint32_t firstCachedOutput = 0u;
 
   while (firstJoint < geometry.jointCount) {
     Joint joint;
 
     // Check whether the current joint index is valid, and if it is,
     // whether the joint has a dependency on the current iteration.
-    uint jointIndex = firstJoint + gl_LocalInvocationIndex;
+    uint32_t jointIndex = firstJoint + gl_LocalInvocationIndex;
     bool canCompute = jointIndex < geometry.jointCount;
 
     if (canCompute) {
@@ -120,11 +539,11 @@ void csTransformJoints(in GeometryRef geometryBuffer, uint64_t instanceBuffer, u
     }
 
     // Count joints to process in this iteration
-    uint count = subgroupBallotBitCount(subgroupBallot(canCompute));
+    uint32_t count = subgroupBallotBitCount(subgroupBallot(canCompute));
 
     if (!IsSingleSubgroup) {
-      if (gl_LocalInvocationIndex == 0)
-        csTransformJointCountShared = 0;
+      if (gl_LocalInvocationIndex == 0u)
+        csTransformJointCountShared = 0u;
 
       barrier();
 
@@ -142,7 +561,7 @@ void csTransformJoints(in GeometryRef geometryBuffer, uint64_t instanceBuffer, u
 
     if (canCompute) {
       // Load relative transform from input buffer.
-      Transform relativeTransform = instanceLoadRelativeJoint(instanceBuffer, hostSetOffset, jointIndex);
+      Transform relativeTransform = relativeJoints.joints[jointOffset + jointIndex].transform;
 
       // Compute transform for the current joint.
       jointTransform = csComputeJointTransform(relativeTransform, joint.position);
@@ -153,9 +572,9 @@ void csTransformJoints(in GeometryRef geometryBuffer, uint64_t instanceBuffer, u
         Transform parentTransform;
 
         if (joint.parent < firstCachedOutput)
-          parentTransform = instanceLoadJoint(instanceBuffer, 0, joint.parent);
+          parentTransform = absoluteJoints.joints[joint.parent].transform;
         else
-          parentTransform = csTransformJointOutputCache[joint.parent - firstCachedOutput];
+          parentTransform = csJointsShared[0u][joint.parent - firstCachedOutput];
 
         jointTransform = csComputeAbsoluteTransform(parentTransform, jointTransform);
       }
@@ -180,13 +599,13 @@ void csTransformJoints(in GeometryRef geometryBuffer, uint64_t instanceBuffer, u
         // the data without having to read memory. We should only hit the memory
         // path if the number of joints we can compute in parallel is larger
         // than the workgroup size, which should be extremely rare.
-        csTransformJointOutputCache[gl_LocalInvocationIndex] = jointTransform;
+        csJointsShared[0u][gl_LocalInvocationIndex] = jointTransform;
       }
     }
 
     // Store final result in output buffer.
     if (canCompute)
-      instanceStoreJoint(instanceBuffer, 0, jointIndex, jointTransform);
+      absoluteJoints.joints[jointIndex] = InstanceJoint(jointTransform, 0u);
 
     // If there are any joints left to process, make sure writes
     // to the output buffer are visible to the entire workgroup.
@@ -210,13 +629,12 @@ void csTransformJoints(in GeometryRef geometryBuffer, uint64_t instanceBuffer, u
   }
 }
 
-void csUpdateDeform(in InstanceNode instanceNode) {
-  InstanceHeader instanceInfo = InstanceDataBuffer(instanceNode.propertyBuffer).header;
 
-  // Exit early if the geometry buffer is not resident
-  if (instanceInfo.geometryVa == 0ul)
-    return;
-
+// Helper function to update final joint transforms and morph target weights,
+// preserving the previous frame's transforms for motion vectors.
+void csUpdateDeform(
+  in    InstanceNode                  instanceNode,
+  in    InstanceHeader                instanceInfo) {
   // If animations are enabled for the instance but none are currently
   // defined as active, read the app-defined data directly.
   uint32_t hostSetOffset = 0u;
@@ -227,29 +645,38 @@ void csUpdateDeform(in InstanceNode instanceNode) {
   }
 
   // Copy current absolute joint transforms to previous frame's array
-  for (uint i = 0; i < instanceInfo.jointCount; i += gl_WorkGroupSize.x) {
+  InstanceJointBuffer absoluteJoints = InstanceJointBuffer(
+    instanceNode.propertyBuffer + instanceInfo.jointAbsoluteOffset);
+
+  for (uint32_t i = 0u; i < instanceInfo.jointCount; i += gl_WorkGroupSize.x) {
     uint32_t index = i + gl_LocalInvocationIndex;
 
     if (index < instanceInfo.jointCount) {
-      Transform transform = instanceLoadJoint(instanceNode.propertyBuffer, 0, index);
-      instanceStoreJoint(instanceNode.propertyBuffer, 1, index, transform);
+      absoluteJoints.joints[index + instanceInfo.jointCount] =
+        InstanceJoint(absoluteJoints.joints[index].transform, 0u);
     }
   }
 
   // Compute absolute joint transforms for the current frame
   if (instanceInfo.jointCount > 0)
-    csTransformJoints(GeometryRef(instanceInfo.geometryVa), instanceNode.propertyBuffer, hostSetOffset);
+    csTransformJoints(instanceNode.propertyBuffer, instanceInfo, hostSetOffset);
 
   // Copy current absolute joint transforms to previous frame's array
-  for (uint i = 0; i < instanceInfo.weightCount; i += gl_WorkGroupSize.x) {
+  InstanceWeightBuffer weightBuffer = InstanceWeightBuffer(
+    instanceNode.propertyBuffer + instanceInfo.weightOffset);
+
+  uint32_t srcWeightOffset = instanceInfo.weightCount * (2u + hostSetOffset);
+  uint32_t oldWeightOffset = instanceInfo.weightCount;
+
+  for (uint32_t i = 0; i < instanceInfo.weightCount; i += gl_WorkGroupSize.x) {
     uint32_t index = i + gl_LocalInvocationIndex;
 
     if (index < instanceInfo.weightCount) {
-      int16_t curr = instanceLoadMorphTargetWeight(instanceNode.propertyBuffer, 2u + hostSetOffset, index);
-      int16_t prev = instanceLoadMorphTargetWeight(instanceNode.propertyBuffer, 0u, index);
+      int16_t curr = weightBuffer.weights[index + srcWeightOffset];
+      int16_t prev = weightBuffer.weights[index];
 
-      instanceStoreMorphTargetWeight(instanceNode.propertyBuffer, 0, index, curr);
-      instanceStoreMorphTargetWeight(instanceNode.propertyBuffer, 1, index, prev);
+      weightBuffer.weights[index] = curr;
+      weightBuffer.weights[index + oldWeightOffset] = prev;
     }
   }
 }
@@ -263,15 +690,15 @@ void csExecuteUpdate() {
   if (workgroupId >= instanceList.header.entryCount)
     return;
 
-  uint32_t nodeRef = instanceList.nodeRefs[workgroupId];
-  uint32_t dirtyFlags = getNodeTypeFromRef(nodeRef) << INSTANCE_DIRTY_SHIFT;
-  uint32_t instanceIndex = getNodeIndexFromRef(nodeRef);
+  uint32_t instanceIndex = getNodeIndexFromRef(instanceList.nodeRefs[workgroupId]);
 
-  // Update assets first since this may make the geometry buffer resident
   InstanceNode instanceNode = globals.instanceBuffer.nodes[instanceIndex];
+  InstanceHeader instanceInfo = InstanceDataBuffer(instanceNode.propertyBuffer).header;
 
-  if ((dirtyFlags & INSTANCE_DIRTY_DEFORM_BIT) != 0)
-    csUpdateDeform(instanceNode);
+  if (instanceInfo.animationCount != 0u)
+    csProcessAnimation(instanceNode, instanceInfo);
+
+  csUpdateDeform(instanceNode, instanceInfo);
 }
 
 #include "../../as_include_tail.glsl"

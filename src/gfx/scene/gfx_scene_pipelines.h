@@ -78,19 +78,6 @@ static_assert(sizeof(GfxSceneTraverseResetArgs) == 16);
 
 
 /**
- * \brief Instance animation arguments
- */
-struct GfxSceneInstanceAnimateArgs {
-  uint64_t instanceNodeBufferVa;
-  uint64_t groupBufferVa;
-  uint32_t frameId;
-  uint32_t reserved;
-};
-
-static_assert(sizeof(GfxSceneInstanceAnimateArgs) == 24);
-
-
-/**
  * \brief Instance node update arguments
  */
 struct GfxSceneInstanceUpdateNodeArgs {
@@ -329,36 +316,6 @@ public:
     const GfxSceneTraverseBvhArgs&      args) const;
 
   /**
-   * \brief Prepares instance animations
-   *
-   * Generates a dispatch argument buffer in order to process animations.
-   * Must be run after BVH traversal, but \e before preparing the instance
-   * updates, since that will compute the absolute transforms.
-   * \param [in] context Context object
-   * \param [in] dispatch Indirect dispatch descriptor for preprocessing
-   * \param [in] args Arguments to pass to the shader
-   */
-  void prepareInstanceAnimations(
-    const GfxContext&                   context,
-    const GfxDescriptor&                dispatch,
-    const GfxSceneInstanceAnimateArgs&  args) const;
-
-  /**
-   * \brief Processes instance animations
-   *
-   * Computes relative transforms and morph target weights for all
-   * visible animated instances. Must be run after the preparation
-   * step, but before performing instance updates.
-   * \param [in] context Context object
-   * \param [in] dispatch Indirect dispatch descriptor for preprocessing
-   * \param [in] args Arguments to pass to the animation shader
-   */
-  void processInstanceAnimations(
-    const GfxContext&                   context,
-    const GfxDescriptor&                dispatch,
-    const GfxSceneInstanceAnimateArgs&  args) const;
-
-  /**
    * \brief Prepares instance updates
    *
    * \param [in] context Context object
@@ -545,9 +502,6 @@ public:
 private:
 
   GfxDevice           m_device;
-
-  GfxComputePipeline  m_csAnimationPrepare;
-  GfxComputePipeline  m_csAnimationProcess;
 
   GfxComputePipeline  m_csDrawListInit;
   GfxComputePipeline  m_csDrawListGenerate;
