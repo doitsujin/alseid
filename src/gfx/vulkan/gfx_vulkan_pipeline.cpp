@@ -1515,6 +1515,9 @@ void GfxVulkanPipelineManager::initShaderStage(
   stageInfo.pName = "main";
   stageInfo.pSpecializationInfo = specInfo;
 
+  // Initialize optimizer so we can pull information from it
+  SpirvOptimizer optimizer(std::move(codeBuffer));
+
   // Ensure that gl_SubgroupSize and friends actually behave as expected in
   // compute and mesh shaders, and ensure full subgroups whenever possible.
   const auto& deviceProperties = m_device.getVkProperties();
@@ -1544,6 +1547,16 @@ void GfxVulkanPipelineManager::initShaderStage(
           (localSize.at<1>() == 1u && localSize.at<2>() == 1u))
         requiredSubgroupSize = localSize.at<0>();
 
+      // If we're on RADV and the shader uses a lot of shuffles, and the workgroup
+      // size is larger than 64 so we'd be running multiple subgroups anyway, it may
+      // be useful to force the shader into wave32 mode. AMDVLK has its own heuristics.
+      if ((deviceProperties.vk12.driverID == VK_DRIVER_ID_MESA_RADV) &&
+          (deviceProperties.vk13.minSubgroupSize == 32u) &&
+          (localSize.at<0>() > deviceProperties.vk13.maxSubgroupSize) &&
+          (localSize.at<0>() & (deviceProperties.vk13.minSubgroupSize - 1u)) == 0u &&
+          (optimizer.prefersWave32Amd()))
+        requiredSubgroupSize = deviceProperties.vk13.minSubgroupSize;
+
       // Apply structure only if we actually require a specific subgroup size
       if (requiredSubgroupSize) {
         stageInfo.flags &= ~VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT;
@@ -1558,7 +1571,6 @@ void GfxVulkanPipelineManager::initShaderStage(
   }
 
   // With all the information provided above, we can patch the SPIR-V binary
-  SpirvOptimizer optimizer(std::move(codeBuffer));
   optimizer.setSubgroupSize(minSubgroupSize, maxSubgroupSize);
 
   for (uint32_t i = 0; i < specInfo->mapEntryCount; i++) {

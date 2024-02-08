@@ -231,6 +231,45 @@ uint32_t SpirvOptimizer::locateEntryPoint(
 }
 
 
+bool SpirvOptimizer::prefersWave32Amd() {
+  bool hasShuffleCapability = false;
+  bool hasShuffleInBlock = false;
+
+  for (auto ins : m_codeBuffer) {
+    switch (ins.getOpcode()) {
+      case spv::OpCapability: {
+        if (ins.getOperand(1) == spv::CapabilityGroupNonUniformShuffle)
+          hasShuffleCapability = true;
+      } break;
+
+      // Exit early if there are no shuffles in the module at all
+      case spv::OpEntryPoint: {
+        if (!hasShuffleCapability)
+          return false;
+      } break;
+
+      // Ignore xor shuffles here since they are fast for smaller distances
+      case spv::OpGroupNonUniformShuffle:
+      case spv::OpGroupNonUniformShuffleUp:
+      case spv::OpGroupNonUniformShuffleDown: {
+        if (hasShuffleInBlock)
+          return true;
+
+        hasShuffleInBlock = true;
+      } break;
+
+      case spv::OpLabel: {
+        hasShuffleInBlock = false;
+      } break;
+    }
+  }
+
+  // We haven't found a block with consecutive shuffles. A
+  // single shuffle is generally fine for performance.
+  return false;
+}
+
+
 std::unordered_set<uint32_t> SpirvOptimizer::getEntryPointVariables(
         uint32_t                      entryPoint,
         uint32_t                      storageClass) {

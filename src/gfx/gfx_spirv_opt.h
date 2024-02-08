@@ -427,6 +427,15 @@ public:
           uint32_t                      vertCount,
           uint32_t                      primCount);
 
+  /**
+   * \brief Checks whether to use wave32 on AMD hardware
+   *
+   * Subgroup shuffles are slow in wave64 mode, so whenever we have a
+   * lot of them in one shader, we should probably run in wave32 mode.
+   * \returns \c true if wave32 is preferred.
+   */
+  bool prefersWave32Amd();
+
 private:
 
   SpirvCodeBuffer m_codeBuffer;
