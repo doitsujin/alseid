@@ -44,6 +44,7 @@ GfxSceneInstanceDataBuffer::GfxSceneInstanceDataBuffer(
     if (resource.type == GfxSceneInstanceResourceType::eBufferAddress) {
       auto& indirection = resourceIndirections.emplace_back();
       indirection.type = resource.type;
+      indirection.flags = resource.flags - GfxSceneInstanceResourceFlag::eOptional;
       indirection.srcEntry = uint16_t(desc.geometryResource);
       indirection.dstOffset = offsetof(GfxSceneInstanceDataHeader, geometryVa);
     }
@@ -71,6 +72,7 @@ GfxSceneInstanceDataBuffer::GfxSceneInstanceDataBuffer(
 
       auto& indirection = resourceIndirections.emplace_back();
       indirection.type = resource.type;
+      indirection.flags = resource.flags;
       indirection.srcEntry = resourceIndex;
       indirection.dstOffset = dataAllocator + resourceParameterSize;
 

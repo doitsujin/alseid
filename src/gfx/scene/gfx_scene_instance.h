@@ -195,7 +195,7 @@ static_assert(sizeof(GfxSceneAnimationParameters) == 12);
 /**
  * \brief Resource type for an instance
  */
-enum class GfxSceneInstanceResourceType : uint16_t {
+enum class GfxSceneInstanceResourceType : uint8_t {
   /** Descriptor index. May index into an arbitrary descriptor array
    *  that the application must bind before performing draws. Indices
    *  are represented as signed 32-bit integers, with negative values
@@ -209,6 +209,20 @@ enum class GfxSceneInstanceResourceType : uint16_t {
 
 
 /**
+ * \brief Resource flags for an instance
+ */
+enum class GfxSceneInstanceResourceFlag : uint8_t {
+  /** The resource is optional, and shaders will either ignore a null
+   *  buffer address or descriptor index. */
+  eOptional         = (1u << 0),
+
+  eFlagEnum         = 0
+};
+
+using GfxSceneInstanceResourceFlags = Flags<GfxSceneInstanceResourceFlag>;
+
+
+/**
  * \brief Resource indirection entry
  *
  * Stores information about where to read a descriptor index or buffer
@@ -218,6 +232,8 @@ enum class GfxSceneInstanceResourceType : uint16_t {
 struct GfxSceneInstanceResourceIndirectionEntry {
   /** Resource type. Determines the parameter data type. */
   GfxSceneInstanceResourceType type;
+  /** Resource flags */
+  GfxSceneInstanceResourceFlags flags;
   /** Resource entry within the instance. */
   uint16_t srcEntry;
   /** Byte offset of where to write the parameter. */
@@ -582,6 +598,8 @@ struct GfxSceneInstanceResourceDesc {
   GfxSemanticName name = "";
   /** Resource type. */
   GfxSceneInstanceResourceType type = GfxSceneInstanceResourceType::eDescriptorIndex;
+  /** Resource flags. */
+  GfxSceneInstanceResourceFlags flags = 0;
 };
 
 
