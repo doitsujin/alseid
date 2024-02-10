@@ -345,31 +345,14 @@ void GfxScenePipelines::testBvhOcclusion(
 GfxRenderState GfxScenePipelines::createOcclusionTestRenderState() const {
   GfxDeviceFeatures features = m_device->getFeatures();
 
-  GfxFrontFace frontFace = GfxFrontFace::eCw;
-  GfxCullMode cullMode = GfxCullMode::eBack;
-  bool conservativeRaster = features.conservativeRasterization;
-
-  GfxDepthBias depthBias = { };
-  GfxShadingRate shadingRate = { };
-  GfxDepthTest depthTest = { };
-  GfxStencilTest stencilTest = { };
-  GfxBlending blending = { };
-
   // Enable multisampling if conservative rasterization is
   // not available in order to achieve greater coverage.
-  GfxMultisampling multisampling = { };
-  multisampling.sampleCount = features.conservativeRasterization ? 1 : 8;
-
   GfxRenderStateDesc stateDesc = { };
-  stateDesc.frontFace = &frontFace;
-  stateDesc.cullMode = &cullMode;
-  stateDesc.conservativeRaster = &conservativeRaster;
-  stateDesc.depthBias = &depthBias;
-  stateDesc.shadingRate = &shadingRate;
-  stateDesc.depthTest = &depthTest;
-  stateDesc.stencilTest = &stencilTest;
-  stateDesc.multisampling = &multisampling;
-  stateDesc.blending = &blending;
+  stateDesc.flags = GfxRenderStateFlag::eAll;
+  stateDesc.frontFace = GfxFrontFace::eCw;
+  stateDesc.cullMode = GfxCullMode::eBack;
+  stateDesc.conservativeRaster = features.conservativeRasterization;
+  stateDesc.multisampling.sampleCount = features.conservativeRasterization ? 1 : 8;
 
   return m_device->createRenderState(stateDesc);
 }

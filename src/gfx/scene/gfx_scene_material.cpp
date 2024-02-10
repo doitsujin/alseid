@@ -68,12 +68,11 @@ void GfxSceneMaterial::end(
 GfxRenderState GfxSceneMaterial::createRenderState(
   const GfxDevice&                    device,
   const GfxSceneMaterialDesc&         desc) {
-  GfxCullMode cullMode = (desc.flags & GfxSceneMaterialFlag::eTwoSided)
+  GfxRenderStateDesc renderState = { };
+  renderState.flags = GfxRenderStateFlag::eCullMode;
+  renderState.cullMode = (desc.flags & GfxSceneMaterialFlag::eTwoSided)
     ? GfxCullMode::eNone
     : GfxCullMode::eBack;
-
-  GfxRenderStateDesc renderState = { };
-  renderState.cullMode = &cullMode;
 
   return device->createRenderState(renderState);
 }

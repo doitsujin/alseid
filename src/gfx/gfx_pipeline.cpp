@@ -197,100 +197,7 @@ size_t GfxBlending::hash() const {
 }
 
 
-GfxRenderStateDesc::GfxRenderStateDesc(
-  const GfxRenderStateData&           data) {
-  if (data.flags & GfxRenderStateFlag::ePrimitiveTopology)
-    primitiveTopology = &data.primitiveTopology;
-
-  if (data.flags & GfxRenderStateFlag::eVertexLayout)
-    vertexLayout = &data.vertexLayout;
-
-  if (data.flags & GfxRenderStateFlag::eFrontFace)
-    frontFace = &data.frontFace;
-
-  if (data.flags & GfxRenderStateFlag::eCullMode)
-    cullMode = &data.cullMode;
-
-  if (data.flags & GfxRenderStateFlag::eConservativeRaster)
-    conservativeRaster = &data.conservativeRaster;
-
-  if (data.flags & GfxRenderStateFlag::eDepthBias)
-    depthBias = &data.depthBias;
-
-  if (data.flags & GfxRenderStateFlag::eShadingRate)
-    shadingRate = &data.shadingRate;
-
-  if (data.flags & GfxRenderStateFlag::eStencilTest)
-    stencilTest = &data.stencilTest;
-
-  if (data.flags & GfxRenderStateFlag::eMultisampling)
-    multisampling = &data.multisampling;
-
-  if (data.flags & GfxRenderStateFlag::eBlending)
-    blending = &data.blending;
-}
-
-
-GfxRenderStateData::GfxRenderStateData(
-  const GfxRenderStateDesc&           desc) {
-  if (desc.primitiveTopology) {
-    flags |= GfxRenderStateFlag::ePrimitiveTopology;
-    primitiveTopology = *desc.primitiveTopology;
-  }
-
-  if (desc.vertexLayout) {
-    flags |= GfxRenderStateFlag::eVertexLayout;
-    vertexLayout = *desc.vertexLayout;
-  }
-
-  if (desc.frontFace) {
-    flags |= GfxRenderStateFlag::eFrontFace;
-    frontFace = *desc.frontFace;
-  }
-
-  if (desc.cullMode) {
-    flags |= GfxRenderStateFlag::eCullMode;
-    cullMode = *desc.cullMode;
-  }
-
-  if (desc.conservativeRaster) {
-    flags |= GfxRenderStateFlag::eConservativeRaster;
-    conservativeRaster = *desc.conservativeRaster;
-  }
-
-  if (desc.depthBias) {
-    flags |= GfxRenderStateFlag::eDepthBias;
-    depthBias = *desc.depthBias;
-  }
-
-  if (desc.shadingRate) {
-    flags |= GfxRenderStateFlag::eShadingRate;
-    shadingRate = *desc.shadingRate;
-  }
-
-  if (desc.depthTest) {
-    flags |= GfxRenderStateFlag::eDepthTest;
-    depthTest = *desc.depthTest;
-  }
-
-  if (desc.stencilTest) {
-    flags |= GfxRenderStateFlag::eStencilTest;
-    stencilTest = *desc.stencilTest;
-  }
-
-  if (desc.multisampling) {
-    flags |= GfxRenderStateFlag::eMultisampling;
-    multisampling = *desc.multisampling;
-  }
-
-  if (desc.blending) {
-    flags |= GfxRenderStateFlag::eBlending;
-    blending = *desc.blending;
-  }
-}
-
-
-bool GfxRenderStateData::operator == (const GfxRenderStateData& other) const {
+bool GfxRenderStateDesc::operator == (const GfxRenderStateDesc& other) const {
   bool eq = flags == other.flags;
 
   if (eq && (flags & GfxRenderStateFlag::ePrimitiveTopology))
@@ -330,12 +237,12 @@ bool GfxRenderStateData::operator == (const GfxRenderStateData& other) const {
 }
 
 
-bool GfxRenderStateData::operator != (const GfxRenderStateData& other) const {
+bool GfxRenderStateDesc::operator != (const GfxRenderStateDesc& other) const {
   return !operator == (other);
 }
 
 
-size_t GfxRenderStateData::hash() const {
+size_t GfxRenderStateDesc::hash() const {
   HashState result;
   result.add(uint32_t(flags));
 
@@ -377,8 +284,8 @@ size_t GfxRenderStateData::hash() const {
 
 
 GfxRenderStateIface::GfxRenderStateIface(
-  const GfxRenderStateData&           desc)
-: m_data(desc), m_desc(m_data) {
+  const GfxRenderStateDesc&           desc)
+: m_desc(desc) {
 
 }
 

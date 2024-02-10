@@ -371,7 +371,7 @@ GfxVulkanRenderTargetState::~GfxVulkanRenderTargetState() {
 
 GfxVulkanRenderState::GfxVulkanRenderState(
         GfxVulkanPipelineManager&     mgr,
-  const GfxRenderStateData&           desc)
+  const GfxRenderStateDesc&           desc)
 : GfxRenderStateIface(desc) {
   if (desc.flags & GfxRenderStateFlag::ePrimitiveTopology)
     setupPrimitiveTopology(mgr, desc.primitiveTopology);
@@ -460,7 +460,7 @@ void GfxVulkanRenderState::setupVertexLayout(
 
 void GfxVulkanRenderState::setupRasterizer(
         GfxVulkanPipelineManager&     mgr,
-  const GfxRenderStateData&           desc) {
+  const GfxRenderStateDesc&           desc) {
   m_rsState.depthClampEnable = VK_FALSE;
   m_rsState.rasterizerDiscardEnable = VK_FALSE;
   m_rsState.polygonMode = VK_POLYGON_MODE_FILL;
@@ -1666,7 +1666,7 @@ GfxVulkanGraphicsPipeline& GfxVulkanPipelineManager::createGraphicsPipeline(
 
 GfxVulkanVertexInputPipeline& GfxVulkanPipelineManager::createVertexInputPipeline(
   const GfxVulkanRenderState&         renderState) {
-  GfxRenderStateData normalizedData = renderState.getState();
+  GfxRenderStateDesc normalizedData = renderState.getState();
   normalizedData.flags = GfxRenderStateFlag::ePrimitiveTopology
                        | GfxRenderStateFlag::eVertexLayout;
 
@@ -1694,7 +1694,7 @@ GfxVulkanFragmentOutputPipeline& GfxVulkanPipelineManager::createFragmentOutputP
   const GfxVulkanRenderState&         renderState,
         VkBool32                      sampleShading,
   const GfxShaderIoMask&              shaderIoMasks) {
-  GfxRenderStateData normalizedData = renderState.getState();
+  GfxRenderStateDesc normalizedData = renderState.getState();
   normalizedData.flags = GfxRenderStateFlag::eMultisampling
                        | GfxRenderStateFlag::eBlending;
 

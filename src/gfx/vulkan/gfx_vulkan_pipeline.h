@@ -292,7 +292,7 @@ public:
 
   GfxVulkanRenderState(
           GfxVulkanPipelineManager&     mgr,
-    const GfxRenderStateData&           desc);
+    const GfxRenderStateDesc&           desc);
 
   ~GfxVulkanRenderState();
 
@@ -467,7 +467,7 @@ private:
 
   void setupRasterizer(
           GfxVulkanPipelineManager&     mgr,
-    const GfxRenderStateData&           desc);
+    const GfxRenderStateDesc&           desc);
 
   void setupDepthBias(
           GfxVulkanPipelineManager&     mgr,
@@ -1140,7 +1140,7 @@ public:
    * \returns State object
    */
   GfxVulkanRenderState& createRenderState(
-    const GfxRenderStateData&           desc) {
+    const GfxRenderStateDesc&           desc) {
     return createStateObject(m_renderStates, desc);
   }
 
@@ -1213,7 +1213,7 @@ private:
     HashMemberProc>       m_pipelineLayouts;
 
   std::unordered_map<
-    GfxRenderStateData,
+    GfxRenderStateDesc,
     GfxVulkanRenderState,
     HashMemberProc>       m_renderStates;
 

@@ -564,28 +564,13 @@ private:
 
 
   GfxRenderState createRenderState() {
-    GfxCullMode cullMode = GfxCullMode::eBack;
-    GfxFrontFace frontFace = GfxFrontFace::eCcw;
-
-    bool conservativeRaster = false;
-
-    GfxDepthBias depthBias = { };
-
-    GfxDepthTest depthTest = { };
-    depthTest.enableDepthWrite = true;
-    depthTest.depthCompareOp = GfxCompareOp::eGreater;
-
-    GfxStencilTest stencilTest = { };
-    GfxBlending blending = { };
-
     GfxRenderStateDesc desc;
-    desc.frontFace = &frontFace;
-    desc.cullMode = &cullMode;
-    desc.conservativeRaster = &conservativeRaster;
-    desc.depthBias = &depthBias;
-    desc.depthTest = &depthTest;
-    desc.stencilTest = &stencilTest;
-    desc.blending = &blending;
+    desc.flags = GfxRenderStateFlag::eAll;
+    desc.cullMode = GfxCullMode::eBack;
+    desc.frontFace = GfxFrontFace::eCcw;
+    desc.conservativeRaster = false;
+    desc.depthTest.enableDepthWrite = true;
+    desc.depthTest.depthCompareOp = GfxCompareOp::eGreater;
 
     return m_device->createRenderState(desc);
   }

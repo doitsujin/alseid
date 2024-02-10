@@ -18,9 +18,6 @@ constexpr uint32_t GfxMaxVertexBindings = 32;
 constexpr uint32_t GfxMaxViewportCount = 16;
 
 
-class GfxRenderStateData;
-
-
 /**
  * \brief Mesh shader behaviour flags
  *
@@ -634,51 +631,6 @@ struct GfxBlending {
 
 
 /**
- * \brief Render state description
- *
- * Stores a collection of render states. Any of the given
- * pointers can be \c nullptr, which means that the state
- * in question will not be included in the object.
- *
- * Binding render state objects will only affect states that
- * are actually specified in them. This allows changing small
- * subsets of state depending on application needs using one
- * single function call, rather than using larger state blocks
- * which may not map to the granularity that the app needs,
- * or having to set each state individually.
- */
-struct GfxRenderStateDesc {
-  GfxRenderStateDesc() = default;
-
-  GfxRenderStateDesc(
-    const GfxRenderStateData&           data);
-
-  /** Primitive topology. */
-  const GfxPrimitiveTopology* primitiveTopology = nullptr;
-  /** Vertex layout. */
-  const GfxVertexLayout* vertexLayout = nullptr;
-  /** Front-face for rasterization. */
-  const GfxFrontFace* frontFace = nullptr;
-  /** Face culling mode for rasterization. */
-  const GfxCullMode* cullMode = nullptr;
-  /** Conservative rasteritation. */
-  const bool* conservativeRaster = nullptr;
-  /** Depth bias. */
-  const GfxDepthBias* depthBias = nullptr;
-  /** Shading rate. */
-  const GfxShadingRate* shadingRate = nullptr;
-  /** Depth test. */
-  const GfxDepthTest* depthTest = nullptr;
-  /** Stencil test. */
-  const GfxStencilTest* stencilTest = nullptr;
-  /** Multisample state. */
-  const GfxMultisampling* multisampling = nullptr;
-  /** Color blend state. */
-  const GfxBlending* blending = nullptr;
-};
-
-
-/**
  * \brief Render state flags
  *
  * Defines which render state flags are set in
@@ -706,33 +658,49 @@ using GfxRenderStateFlags = Flags<GfxRenderStateFlag>;
 
 
 /**
- * \brief Render state data
+ * \brief Render state description
  *
- * Flat data structure containing all render
- * states, except render target state.
+ * Stores a collection of render states. Any of the given
+ * pointers can be \c nullptr, which means that the state
+ * in question will not be included in the object.
+ *
+ * Binding render state objects will only affect states that
+ * are actually specified in them. This allows changing small
+ * subsets of state depending on application needs using one
+ * single function call, rather than using larger state blocks
+ * which may not map to the granularity that the app needs,
+ * or having to set each state individually.
  */
-struct GfxRenderStateData {
-  GfxRenderStateData() = default;
-
-  explicit GfxRenderStateData(
-    const GfxRenderStateDesc&           desc);
+struct GfxRenderStateDesc {
+  GfxRenderStateDesc() = default;
 
   /** Bit mask of active render states. */
   GfxRenderStateFlags flags = 0;
+  /** Primitive topology. */
   GfxPrimitiveTopology primitiveTopology;
+  /** Vertex layout. */
   GfxVertexLayout vertexLayout;
+  /** Front-face for rasterization. */
   GfxFrontFace frontFace = GfxFrontFace::eCcw;
+  /** Face culling mode for rasterization. */
   GfxCullMode cullMode = GfxCullMode::eNone;
+  /** Conservative rasteritation. */
   bool conservativeRaster = false;
+  /** Depth bias. */
   GfxDepthBias depthBias;
+  /** Shading rate. */
   GfxShadingRate shadingRate;
+  /** Depth test. */
   GfxDepthTest depthTest;
+  /** Stencil test. */
   GfxStencilTest stencilTest;
+  /** Multisample state. */
   GfxMultisampling multisampling;
+  /** Color blend state. */
   GfxBlending blending;
 
-  bool operator == (const GfxRenderStateData& other) const;
-  bool operator != (const GfxRenderStateData& other) const;
+  bool operator == (const GfxRenderStateDesc& other) const;
+  bool operator != (const GfxRenderStateDesc& other) const;
 
   size_t hash() const;
 };
@@ -749,23 +717,20 @@ class GfxRenderStateIface {
 public:
 
   GfxRenderStateIface(
-    const GfxRenderStateData&           desc);
+    const GfxRenderStateDesc&           desc);
 
   virtual ~GfxRenderStateIface();
 
   /**
    * \brief Returns a reference to the contained render state
-   *
-   * Beware of potential lifetime issues when using this.
    * \returns Render state data
    */
-  const GfxRenderStateData& getState() const {
-    return m_data;
+  const GfxRenderStateDesc& getState() const {
+    return m_desc;
   }
 
 protected:
 
-  GfxRenderStateData  m_data;
   GfxRenderStateDesc  m_desc;
 
 };

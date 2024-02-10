@@ -184,23 +184,23 @@ public:
     primitiveTopologyDesc.primitiveType = GfxPrimitiveType::eTriangleList;
 
     GfxRenderStateDesc vertexStateDesc;
-    vertexStateDesc.primitiveTopology = &primitiveTopologyDesc;
-    vertexStateDesc.vertexLayout = &vertexInputDesc;
+    vertexStateDesc.flags = GfxRenderStateFlag::ePrimitiveTopology | GfxRenderStateFlag::eVertexLayout;
+    vertexStateDesc.primitiveTopology = primitiveTopologyDesc;
+    vertexStateDesc.vertexLayout = vertexInputDesc;
 
     m_viState = m_device->createRenderState(vertexStateDesc);
 
     // Create depth-stencil state objects
-    GfxDepthTest depthStencilDesc;
-    depthStencilDesc.enableDepthWrite = true;
-    depthStencilDesc.depthCompareOp = GfxCompareOp::eGreater;
 
     GfxRenderStateDesc depthStateDesc;
-    depthStateDesc.depthTest = &depthStencilDesc;
+    depthStateDesc.flags = GfxRenderStateFlag::eDepthTest;
+    depthStateDesc.depthTest.enableDepthWrite = true;
+    depthStateDesc.depthTest.depthCompareOp = GfxCompareOp::eGreater;
 
     m_dsDepthPass = m_device->createRenderState(depthStateDesc);
 
-    depthStencilDesc.enableDepthWrite = false;
-    depthStencilDesc.depthCompareOp = GfxCompareOp::eEqual;
+    depthStateDesc.depthTest.enableDepthWrite = false;
+    depthStateDesc.depthTest.depthCompareOp = GfxCompareOp::eEqual;
 
     m_dsColorPass = m_device->createRenderState(depthStateDesc);
 

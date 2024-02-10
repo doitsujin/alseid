@@ -927,7 +927,7 @@ void GfxVulkanContext::setDepthBounds(
 
 void GfxVulkanContext::setRenderState(
         GfxRenderState                state) {
-  const GfxRenderStateData& data = state->getState();
+  const GfxRenderStateDesc& data = state->getState();
 
   m_flags |= GfxVulkanContextFlag::eDirtyPipeline;
 
@@ -1344,7 +1344,7 @@ void GfxVulkanContext::invalidateState() {
 
 
 void GfxVulkanContext::resetState() {
-  m_renderState = GfxRenderStateData();
+  m_renderState = GfxRenderStateDesc();
   m_renderState.flags = GfxRenderStateFlag::eAll;
   m_renderStateObject = nullptr;
 

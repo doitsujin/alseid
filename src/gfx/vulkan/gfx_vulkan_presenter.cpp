@@ -752,10 +752,10 @@ GfxGraphicsPipeline GfxVulkanPresenter::createGraphicsBlitPipeline() {
 
 GfxRenderState GfxVulkanPresenter::createRenderState() {
   // Use default state for everything.
-  GfxRenderStateData data;
-  data.flags = GfxRenderStateFlag::eAll;
+  GfxRenderStateDesc desc;
+  desc.flags = GfxRenderStateFlag::eAll;
 
-  return m_device->createRenderState(GfxRenderStateDesc(data));
+  return m_device->createRenderState(desc);
 }
 
 

@@ -525,7 +525,7 @@ private:
   GfxVulkanContextFlags             m_flags     = 0;
   uint32_t                          m_dirtySets = 0;
 
-  GfxRenderStateData                m_renderState;
+  GfxRenderStateDesc                m_renderState;
   const GfxVulkanRenderState*       m_renderStateObject = nullptr;
   const GfxVulkanRenderTargetState* m_renderTargetState = nullptr;
   GfxVulkanGraphicsPipeline*        m_graphicsPipeline;
