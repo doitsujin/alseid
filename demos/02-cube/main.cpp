@@ -683,7 +683,7 @@ private:
       imageDesc.debugName = "Texture";
       imageDesc.usage = GfxUsage::eShaderResource | GfxUsage::eTransferDst;
       imageDesc.flags = GfxImageFlag::eSimultaneousAccess;
-      textureDesc.fillImageDesc(imageDesc);
+      textureDesc.fillImageDesc(imageDesc, 0);
 
       m_texture = m_device->createImage(imageDesc, GfxMemoryType::eAny);
     }
