@@ -116,11 +116,12 @@ bool GfxTextureDesc::deserialize(
 
 
 void GfxTextureDesc::fillImageDesc(
-        GfxImageDesc&                 desc) {
+        GfxImageDesc&                 desc,
+        uint32_t                      mip) {
   desc.type = type;
   desc.format = format;
-  desc.extent = extent;
-  desc.mips = mips;
+  desc.extent = gfxComputeMipExtent(extent, mip);
+  desc.mips = mips - mip;
   desc.layers = layers;
 
   if (flags & GfxTextureFlag::eCubeMap)

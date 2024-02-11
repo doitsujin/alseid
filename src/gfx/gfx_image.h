@@ -435,9 +435,11 @@ struct GfxTextureDesc {
    * properties. Will not touch any fields other
    * than the ones provided by this structure.
    * \param [out] desc Image description
+   * \param [in] mip First mip level
    */
   void fillImageDesc(
-          GfxImageDesc&                 desc);
+          GfxImageDesc&                 desc,
+          uint32_t                      mip);
 
 };
 
