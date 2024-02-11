@@ -18,27 +18,27 @@ public:
 
   Handle() = default;
 
-  explicit Handle(int32_t raw)
+  explicit Handle(uint32_t raw)
   : m_raw(raw) { }
 
   /**
    * \brief Retrieves raw handle value
    * \returns Raw handle value
    */
-  explicit operator int32_t () const {
+  explicit operator uint32_t () const {
     return m_raw;
   }
 
   bool operator == (const Handle&) const = default;
   bool operator != (const Handle&) const = default;
 
-  operator bool () const {
-    return m_raw >= 0;
+  explicit operator bool () const {
+    return m_raw < ~0u;
   }
 
 private:
 
-  int32_t m_raw = -1;
+  uint32_t m_raw = ~0u;
 
 };
 
