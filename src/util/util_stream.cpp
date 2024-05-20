@@ -14,7 +14,7 @@ size_t RdBufferedStream::readComplex(void* dst, size_t size) {
   size_t remaining = m_bufferSize - m_bufferOffset;
 
   if (remaining) {
-    std::memcpy(dst, &m_buffer[m_bufferOffset], remaining);
+    std::memcpy(dst, m_buffer.data() + m_bufferOffset, remaining);
     dst = reinterpret_cast<char*>(dst) + remaining;
     size -= remaining;
   }
@@ -32,7 +32,7 @@ size_t RdBufferedStream::readComplex(void* dst, size_t size) {
     m_bufferSize = readFromSource(m_buffer.data(), m_buffer.size());
 
     size_t read = std::min(size, m_bufferSize);
-    std::memcpy(dst, &m_buffer[0], read);
+    std::memcpy(dst, m_buffer.data(), read);
 
     m_bufferOffset = read;
     return read + remaining;
@@ -75,7 +75,7 @@ bool WrBufferedStream::writeComplex(const void* src, size_t size) {
   size_t written = m_bufferSize - m_bufferOffset;
 
   if (written) {
-    std::memcpy(&m_buffer[m_bufferOffset], src, written);
+    std::memcpy(m_buffer.data() + m_bufferOffset, src, written);
     src = reinterpret_cast<const char*>(src) + written;
     size -= written;
 
@@ -92,7 +92,7 @@ bool WrBufferedStream::writeComplex(const void* src, size_t size) {
     m_bufferSize = std::min(m_bufferSize, m_buffer.size());
     return written == size;
   } else {
-    std::memcpy(&m_buffer[0], src, size);
+    std::memcpy(m_buffer.data(), src, size);
     m_bufferOffset = size;
     return true;
   }
@@ -120,7 +120,10 @@ std::pair<size_t, size_t> WrVectorStream::writeToContainer(
   size_t newSize = oldSize + size;
 
   m_vector.resize(newSize);
-  std::memcpy(&m_vector[oldSize], data, size);
+
+  if (likely(size))
+    std::memcpy(&m_vector[oldSize], data, size);
+
   return std::make_pair(size, size_t(-1));
 }
 

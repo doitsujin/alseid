@@ -487,7 +487,7 @@ public:
    */
   size_t load(void* dst, size_t size) {
     if (likely(m_bufferOffset + size <= m_bufferSize)) {
-      std::memcpy(dst, &m_buffer[m_bufferOffset], size);
+      std::memcpy(dst, m_buffer.data() + m_bufferOffset, size);
       m_bufferOffset += size;
       return size;
     }
@@ -504,7 +504,7 @@ public:
    */
   bool read(void* dst, size_t size) {
     if (likely(m_bufferOffset + size <= m_bufferSize)) {
-      std::memcpy(dst, &m_buffer[m_bufferOffset], size);
+      std::memcpy(dst, m_buffer.data() + m_bufferOffset, size);
       m_bufferOffset += size;
       return true;
     }
@@ -580,7 +580,7 @@ public:
    */
   bool write(const void* src, size_t size) {
     if (likely(m_bufferOffset + size <= m_bufferSize)) {
-      std::memcpy(&m_buffer[m_bufferOffset], src, size);
+      std::memcpy(m_buffer.data() + m_bufferOffset, src, size);
       m_bufferOffset += size;
       return true;
     }
