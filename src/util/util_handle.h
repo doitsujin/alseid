@@ -32,6 +32,10 @@ public:
   bool operator == (const Handle&) const = default;
   bool operator != (const Handle&) const = default;
 
+  size_t hash() const {
+    return size_t(m_raw);
+  }
+
   explicit operator bool () const {
     return m_raw < ~0u;
   }
