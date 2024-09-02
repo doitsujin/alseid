@@ -24,7 +24,8 @@ GfxVulkanDevice::GfxVulkanDevice(
 , m_extensions            (m_gfx->vk(), adapter)
 , m_properties            (m_gfx->vk(), adapter, m_extensions)
 , m_features              (m_gfx->vk(), adapter, m_extensions)
-, m_memoryTypeMasks       (getMemoryTypeMasks())
+, m_memoryTypeMasks       (queryMemoryTypeMasks())
+, m_enabledShaderStages   (queryEnabledShaderStages())
 , m_shadingRateTileSize   (determineShadingRateTileSize())
 , m_shadingRates          (determineShadingRates())
 , m_pipelineManager       (std::make_unique<GfxVulkanPipelineManager>(*this))
@@ -147,20 +148,7 @@ GfxDeviceFeatures GfxVulkanDevice::getFeatures() const {
     m_features.vk12.shaderOutputViewportIndex &&
     m_features.vk12.shaderOutputLayer;
 
-  // Fill in supported shader stages based on extension support
-  result.shaderStages = GfxShaderStage::eVertex | GfxShaderStage::eFragment | GfxShaderStage::eCompute;
-
-  if (m_features.core.features.geometryShader)
-    result.shaderStages |= GfxShaderStage::eGeometry;
-
-  if (m_features.core.features.tessellationShader)
-    result.shaderStages |= GfxShaderStage::eTessControl | GfxShaderStage::eTessEval;
-
-  if (m_features.extMeshShader.meshShader)
-    result.shaderStages |= GfxShaderStage::eMesh;
-
-  if (m_features.extMeshShader.taskShader)
-    result.shaderStages |= GfxShaderStage::eTask;
+  result.shaderStages = m_enabledShaderStages;
 
   // We could expose more here depending on device properties,
   // but just be conservative. These are guaranteed to work on
@@ -724,7 +712,26 @@ bool GfxVulkanDevice::supportsFragmentShadingRateWithState(
 }
 
 
-GfxVulkanMemoryTypeMasks GfxVulkanDevice::getMemoryTypeMasks() const {
+GfxShaderStages GfxVulkanDevice::queryEnabledShaderStages() const {
+  GfxShaderStages result = GfxShaderStage::eVertex | GfxShaderStage::eFragment | GfxShaderStage::eCompute;
+
+  if (m_features.core.features.geometryShader)
+    result |= GfxShaderStage::eGeometry;
+
+  if (m_features.core.features.tessellationShader)
+    result |= GfxShaderStage::eTessControl | GfxShaderStage::eTessEval;
+
+  if (m_features.extMeshShader.meshShader)
+    result |= GfxShaderStage::eMesh;
+
+  if (m_features.extMeshShader.taskShader)
+    result |= GfxShaderStage::eTask;
+
+  return result;
+}
+
+
+GfxVulkanMemoryTypeMasks GfxVulkanDevice::queryMemoryTypeMasks() const {
   const auto& memoryProperties = m_properties.memory.memoryProperties;
 
   GfxVulkanMemoryTypeMasks result = { };
