@@ -1023,7 +1023,8 @@ void GfxVulkanContext::setViewports(
 
 void GfxVulkanContext::trackObject(
         std::shared_ptr<GfxTrackable>&& object) {
-  m_trackedObjects.push_back(std::move(object));
+  if (object)
+    m_trackedObjects.push_back(std::move(object));
 }
 
 
@@ -1473,7 +1474,7 @@ small_vector<VkBufferImageCopy2, 16> GfxVulkanContext::getVkBufferImageCopyRegio
         Extent3D                      imageExtent,
   const GfxBuffer&                    buffer,
         uint64_t                      bufferOffset,
-        Extent2D                      bufferLayout) {
+        Extent2D                      bufferLayout) const {
   small_vector<VkBufferImageCopy2, 16> result;
 
   auto& formatInfo = image->getFormatInfo();
@@ -1516,9 +1517,11 @@ small_vector<VkBufferImageCopy2, 16> GfxVulkanContext::getVkBufferImageCopyRegio
 
 std::pair<VkPipelineStageFlags2, VkAccessFlags2> GfxVulkanContext::getVkStageAccessFromUsage(
         GfxUsageFlags                 gfxUsage,
-        GfxShaderStages               gfxStages) {
+        GfxShaderStages               gfxStages) const {
   VkPipelineStageFlags2 vkStages = 0;
   VkAccessFlags2 vkAccess = 0;
+
+  gfxStages &= m_device->getEnabledShaderStages();
 
   if (gfxStages) {
     if (gfxStages & GfxShaderStage::eVertex)

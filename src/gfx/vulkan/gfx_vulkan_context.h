@@ -597,18 +597,18 @@ private:
     const VkDescriptorSetLayout*        setLayouts,
           VkDescriptorSet*              sets);
 
-  static small_vector<VkBufferImageCopy2, 16> getVkBufferImageCopyRegions(
+  small_vector<VkBufferImageCopy2, 16> getVkBufferImageCopyRegions(
     const GfxImage&                     image,
     const GfxImageSubresource&          imageSubresource,
           Offset3D                      imageOffset,
           Extent3D                      imageExtent,
     const GfxBuffer&                    buffer,
           uint64_t                      bufferOffset,
-          Extent2D                      bufferLayout);
+          Extent2D                      bufferLayout) const;
 
-  static std::pair<VkPipelineStageFlags2, VkAccessFlags2> getVkStageAccessFromUsage(
+  std::pair<VkPipelineStageFlags2, VkAccessFlags2> getVkStageAccessFromUsage(
           GfxUsageFlags                 gfxUsage,
-          GfxShaderStages               gfxStages);
+          GfxShaderStages               gfxStages) const;
 
 };
 

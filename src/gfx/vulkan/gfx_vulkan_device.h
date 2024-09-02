@@ -77,6 +77,14 @@ public:
   }
 
   /**
+   * \brief Queries enabled shader stages
+   * \returns Enabled shader stages
+   */
+  GfxShaderStages getEnabledShaderStages() const {
+    return m_enabledShaderStages;
+  }
+
+  /**
    * \brief Queries memory type masks
    * \returns Memory type masks
    */
@@ -453,6 +461,8 @@ private:
 
   GfxVulkanMemoryTypeMasks            m_memoryTypeMasks;
 
+  GfxShaderStages                     m_enabledShaderStages = 0u;
+
   Extent2D                            m_shadingRateTileSize = Extent2D(0u);
   std::vector<VkPhysicalDeviceFragmentShadingRateKHR> m_shadingRates;
 
@@ -471,7 +481,9 @@ private:
     uint32_t(GfxQueue::eQueueCount)>  m_queueFamilies = { };
   uint32_t                            m_queueFamilyCount = 0;
 
-  GfxVulkanMemoryTypeMasks getMemoryTypeMasks() const;
+  GfxShaderStages queryEnabledShaderStages() const;
+
+  GfxVulkanMemoryTypeMasks queryMemoryTypeMasks() const;
 
   Extent2D determineShadingRateTileSize() const;
 

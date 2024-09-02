@@ -455,6 +455,7 @@ inline VkShaderStageFlagBits getVkShaderStage(
     // Ignore compound stages
     case GfxShaderStage::eMeshTask:
     case GfxShaderStage::ePreRaster:
+    case GfxShaderStage::eAll:
     case GfxShaderStage::eFlagEnum:
       return VkShaderStageFlagBits(0);
   }

@@ -97,6 +97,9 @@ enum class GfxShaderStage : uint32_t {
   ePreRaster        = eVertex | eTessControl | eTessEval | eGeometry,
   /** Both task and mesh shader stages. */
   eMeshTask         = eTask | eMesh,
+  /** All supported shader stages. Backends must filter out any
+   *  stages that are disabled or not supported. */
+  eAll              = ~0u,
 
   eFlagEnum         = 0
 };
