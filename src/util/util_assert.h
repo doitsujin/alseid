@@ -23,7 +23,7 @@ inline void dbg_unreachable_(const char* file, int line, const char* msg) {
   throw Assert(file, line, msg);
 }
 
-#define dbg_assert(cond) dbg_assert_(cond, __FILE__, __LINE__, #cond)
+#define dbg_assert(cond) dbg_assert_(bool(cond), __FILE__, __LINE__, #cond)
 
 #define dbg_unreachable(msg) dbg_unreachable_(__FILE__, __LINE__, msg)
 
