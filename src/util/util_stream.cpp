@@ -59,6 +59,9 @@ WrBufferedStream::~WrBufferedStream() {
 
 
 bool WrBufferedStream::flush() {
+  if (!m_bufferOffset)
+    return true;
+
   size_t written;
   std::tie(written, m_bufferSize) = writeToContainer(m_buffer.data(), m_bufferOffset);
 
