@@ -1,6 +1,8 @@
 #ifndef AS_INSTANCE_H
 #define AS_INSTANCE_H
 
+#include "../../asset/as_asset_group.glsl"
+
 #define INSTANCE_RESIDENT_BIT           (1u << 0)
 #define INSTANCE_STATIC_BIT             (1u << 1)
 #define INSTANCE_DEFORM_BIT             (1u << 2)
@@ -233,16 +235,6 @@ writeonly buffer InstanceRawBufferOut32 {
 layout(buffer_reference, buffer_reference_align = 16, scalar)
 writeonly buffer InstanceRawBufferOut64 {
   u32vec2 data[];
-};
-
-
-// Asset list buffer reference type. Stores a frame ID of when
-// the list has last changed to allow for dirty tracking, and
-// an array of descriptor indices and buffer references.
-layout(buffer_reference, buffer_reference_align = 16, scalar)
-readonly buffer AssetListBufferIn {
-  uint32_t updateFrameId;
-  uint32_t dwords[];
 };
 
 #endif /* AS_INSTANCE_H */

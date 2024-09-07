@@ -12,6 +12,8 @@ as_shader_includes = files(
   'ts_common.glsl',
   'ts_template.glsl',
 
+  'asset/as_asset_group.glsl',
+
   'scene/animation/as_animation.glsl',
 
   'scene/draw/as_draw.glsl',
@@ -37,6 +39,8 @@ as_shader_includes = files(
 )
 
 as_shader_builtins = [
+  [ 'asset/cs_asset_group_update.comp', 'cs' ],
+
   [ 'common/cs_common_hiz.comp', 'cs' ],
 
   [ 'scene/cs_scene_upload.comp', 'cs' ],
