@@ -1,0 +1,69 @@
+// Asset group update shader. Updates the frame ID and copies up to
+// 1024 bytes of asset data per workgroup.
+#version 460
+
+#extension GL_GOOGLE_include_directive : enable
+
+#define CS_MAIN csUpdateAssetGroup
+
+#include "../as_include_head.glsl"
+
+#include "as_asset_group.glsl"
+
+layout(local_size_x = 64) in;
+
+// Source data buffer reference type. Stores
+// aligned dwords for fast loading.
+layout(buffer_reference, buffer_reference_align = 16, scalar)
+readonly buffer AssetDataBufferIn {
+  u32vec4             dquads[];
+};
+
+
+// Shader parameters. Stores buffer pointers as well
+// as metadata for the current asset list update.
+layout(push_constant)
+uniform PushData {
+  AssetListBufferOut  dstAssetList;
+  AssetDataBufferIn   srcAssetData;
+  uint32_t            dstDwordCount;
+  uint32_t            srcDwordCount;
+  uint32_t            lastCommitFrameId;
+  uint32_t            frameId;
+} globals;
+
+
+void csUpdateAssetGroup() {
+  uint32_t dwordIndex = gl_GlobalInvocationID.x * 4u;
+
+  // Load source dwords. The host is responsible for ensuring that 16
+  // bytes can be safely loaded in one go and do not contain invalid
+  // data. It is possible for the shader to write more data than it
+  // reads due to buffer padding, in which case we will write zeroes.
+  u32vec4 srcData = u32vec4(0u);
+
+  if (dwordIndex < globals.srcDwordCount)
+    srcData = globals.srcAssetData.dquads[dwordIndex / 4u];
+
+  // Due to the data layout and alignment, we can safely write
+  // two dwords at once even if the asset list is shorter.
+  if (dwordIndex < globals.dstDwordCount) {
+    globals.dstAssetList.dwords[dwordIndex + 0u] = srcData.x;
+    globals.dstAssetList.dwords[dwordIndex + 1u] = srcData.y;
+  }
+
+  if (dwordIndex + 2u < globals.dstDwordCount) {
+    globals.dstAssetList.dwords[dwordIndex + 2u] = srcData.z;
+    globals.dstAssetList.dwords[dwordIndex + 3u] = srcData.w;
+  }
+
+  // Use the very first thread to update the header as necessary
+  if (gl_GlobalInvocationID.x == 0u) {
+    globals.dstAssetList.header.updateFrameId = globals.frameId;
+
+    if (globals.lastCommitFrameId == 0u)
+      globals.dstAssetList.header.lastUseFrameId = 0u;
+  }
+}
+
+#include "../as_include_tail.glsl"

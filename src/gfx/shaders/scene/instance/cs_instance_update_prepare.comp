@@ -206,7 +206,7 @@ bool csUpdateInstanceAssets(
 
   if (!needsUpdate && instanceNode.assetListBuffer != 0ul) {
     AssetListBufferIn assetList = AssetListBufferIn(instanceNode.assetListBuffer);
-    needsUpdate = assetList.updateFrameId > instanceNode.updateFrameId;
+    needsUpdate = assetList.header.updateFrameId > instanceNode.updateFrameId;
   }
 
   // Write pointers for required updates to LDS so we can avoid loading
