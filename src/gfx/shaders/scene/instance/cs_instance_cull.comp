@@ -113,6 +113,9 @@ void csCullInstances() {
 
   CsInstanceInfo instanceInfo = { };
 
+  // New visibility mask for the node we're working on
+  uint32_t visibilityMask = 0u;
+
   if (gid < nodeListHeader.localEntryCount) {
     nodeItem = nodeList.items[nodeListHeader.localEntryIndex + gid];
     uint32_t instanceIndex = getNodeIndexFromRef(nodeItem.nodeRef);
@@ -129,14 +132,10 @@ void csCullInstances() {
       instanceInfo.aabb = Aabb(
         vec3(instanceData.header.aabb.lo),
         vec3(instanceData.header.aabb.hi));
-    } else {
-      // Mark instance as invisible in all passes if not resident
-      nodeItem.visibilityMask = 0u;
+
+      visibilityMask = nodeItem.visibilityMask;
     }
   }
-
-  // New visibility mask for the node we're working on
-  uint32_t visibilityMask = nodeItem.visibilityMask;
 
   // Scalarize render passes. We're not expecting this to diverge
   // much anyway due to the way BVH traversal is implemented.
