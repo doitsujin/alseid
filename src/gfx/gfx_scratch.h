@@ -64,7 +64,7 @@ struct GfxScratchBuffer {
    * \param [in] offset Offset into the mapped resource
    * \returns Pointer to mapped buffer
    */
-  void* map(GfxUsageFlags access, size_t offset) {
+  void* map(GfxUsageFlags access, size_t offset) const {
     return buffer->map(access, this->offset + offset);
   }
 
@@ -74,7 +74,7 @@ struct GfxScratchBuffer {
    * See \c GfxBufferIface::unmap.
    * \param [in] access CPU access flags
    */
-  void unmap(GfxUsageFlags access) {
+  void unmap(GfxUsageFlags access) const {
     buffer->unmap(access);
   }
 

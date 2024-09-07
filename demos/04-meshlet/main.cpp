@@ -4,6 +4,8 @@
 #include "../../src/gfx/gfx_geometry.h"
 #include "../../src/gfx/gfx_transfer.h"
 
+#include "../../src/gfx/asset/gfx_asset_archive.h"
+
 #include "../../src/gfx/common/gfx_common_hiz.h"
 #include "../../src/gfx/common/gfx_common_pipelines.h"
 
@@ -50,14 +52,11 @@ public:
     // Initialize transfer manager
     m_transfer = GfxTransferManager(m_io, m_device, 16ull << 20);
 
-    // Create geometry object and buffer
-    m_geometry = createGeometry();
-    m_geometryBuffer = createGeometryBuffer();
-
     // Create state objects
     m_renderState = createRenderState();
 
     // Initialize scene objects
+    m_assetManager = std::make_unique<GfxAssetManager>(m_device);
     m_sceneNodeManager = std::make_unique<GfxSceneNodeManager>(m_device);
     m_scenePassManager = std::make_unique<GfxScenePassManager>(m_device);
     m_sceneInstanceManager = std::make_unique<GfxSceneInstanceManager>(m_device);
@@ -65,6 +64,11 @@ public:
     m_scenePipelines = std::make_unique<GfxScenePipelines>(m_device);
     m_sceneDrawBufferPrimary = std::make_unique<GfxSceneDrawBuffer>(m_device);
     m_sceneDrawBufferSecondary = std::make_unique<GfxSceneDrawBuffer>(m_device);
+
+    m_geometryAsset = m_assetManager->createAsset<GfxAssetGeometryFromArchive>(
+      "Geometry", m_transfer, m_archive, m_archive->findFile("CesiumMan"));
+    m_assetGroup = m_assetManager->createAssetGroup("Asset group", GfxAssetGroupType::eAppManaged, 1, &m_geometryAsset);
+    m_assetManager->streamAssetGroup(m_assetGroup);
 
     GfxSceneMaterialManagerDesc materialManagerDesc = { };
     m_sceneMaterialManager = std::make_unique<GfxSceneMaterialManager>(m_device, materialManagerDesc);
@@ -169,6 +173,8 @@ public:
       m_scenePassGroup->commitUpdates(context,
         *m_sceneNodeManager);
 
+      m_assetManager->commitUpdates(context, m_frameId, m_frameId - 1);
+
       context->memoryBarrier(
         GfxUsage::eShaderStorage | GfxUsage::eTransferDst, GfxShaderStage::eCompute,
         GfxUsage::eShaderStorage | GfxUsage::eShaderResource, GfxShaderStage::eCompute);
@@ -182,7 +188,8 @@ public:
         m_frameId, 0);
 
       m_sceneInstanceManager->processPassGroupInstances(context,
-        *m_scenePipelines, *m_sceneNodeManager, *m_scenePassGroup, m_frameId);
+        *m_scenePipelines, *m_sceneNodeManager, *m_scenePassGroup,
+        *m_assetManager, m_frameId);
 
       // Cull instances
       m_scenePassGroup->passBarrier(context);
@@ -254,7 +261,8 @@ public:
 
       // Process instances made visible by the secondary traversal pass
       m_sceneInstanceManager->processPassGroupInstances(context,
-        *m_scenePipelines, *m_sceneNodeManager, *m_scenePassGroup, m_frameId);
+        *m_scenePipelines, *m_sceneNodeManager, *m_scenePassGroup,
+        *m_assetManager, m_frameId);
 
       // Cull newly added instances
       m_scenePassGroup->passBarrier(context);
@@ -365,7 +373,6 @@ private:
 
   GfxRenderState        m_renderState;
 
-  GfxBuffer             m_geometryBuffer;
   GfxImage              m_colorImage;
   GfxImage              m_depthImage;
 
@@ -396,13 +403,12 @@ private:
   std::vector<GfxContext>                     m_contexts;
   GfxSemaphore                                m_semaphore;
 
-  std::unique_ptr<IoArchive>                  m_archive;
+  std::shared_ptr<IoArchive>                  m_archive;
 
   std::mutex                                  m_shaderMutex;
   std::unordered_map<std::string, GfxShader>  m_shaders;
 
-  std::shared_ptr<GfxGeometry>                m_geometry;
-
+  std::unique_ptr<GfxAssetManager>            m_assetManager;
   std::unique_ptr<GfxSceneNodeManager>        m_sceneNodeManager;
   std::unique_ptr<GfxScenePassManager>        m_scenePassManager;
   std::unique_ptr<GfxSceneInstanceManager>    m_sceneInstanceManager;
@@ -414,6 +420,9 @@ private:
   std::unique_ptr<GfxCommonPipelines>         m_commonPipelines;
   std::unique_ptr<GfxCommonHizImage>          m_hizImage;
 
+  GfxAssetGroup                               m_assetGroup;
+  GfxAsset                                    m_geometryAsset;
+
   uint32_t              m_sceneInstanceNode   = 0u;
   GfxSceneNodeRef       m_sceneInstanceRef    = { };
   GfxSceneNodeRef       m_sceneRootRef        = { };
@@ -424,10 +433,12 @@ private:
   uint16_t              m_scenePassIndex      = { };
 
   void updateAnimation() {
-    if (m_geometry->animations.empty())
+    auto geometry = m_assetManager->getAssetAs<GfxAssetGeometryIface>(m_geometryAsset)->getGeometry();
+
+    if (geometry->animations.empty())
       return;
 
-    auto& animation = m_geometry->animations.at(m_animationIndex);
+    auto& animation = geometry->animations.at(m_animationIndex);
 
     auto t = std::chrono::high_resolution_clock::now();
     auto d = std::chrono::duration_cast<std::chrono::duration<float, std::ratio<1, 1>>>(t - m_animationStart);
@@ -446,7 +457,7 @@ private:
     m_sceneInstanceManager->updateAnimationParameters(m_sceneInstanceRef, 0, animationParameters);
 
     if (d.count() >= animation.duration) {
-      m_animationIndex = (m_animationIndex + 1) % m_geometry->animations.size();
+      m_animationIndex = (m_animationIndex + 1) % geometry->animations.size();
       m_animationStart = t;
     }
   }
@@ -476,6 +487,8 @@ private:
   }
 
   void initScene() {
+    auto geometry = m_assetManager->getAssetAs<GfxAssetGeometryIface>(m_geometryAsset)->getGeometry();
+
     GfxDeviceFeatures features = m_device->getFeatures();
 
     GfxSceneMaterialShaders materialShaders;
@@ -506,13 +519,13 @@ private:
 
     std::vector<GfxSceneInstanceDrawDesc> draws;
 
-    for (uint32_t i = 0; i < m_geometry->meshes.size(); i++) {
+    for (uint32_t i = 0; i < geometry->meshes.size(); i++) {
       auto& draw = draws.emplace_back();
       draw.materialIndex = material;
       draw.meshIndex = i;
       draw.meshInstanceCount = std::max(1u,
-        uint32_t(m_geometry->meshes[i].info.instanceCount));
-      draw.maxMeshletCount = m_geometry->meshes[i].info.maxMeshletCount;
+        uint32_t(geometry->meshes[i].info.instanceCount));
+      draw.maxMeshletCount = geometry->meshes[i].info.maxMeshletCount;
       draw.meshInstanceIndex = 0u;
     }
 
@@ -526,15 +539,15 @@ private:
     instanceDesc.flags = GfxSceneInstanceFlag::eDeform;
     instanceDesc.drawCount = draws.size();
     instanceDesc.draws = draws.data();
-    instanceDesc.jointCount = m_geometry->info.jointCount;
-    instanceDesc.weightCount = m_geometry->info.morphTargetCount;
+    instanceDesc.jointCount = geometry->info.jointCount;
+    instanceDesc.weightCount = geometry->info.morphTargetCount;
     instanceDesc.nodeIndex = instanceNode;
     instanceDesc.resourceCount = 1;
     instanceDesc.geometryResource = 0;
     instanceDesc.resources = &instanceGeometryDesc;
-    instanceDesc.aabb = m_geometry->info.aabb;
+    instanceDesc.aabb = geometry->info.aabb;
 
-    if (!m_geometry->animations.empty()) {
+    if (!geometry->animations.empty()) {
       instanceDesc.flags |= GfxSceneInstanceFlag::eAnimation;
       instanceDesc.animationCount = 1u;
     }
@@ -544,8 +557,9 @@ private:
     m_sceneNodeManager->updateNodeTransform(instanceNode, QuatTransform::identity());
     m_sceneNodeManager->attachNodesToBvh(rootRef, 1, &instanceRef);
 
+    m_sceneInstanceManager->updateAssetList(instanceRef, m_assetManager->getAssetGroupGpuAddress(m_assetGroup));
     m_sceneInstanceManager->updateResource(instanceRef, 0,
-      GfxSceneInstanceResource::fromBufferAddress(m_geometryBuffer->getGpuAddress()));
+      GfxSceneInstanceResource::fromAssetIndex(0));
 
     m_sceneMaterialManager->addInstanceDraws(*m_sceneInstanceManager, instanceRef);
 
@@ -600,7 +614,7 @@ private:
   }
 
 
-  std::unique_ptr<IoArchive> loadArchive() {
+  std::shared_ptr<IoArchive> loadArchive() {
     std::filesystem::path archivePath = "resources/demo_04_meshlet_resources.asa";
 
     IoFile file = m_io->open(archivePath, IoOpenMode::eRead);
@@ -610,7 +624,7 @@ private:
       return nullptr;
     }
 
-    return std::make_unique<IoArchive>(file);
+    return std::make_shared<IoArchive>(file);
   }
 
 
@@ -673,36 +687,6 @@ private:
 
     m_io->submit(request);
     return request;
-  }
-
-
-  std::shared_ptr<GfxGeometry> createGeometry() {
-    auto file = m_archive->findFile("CesiumMan");
-    auto geometry = std::make_shared<GfxGeometry>();
-
-    if (!geometry->deserialize(file->getInlineData()))
-      throw Error("Failed to deserialize geometry data");
-
-    return geometry;
-  }
-
-
-  GfxBuffer createGeometryBuffer() {
-    auto file = m_archive->findFile("CesiumMan");
-    auto subFile = file->getSubFile(0);
-
-    GfxBufferDesc bufferDesc;
-    bufferDesc.debugName = "Geometry buffer";
-    bufferDesc.size = subFile->getSize();
-    bufferDesc.usage = GfxUsage::eShaderResource |
-      GfxUsage::eDecompressionDst |
-      GfxUsage::eTransferDst;
-
-    GfxBuffer buffer = m_device->createBuffer(bufferDesc, GfxMemoryType::eAny);
-
-    m_transfer->uploadBuffer(subFile, buffer, 0);
-    m_transfer->waitForCompletion(m_transfer->flush());
-    return buffer;
   }
 
 

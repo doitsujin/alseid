@@ -4,6 +4,8 @@
 #include "../../util/util_object_map.h"
 #include "../../util/util_quaternion.h"
 
+#include "../asset/gfx_asset_manager.h"
+
 #include "../gfx_buffer_pool.h"
 
 #include "gfx_scene_node.h"
@@ -941,6 +943,7 @@ public:
    * \param [in] pipelines Update pipelines
    * \param [in] nodeManager Node manager
    * \param [in] groupBuffer Pass group buffer
+   * \param [in] assetManager Asset manager
    * \param [in] frameId Current frame ID
    */
   void processPassGroupInstances(
@@ -948,6 +951,7 @@ public:
     const GfxScenePipelines&            pipelines,
     const GfxSceneNodeManager&          nodeManager,
     const GfxScenePassGroupBuffer&      groupBuffer,
+    const GfxAssetManager&              assetManager,
           uint32_t                      frameId);
 
 private:

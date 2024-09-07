@@ -24,6 +24,7 @@ uniform PushData {
   InstanceNodeBuffer  instanceBuffer;
   uint64_t            sceneBuffer;
   uint64_t            groupBuffer;
+  uint64_t            assetFeedbackBuffer;
   uint32_t            frameId;
 };
 
@@ -274,6 +275,8 @@ void csPrepareUpdate() {
   bool wasResident = asTest(instance.flags, INSTANCE_RESIDENT_BIT);
   bool isResident = csUpdateInstanceAssets(tid,
     instanceIndex, instance, instanceNeedsUpdate);
+
+  assetListNotifyAccess(instance.assetListBuffer, assetFeedbackBuffer, frameId);
 
   // Exit early if the current instance has already been updated
   if (!instanceNeedsUpdate)
