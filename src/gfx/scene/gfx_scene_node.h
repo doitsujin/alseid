@@ -9,7 +9,6 @@
 
 #include "gfx_scene_common.h"
 #include "gfx_scene_pipelines.h"
-#include <cstdint>
 
 namespace as {
 
