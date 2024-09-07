@@ -88,7 +88,8 @@ GfxDescriptorArray GfxDebugDevice::createDescriptorArray(
   if (!desc.descriptorCount)
     Log::err("GfxDevice::createDescriptorArray: Invalid descriptor count");
 
-  if (desc.bindingType != GfxShaderBindingType::eResourceBuffer
+  if (desc.bindingType != GfxShaderBindingType::eSampler
+   && desc.bindingType != GfxShaderBindingType::eResourceBuffer
    && desc.bindingType != GfxShaderBindingType::eResourceImageView
    && desc.bindingType != GfxShaderBindingType::eStorageBuffer
    && desc.bindingType != GfxShaderBindingType::eStorageImageView)
