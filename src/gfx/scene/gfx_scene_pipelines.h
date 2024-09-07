@@ -97,11 +97,12 @@ struct GfxSceneInstanceUpdatePrepareArgs {
   uint64_t instanceBufferVa;
   uint64_t sceneBufferVa;
   uint64_t groupBufferVa;
+  uint64_t assetFeedbackBufferVa;
   uint32_t frameId;
   uint32_t reserved;
 };
 
-static_assert(sizeof(GfxSceneInstanceUpdatePrepareArgs) == 32);
+static_assert(sizeof(GfxSceneInstanceUpdatePrepareArgs) == 40);
 
 
 /**

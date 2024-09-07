@@ -14,7 +14,11 @@ as_files = files([
   'gfx/gfx_submission.cpp',
   'gfx/gfx_transfer.cpp',
 
+  'gfx/asset/gfx_asset.cpp',
+  'gfx/asset/gfx_asset_archive.cpp',
   'gfx/asset/gfx_asset_descriptor.cpp',
+  'gfx/asset/gfx_asset_manager.cpp',
+  'gfx/asset/gfx_asset_pipelines.cpp',
 
   'gfx/common/gfx_common_hiz.cpp',
   'gfx/common/gfx_common_pipelines.cpp',

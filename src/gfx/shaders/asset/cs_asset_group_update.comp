@@ -6,6 +6,8 @@
 
 #define CS_MAIN csUpdateAssetGroup
 
+#define ASSET_LIST_UPDATE_FLAG_INIT (1u << 31)
+
 #include "../as_include_head.glsl"
 
 #include "as_asset_group.glsl"
@@ -28,7 +30,7 @@ uniform PushData {
   AssetDataBufferIn   srcAssetData;
   uint32_t            dstDwordCount;
   uint32_t            srcDwordCount;
-  uint32_t            lastCommitFrameId;
+  uint32_t            packedHandleFlags;
   uint32_t            frameId;
 } globals;
 
@@ -46,23 +48,24 @@ void csUpdateAssetGroup() {
     srcData = globals.srcAssetData.dquads[dwordIndex / 4u];
 
   // Due to the data layout and alignment, we can safely write
-  // two dwords at once even if the asset list is shorter.
+  // four dwords at once even if the asset list is shorter.
   if (dwordIndex < globals.dstDwordCount) {
     globals.dstAssetList.dwords[dwordIndex + 0u] = srcData.x;
     globals.dstAssetList.dwords[dwordIndex + 1u] = srcData.y;
-  }
-
-  if (dwordIndex + 2u < globals.dstDwordCount) {
     globals.dstAssetList.dwords[dwordIndex + 2u] = srcData.z;
     globals.dstAssetList.dwords[dwordIndex + 3u] = srcData.w;
   }
 
   // Use the very first thread to update the header as necessary
   if (gl_GlobalInvocationID.x == 0u) {
+    uint32_t packedHandleFlags = globals.packedHandleFlags;
+
+    globals.dstAssetList.header.handle = bitfieldExtract(packedHandleFlags, 0, 31);
+    globals.dstAssetList.header.reserved = 0;
     globals.dstAssetList.header.updateFrameId = globals.frameId;
 
-    if (globals.lastCommitFrameId == 0u)
-      globals.dstAssetList.header.lastUseFrameId = 0u;
+    if (asTest(packedHandleFlags, ASSET_LIST_UPDATE_FLAG_INIT))
+      globals.dstAssetList.header.accessFrameId = 0u;
   }
 }
 

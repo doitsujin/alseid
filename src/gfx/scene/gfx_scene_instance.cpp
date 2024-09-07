@@ -453,6 +453,7 @@ void GfxSceneInstanceManager::processPassGroupInstances(
   const GfxScenePipelines&            pipelines,
   const GfxSceneNodeManager&          nodeManager,
   const GfxScenePassGroupBuffer&      groupBuffer,
+  const GfxAssetManager&              assetManager,
         uint32_t                      frameId) {
   context->beginDebugLabel("Process instances", 0xff78f0ff);
   context->beginDebugLabel("Prepare updates", 0xffb4f6ff);
@@ -463,6 +464,7 @@ void GfxSceneInstanceManager::processPassGroupInstances(
   prepArgs.instanceBufferVa = m_gpuResources.getGpuAddress();
   prepArgs.sceneBufferVa = nodeManager.getGpuAddress();
   prepArgs.groupBufferVa = groupBuffer.getGpuAddress();
+  prepArgs.assetFeedbackBufferVa = assetManager.getFeedbackBufferGpuAddress();
   prepArgs.frameId = frameId;
 
   pipelines.prepareInstanceUpdates(context, dispatches.processNew, prepArgs);
