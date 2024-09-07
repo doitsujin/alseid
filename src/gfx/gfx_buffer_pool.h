@@ -23,6 +23,10 @@ struct GfxBufferSlice {
   uint64_t offset = 0;
   /** Size of the buffer slice, in bytes */
   uint64_t size = 0;
+
+  uint64_t getGpuAddress() const {
+    return buffer ? buffer->getGpuAddress() + offset : 0ull;
+  }
 };
 
 
