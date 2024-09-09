@@ -98,6 +98,12 @@ uint64_t GfxTransferManagerIface::getCompletedBatchId() {
 
 void GfxTransferManagerIface::waitForCompletion(
         uint64_t                      batch) {
+  { std::unique_lock lock(m_mutex);
+
+    if (batch >= m_batchId)
+      flushLocked();
+  }
+
   return m_semaphore->wait(batch);
 }
 
