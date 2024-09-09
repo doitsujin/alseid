@@ -79,6 +79,12 @@ public:
     return T(m_raw & -m_raw);
   }
 
+  void set(Flags f, bool cond) {
+    m_raw = cond
+      ? m_raw |  f.m_raw
+      : m_raw & ~f.m_raw;
+  }
+
   bool operator == (Flags f) const { return m_raw == f.m_raw; }
   bool operator != (Flags f) const { return m_raw != f.m_raw; }
 
