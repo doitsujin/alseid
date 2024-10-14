@@ -574,7 +574,7 @@ void csPerformPass(
 
     // We might still produce outputs as large as 31x31 pixels here,
     // so we still need to iterate over multiple blocks.
-    u32vec3 blocks = csComputeBlockTopology(mipArea.readSize >> 1u);
+    u32vec3 blocks = csComputeBlockTopology(dstMipArea.readSize);
 
     uint32_t mipsProcessed = 0u;
 
