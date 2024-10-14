@@ -72,7 +72,7 @@ const uint MsFlags = 0u;
 
 
 // Convenience macro to test flags.
-#define asTest(a, b) ((a & b) != 0u)
+#define asTest(a, b) (((a) & b) != 0u)
 
 
 // Decodes three 10-bit signed normalized integers.
