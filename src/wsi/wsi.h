@@ -22,6 +22,8 @@ enum class WsiBackend : uint32_t {
   eDefault      = 0,
   /** SDL 2 back-end */
   eSdl2         = 1,
+  /** SDL 3 back-end */
+  eSdl3         = 2,
 };
 
 

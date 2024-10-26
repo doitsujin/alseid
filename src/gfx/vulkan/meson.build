@@ -33,6 +33,8 @@ as_vk_shaders = files([
 
 as_files += glsl_generator.process(as_vk_shaders)
 
-if get_option('enable-sdl2')
+if get_option('enable-sdl3')
+  as_files += files(['wsi/gfx_vulkan_wsi_sdl3.cpp'])
+elif get_option('enable-sdl2')
   as_files += files(['wsi/gfx_vulkan_wsi_sdl2.cpp'])
 endif

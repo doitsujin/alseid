@@ -51,7 +51,15 @@ as_defines = []
 
 as_dependencies = [ spirv_cross_core_dep ]
 
-if get_option('enable-sdl2')
+if get_option('enable-sdl3')
+  dep_sdl3 = dependency('sdl3',
+    required : true)
+
+  as_defines += [ 'ALSEID_WSI_SDL3' ]
+  as_dependencies += [ dep_sdl3 ]
+
+  subdir('wsi/sdl3')
+elif get_option('enable-sdl2')
   dep_sdl2 = dependency('sdl2',
     required : true)
 

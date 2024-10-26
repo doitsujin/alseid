@@ -265,7 +265,7 @@ struct WsiKeyEvent {
 struct WsiTextEvent {
   /** Text being edited or committed. This memory is
    *  allocated internally and must not be freed. */
-  char* text;
+  const char* text;
   /** Start of editing section */
   int32_t editCursor;
   /** Length of editing section */
