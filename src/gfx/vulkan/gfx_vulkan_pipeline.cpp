@@ -1,5 +1,7 @@
 #include <spirv_cross.hpp>
 
+#include <utility>
+
 #include "../../util/util_assert.h"
 #include "../../util/util_bitstream.h"
 #include "../../util/util_log.h"
@@ -973,14 +975,19 @@ GfxVulkanGraphicsPipelineVariant GfxVulkanGraphicsPipeline::createLibraryLocked(
   VkPipelineViewportStateCreateInfo vpState = { VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
 
   // Set up rasterization state. Most of this is dynamic.
+  VkPipelineRasterizationConservativeStateCreateInfoEXT rsConservative = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_CONSERVATIVE_STATE_CREATE_INFO_EXT };
+  rsConservative.extraPrimitiveOverestimationSize = 0.0f;
+
   VkPipelineRasterizationStateCreateInfo rsState = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
   rsState.depthClampEnable = VK_FALSE;
   rsState.rasterizerDiscardEnable = VK_FALSE;
   rsState.polygonMode = VK_POLYGON_MODE_FILL;
   rsState.lineWidth = 1.0f;
 
-  if (extensions.extConservativeRasterization && features.extExtendedDynamicState3.extendedDynamicState3ConservativeRasterizationMode)
+  if (extensions.extConservativeRasterization && features.extExtendedDynamicState3.extendedDynamicState3ConservativeRasterizationMode) {
+    rsConservative.pNext = std::exchange(rsState.pNext, &rsConservative);
     dyStates.push_back(VK_DYNAMIC_STATE_CONSERVATIVE_RASTERIZATION_MODE_EXT);
+  }
 
   // Set up tessellation state. This is dynamic for tessellation
   // pipeline libraries if the device supports it.
