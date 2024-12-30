@@ -293,7 +293,9 @@ BuildResult TextureBuildJob::runIoJob() {
   TextureImageDesc textureDesc = texture.getDesc();
 
   // Set up basic texture metadata
-  m_metadata.type = GfxImageType::e2D;
+  m_metadata.type = m_desc.enableLayers
+    ? GfxImageViewType::e2DArray
+    : GfxImageViewType::e2D;
   m_metadata.format = pickFormat(texture);
   m_metadata.extent = Extent3D(textureDesc.w, textureDesc.h, 1);
   m_metadata.mips = m_desc.enableMips
@@ -302,8 +304,11 @@ BuildResult TextureBuildJob::runIoJob() {
   m_metadata.mipTailStart = m_metadata.mips;
   m_metadata.layers = m_inputs.size();
 
-  if (m_desc.enableCube)
-    m_metadata.flags |= GfxTextureFlag::eCubeMap;
+  if (m_desc.enableCube) {
+    m_metadata.type = m_desc.enableLayers
+      ? GfxImageViewType::eCubeArray
+      : GfxImageViewType::eCube;
+  }
 
   // Determine format based on image properties and contents
   m_formatInfo = Gfx::getFormatInfo(m_metadata.format);

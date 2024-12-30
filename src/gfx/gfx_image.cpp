@@ -70,13 +70,12 @@ bool GfxTextureDesc::serialize(
           && writer.write(uint16_t(format));
 
   // Write required size components only
-  for (uint32_t i = 0; i < gfxGetImageDimensions(type); i++)
+  for (uint32_t i = 0; i < gfxGetImageViewDimensions(type); i++)
     success &= writer.write(uint16_t(extent[i]));
 
   success &= writer.write(uint8_t(mips))
           && writer.write(uint8_t(mipTailStart))
-          && writer.write(uint16_t(layers))
-          && writer.write(uint32_t(flags));
+          && writer.write(uint16_t(layers));
 
   return success;
 }
@@ -96,7 +95,7 @@ bool GfxTextureDesc::deserialize(
 
   extent = Extent3D(1, 1, 1);
 
-  for (uint32_t i = 0; i < gfxGetImageDimensions(type); i++) {
+  for (uint32_t i = 0; i < gfxGetImageViewDimensions(type); i++) {
     uint32_t raw;
 
     if (!reader.readAs<uint16_t>(raw))
@@ -107,8 +106,7 @@ bool GfxTextureDesc::deserialize(
 
   if (!reader.readAs<uint8_t>(mips)
    || !reader.readAs<uint8_t>(mipTailStart)
-   || !reader.readAs<uint16_t>(layers)
-   || !reader.readAs<uint32_t>(flags))
+   || !reader.readAs<uint16_t>(layers))
     return false;
 
   return true;
@@ -118,13 +116,13 @@ bool GfxTextureDesc::deserialize(
 void GfxTextureDesc::fillImageDesc(
         GfxImageDesc&                 desc,
         uint32_t                      mip) {
-  desc.type = type;
+  desc.type = gfxGetImageTypeForViewType(type);
   desc.format = format;
   desc.extent = gfxComputeMipExtent(extent, mip);
   desc.mips = mips - mip;
   desc.layers = layers;
 
-  if (flags & GfxTextureFlag::eCubeMap)
+  if (type == GfxImageViewType::eCube || type == GfxImageViewType::eCubeArray)
     desc.flags |= GfxImageFlag::eCubeViews;
 }
 

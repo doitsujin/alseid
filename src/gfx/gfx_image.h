@@ -174,6 +174,20 @@ enum class GfxImageType : uint32_t {
 
 
 /**
+ * \brief Gets image type from view type
+ */
+inline GfxImageType gfxGetImageTypeForViewType(GfxImageViewType type) {
+  if (type == GfxImageViewType::e1D || type == GfxImageViewType::e1DArray)
+    return GfxImageType::e1D;
+
+  if (type == GfxImageViewType::e3D)
+    return GfxImageType::e3D;
+
+  return GfxImageType::e2D;
+}
+
+
+/**
  * \brief Computes image dimension from type
  *
  * \param [in] type Image type
@@ -181,6 +195,17 @@ enum class GfxImageType : uint32_t {
  */
 inline uint32_t gfxGetImageDimensions(GfxImageType type) {
   return uint32_t(type) + 1;
+}
+
+
+/**
+ * \brief Computes image dimension from view type
+ *
+ * \param [in] type Image view type
+ * \returns Number of dimensions, not accounting for array layers
+ */
+inline uint32_t gfxGetImageViewDimensions(GfxImageViewType type) {
+  return gfxGetImageDimensions(gfxGetImageTypeForViewType(type));
 }
 
 
@@ -375,17 +400,6 @@ using GfxImage = IfaceRef<GfxImageIface>;
 
 
 /**
- * \brief Texture flags
- */
-enum class GfxTextureFlag : uint32_t {
-  eCubeMap      = (1u << 0),
-  eFlagEnum     = 0
-};
-
-using GfxTextureFlags = Flags<GfxTextureFlag>;
-
-
-/**
  * \brief Texture info
  *
  * Stores the type, format and size of a texture, as well
@@ -394,7 +408,7 @@ using GfxTextureFlags = Flags<GfxTextureFlag>;
  */
 struct GfxTextureDesc {
   /** Image dimensionality. */
-  GfxImageType type = GfxImageType::e2D;
+  GfxImageViewType type = GfxImageViewType::e2D;
   /** Image data format. */
   GfxFormat format = GfxFormat::eUnknown;
   /** Image dimensions, in texels */
@@ -406,9 +420,6 @@ struct GfxTextureDesc {
   /** First mip level in the mip tail. Will have the
    *  value of \c mips if there is no mip tail. */
   uint32_t mipTailStart = 0;
-  /** Texture flags. These may roughly correspond
-   *  to certain image flags or properties. */
-  GfxTextureFlags flags = 0;
 
   /**
    * \brief Serializes texture info to a stream
