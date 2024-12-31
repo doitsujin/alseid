@@ -258,9 +258,9 @@ void GfxAssetManager::processFeedback(
 GfxAssetDescriptorPool* GfxAssetManager::getDescriptorPool(
         GfxAssetType                  type) {
   switch (type) {
-    case as::GfxAssetType::eSampler:
+    case GfxAssetType::eSampler:
       return &m_samplerPool;
-    case as::GfxAssetType::eTexture:
+    case GfxAssetType::eTexture:
       return &m_texturePool;
     default:
       return nullptr;
