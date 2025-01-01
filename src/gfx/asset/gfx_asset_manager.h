@@ -237,6 +237,17 @@ public:
           GfxAssetGroup                 group);
 
   /**
+   * \brief Retrieves asset within an asset group
+   *
+   * \param [in] group Asset group
+   * \param [in] index Asset index
+   * \return Asset and dword index into the buffer
+   */
+  GfxAssetGroupEntry getAssetInGroup(
+          GfxAssetGroup                 group,
+          uint32_t                      index);
+
+  /**
    * \brief Uploads dirty asset group buffers
    *
    * Ensures that all descriptor indices are valid and can

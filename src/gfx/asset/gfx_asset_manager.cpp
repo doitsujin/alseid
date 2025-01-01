@@ -126,6 +126,21 @@ void GfxAssetManager::evictAssetGroup(
 }
 
 
+GfxAssetGroupEntry GfxAssetManager::getAssetInGroup(
+        GfxAssetGroup                 group,
+        uint32_t                      index) {
+  if (unlikely(!group))
+    return GfxAssetGroupEntry();
+
+  auto& groupInfo = m_groups.map[uint32_t(group)];
+
+  if (unlikely(index >= groupInfo.assets.size()))
+    return GfxAssetGroupEntry();
+
+  return groupInfo.assets[index];
+}
+
+
 void GfxAssetManager::commitUpdates(
   const GfxContext&                   context,
         uint32_t                      currFrameId,
