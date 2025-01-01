@@ -5,6 +5,7 @@
 #include "../../src/gfx/gfx_transfer.h"
 
 #include "../../src/gfx/asset/gfx_asset_archive.h"
+#include "../../src/gfx/asset/gfx_asset_static.h"
 
 #include "../../src/gfx/common/gfx_common_hiz.h"
 #include "../../src/gfx/common/gfx_common_pipelines.h"
@@ -65,9 +66,18 @@ public:
     m_sceneDrawBufferPrimary = std::make_unique<GfxSceneDrawBuffer>(m_device);
     m_sceneDrawBufferSecondary = std::make_unique<GfxSceneDrawBuffer>(m_device);
 
+    GfxSamplerDesc samplerDesc = { };
+
     m_geometryAsset = m_assetManager->createAsset<GfxAssetGeometryFromArchive>(
       "Geometry", m_transfer, m_archive, m_archive->findFile("CesiumMan"));
-    m_assetGroup = m_assetManager->createAssetGroup("Asset group", GfxAssetGroupType::eAppManaged, 1, &m_geometryAsset);
+    m_textureAsset = m_assetManager->createAsset<GfxAssetTextureFromArchive>(
+      "Texture", m_transfer, m_archive, m_archive->findFile("Texture"));
+    m_samplerAsset = m_assetManager->createAsset<GfxAssetSamplerStatic>(
+      "Sampler", m_device->createSampler(samplerDesc));
+
+    std::array<GfxAsset, 3> assets = { m_geometryAsset, m_textureAsset, m_samplerAsset };
+
+    m_assetGroup = m_assetManager->createAssetGroup("Asset group", GfxAssetGroupType::eAppManaged, assets.size(), assets.data());
     m_assetManager->streamAssetGroup(m_assetGroup);
 
     GfxSceneMaterialManagerDesc materialManagerDesc = { };
@@ -231,6 +241,8 @@ public:
       context->setViewport(GfxViewport(Offset2D(0, 0),
         Extent2D(m_colorImage->getDesc().extent)));
 
+      m_assetManager->bindDescriptorArrays(context, 0, 1);
+
       context->setRenderState(m_renderState);
 
       m_sceneMaterialManager->dispatchDraws(context,
@@ -287,6 +299,8 @@ public:
       context->beginRendering(renderInfo, 0);
       context->setViewport(GfxViewport(Offset2D(0, 0),
         Extent2D(m_colorImage->getDesc().extent)));
+
+      m_assetManager->bindDescriptorArrays(context, 0, 1);
 
       context->setRenderState(m_renderState);
 
@@ -422,6 +436,8 @@ private:
 
   GfxAssetGroup                               m_assetGroup;
   GfxAsset                                    m_geometryAsset;
+  GfxAsset                                    m_textureAsset;
+  GfxAsset                                    m_samplerAsset;
 
   uint32_t              m_sceneInstanceNode   = 0u;
   GfxSceneNodeRef       m_sceneInstanceRef    = { };
@@ -517,6 +533,8 @@ private:
     GfxSceneNodeRef rootRef = m_sceneNodeManager->createBvhNode(bvhDesc);
     m_sceneNodeManager->updateNodeReference(rootNode, rootRef);
 
+    std::array<uint16_t, 2> resourceIndices = { 1u, 2u };
+
     std::vector<GfxSceneInstanceDrawDesc> draws;
 
     for (uint32_t i = 0; i < geometry->meshes.size(); i++) {
@@ -527,13 +545,21 @@ private:
         uint32_t(geometry->meshes[i].info.instanceCount));
       draw.maxMeshletCount = geometry->meshes[i].info.maxMeshletCount;
       draw.meshInstanceIndex = 0u;
+      draw.resourceCount = resourceIndices.size();
+      draw.resourceIndices = resourceIndices.data();
     }
 
     uint32_t instanceNode = m_sceneNodeManager->createNode();
 
-    GfxSceneInstanceResourceDesc instanceGeometryDesc = { };
-    instanceGeometryDesc.name = "Geometry";
-    instanceGeometryDesc.type = GfxSceneInstanceResourceType::eBufferAddress;
+    std::array<GfxSceneInstanceResourceDesc, 3> instanceResourceDesc = { };
+    instanceResourceDesc[0].name = "Geometry";
+    instanceResourceDesc[0].type = GfxSceneInstanceResourceType::eBufferAddress;
+
+    instanceResourceDesc[1].name = "Texture";
+    instanceResourceDesc[1].type = GfxSceneInstanceResourceType::eDescriptorIndex;
+
+    instanceResourceDesc[2].name = "Sampler";
+    instanceResourceDesc[2].type = GfxSceneInstanceResourceType::eDescriptorIndex;
 
     GfxSceneInstanceDesc instanceDesc = { };
     instanceDesc.flags = GfxSceneInstanceFlag::eDeform;
@@ -542,9 +568,9 @@ private:
     instanceDesc.jointCount = geometry->info.jointCount;
     instanceDesc.weightCount = geometry->info.morphTargetCount;
     instanceDesc.nodeIndex = instanceNode;
-    instanceDesc.resourceCount = 1;
+    instanceDesc.resourceCount = instanceResourceDesc.size();
+    instanceDesc.resources = instanceResourceDesc.data();
     instanceDesc.geometryResource = 0;
-    instanceDesc.resources = &instanceGeometryDesc;
     instanceDesc.aabb = geometry->info.aabb;
 
     if (!geometry->animations.empty()) {
@@ -560,6 +586,10 @@ private:
     m_sceneInstanceManager->updateAssetList(instanceRef, m_assetManager->getAssetGroupGpuAddress(m_assetGroup));
     m_sceneInstanceManager->updateResource(instanceRef, 0,
       GfxSceneInstanceResource::fromAssetIndex(0));
+    m_sceneInstanceManager->updateResource(instanceRef, 1,
+      GfxSceneInstanceResource::fromAssetIndex(2));
+    m_sceneInstanceManager->updateResource(instanceRef, 2,
+      GfxSceneInstanceResource::fromAssetIndex(3));
 
     m_sceneMaterialManager->addInstanceDraws(*m_sceneInstanceManager, instanceRef);
 

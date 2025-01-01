@@ -27,6 +27,10 @@ demo_04_meshlet_glb = files(
   'resources/CesiumMan.gltf'
 )
 
+demo_04_meshlet_jpg = files(
+  'resources/Texture.jpg'
+)
+
 demo_04_meshlet_geometry_layout = '{"name":"default","attributes":['
 demo_04_meshlet_geometry_layout+= '{"name":"POSITION","format":"rgba16f","stream":"vertex","morph":true},'
 demo_04_meshlet_geometry_layout+= '{"name":"NORMAL","format":"rgb10a2sn","stream":"shading","morph":true},'
@@ -43,9 +47,14 @@ demo_04_meshlet_geometry_asa = custom_target('demo_04_meshlet_geometry',
   command     : [ asarc, '-o', '@OUTPUT@', '-g-layout',
     demo_04_meshlet_geometry_layout, '-g', '@INPUT@' ])
 
+demo_04_meshlet_texture_asa = custom_target('demo_04_meshlet_texture',
+  output      : 'demo_04_meshlet_texture.asa',
+  input       : demo_04_meshlet_jpg,
+  command     : [ asarc, '-o', '@OUTPUT@', '-t', '@INPUT@' ])
+
 custom_target('demo_04_meshlet_resources',
   output      : 'demo_04_meshlet_resources.asa',
-  input       : [ demo_04_meshlet_shaders_asa, demo_04_meshlet_geometry_asa ],
+  input       : [ demo_04_meshlet_shaders_asa, demo_04_meshlet_geometry_asa, demo_04_meshlet_texture_asa ],
   command     : [ asarc, '-o', '@OUTPUT@', '-a', '@INPUT@' ],
   install     : true,
   install_dir : 'demos/resources')

@@ -8,6 +8,8 @@
 
 #include "as_include_head.glsl"
 
+#include "scene/instance/as_instance.glsl"
+
 // Use existing template for mesh/vertex shader
 #define MS_MAIN msMain
 
@@ -16,20 +18,23 @@
 #define FS_MAIN fsMain
 
 struct MsUniformOut {
-  uint meshlet;
+  uvec2 instanceVa;
+  uint drawIndex;
 };
 
 
 // Data structures shared between FS and VS/MS
 #define FS_INPUT                                  \
   FS_INPUT_VAR((location = 0), vec3, normal)      \
-  FS_INPUT_VAR((location = 1), vec3, currFramePos)\
-  FS_INPUT_VAR((location = 2), vec3, prevFramePos)
+  FS_INPUT_VAR((location = 1), vec2, texcoord)    \
+  FS_INPUT_VAR((location = 2), vec3, currFramePos)\
+  FS_INPUT_VAR((location = 3), vec3, prevFramePos)
 
 FS_DECLARE_INPUT(FS_INPUT);
 
-#define FS_UNIFORM                                \
-  FS_INPUT_VAR((location = 3), uint, meshlet)
+#define FS_UNIFORM                                               \
+  FS_INPUT_VAR((location = 4, component = 0), uvec2, instanceVa) \
+  FS_INPUT_VAR((location = 4, component = 2), uint, drawIndex)
 
 FS_DECLARE_UNIFORM(FS_UNIFORM);
 
@@ -53,14 +58,36 @@ uniform Globals {
 
 layout(location = 0) out vec4 fsColor;
 
+layout(buffer_reference, scalar)
+readonly buffer ResourceArgs {
+  uint32_t textureIndex;
+  uint32_t samplerIndex;
+};
+
+layout(set = 0, binding = 0)
+uniform sampler g_samplers[];
+
+layout(set = 1, binding = 0)
+uniform texture2D g_textures[];
+
 void fsMain(in FsInput fsInput, in FsUniform fsUniform) {
   float factor = 0.5f + 0.5f * dot(normalize(fsInput.normal), vec3(0.0f, 1.0f, 0.0f));
+
+  vec3 texColor = vec3(0.0f);
+
+  SUBGROUP_SCALARIZE(fsUniform.instanceVa + uvec2(fsUniform.drawIndex, 0u)) {
+    uint64_t instanceVa = packUint2x32(subgroupBroadcastFirst(fsUniform.instanceVa));
+    InstanceDraw draw = instanceLoadDraw(instanceVa, subgroupBroadcastFirst(fsUniform.drawIndex));
+
+    ResourceArgs resources = ResourceArgs(instanceVa + draw.resourceParameterOffset);
+    texColor = texture(sampler2D(g_textures[resources.textureIndex], g_samplers[resources.samplerIndex]), fsInput.texcoord).xyz;
+  }
 
   vec2 currPos = fsInput.currFramePos.xy / fsInput.currFramePos.z;
   vec2 prevPos = fsInput.prevFramePos.xy / fsInput.prevFramePos.z;
 
-  vec2 motion = 0.5f + 0.5f * (50.0f * (currPos - prevPos));
-  vec3 color = vec3(motion, 1.0f - dot(motion, motion));
+  vec2 motion = 0.25f + 0.25f * (50.0f * (currPos - prevPos));
+  vec3 color = vec3(motion, 1.0f - dot(motion, motion)) + texColor;
 
   fsColor = vec4(color * factor, 1.0f);
 }
@@ -203,6 +230,7 @@ FsInput msComputeFsInput(
   FsInput result;
   result.normal = normalize(quatApply(args.vertexData.jointRotation,
     unpackSnorm3x10(args.shadingData.normal)));
+  result.texcoord = unpackUnorm2x16(args.shadingData.texcoord);
 #ifndef MS_NO_MOTION_VECTORS
   result.prevFramePos = args.vertexData.oldPosition;
 #else
@@ -216,7 +244,8 @@ FsInput msComputeFsInput(
 MsUniformOut msComputeUniformOut(
   in    MsContext                     context) {
   MsUniformOut result;
-  result.meshlet = uint32_t(context.invocation.meshletVa) >> 4;
+  result.instanceVa = unpackUint2x32(context.invocation.instanceNode.propertyBuffer);
+  result.drawIndex = context.invocation.drawIndex;
   return result;
 }
 
