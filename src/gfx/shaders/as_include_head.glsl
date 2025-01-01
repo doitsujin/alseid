@@ -4,6 +4,7 @@
 // Common extensions
 #extension GL_EXT_buffer_reference2 : enable
 #extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_null_initializer : enable
 #extension GL_EXT_samplerless_texture_functions : enable
 #extension GL_EXT_scalar_block_layout : enable
