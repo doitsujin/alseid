@@ -960,17 +960,19 @@ bool msCullPrimitive(
   // still in uniform control flow.
   f32vec2 position = f32vec2(vertexData.position.xy) / vertexData.position.w;
   f32vec2 a, b, c;
-  u32vec3 clip;
+  u32vec3 clip = u32vec3(0u);
 
   if (IsFullSubgroup && gl_SubgroupSize == MESHLET_GROUP_SIZE) {
     a = subgroupShuffle(position, indices.x);
     b = subgroupShuffle(position, indices.y);
     c = subgroupShuffle(position, indices.z);
 
+#if MS_CLIP_PLANES > 0
     clip = u32vec3(
       subgroupShuffle(clipMask, indices.x),
       subgroupShuffle(clipMask, indices.y),
       subgroupShuffle(clipMask, indices.z));
+#endif
   } else {
     uint32_t base = MESHLET_GROUP_SIZE * localGroup;
 
@@ -983,10 +985,12 @@ bool msCullPrimitive(
     b = msCullPositionsShared[base + indices.y];
     c = msCullPositionsShared[base + indices.z];
 
+#if MS_CLIP_PLANES > 0
     clip = u32vec3(
       msClipMasksShared[base + indices.x],
       msClipMasksShared[base + indices.y],
       msClipMasksShared[base + indices.z]);
+#endif
   }
 
   // Bound-check the primitive index now, we don't want to
