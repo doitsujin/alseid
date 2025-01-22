@@ -94,7 +94,7 @@ bool WsiSdl3Window::setWindowed() {
 
 bool WsiSdl3Window::setBorderless(
   const WsiDisplay&                   display) {
-  if (SDL_SetWindowFullscreen(m_window, 0))
+  if (!SDL_SetWindowFullscreen(m_window, 0))
     return false;
 
   // Move window to the given display
@@ -102,7 +102,7 @@ bool WsiSdl3Window::setBorderless(
     auto& dpy = static_cast<WsiSdl3Display&>(*display);
     SDL_Rect area = { };
 
-    if (SDL_GetDisplayBounds(dpy.getId(), &area))
+    if (!SDL_GetDisplayBounds(dpy.getId(), &area))
       return false;
 
     SDL_SetWindowPosition(m_window, area.x, area.y);
@@ -116,14 +116,14 @@ bool WsiSdl3Window::setBorderless(
 bool WsiSdl3Window::setFullscreen(
   const WsiDisplay&                   display,
   const WsiDisplayMode&               displayMode) {
-  if (SDL_SetWindowFullscreen(m_window, 0))
+  if (!SDL_SetWindowFullscreen(m_window, 0))
     return false;
 
   // Move window to the given display
   auto& dpy = static_cast<WsiSdl3Display&>(*display);
   SDL_Rect area = { };
 
-  if (SDL_GetDisplayBounds(dpy.getId(), &area))
+  if (!SDL_GetDisplayBounds(dpy.getId(), &area))
     return false;
 
   SDL_SetWindowPosition(m_window, area.x, area.y);
