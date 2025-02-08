@@ -134,8 +134,10 @@ void ArchiveStreams::addFile(
   m_subFileMetadata.resize(subFileIndex + fileMetadata.subFileCount);
   m_subFileData.resize(subFileIndex + fileMetadata.subFileCount);
 
-  file.getSubFileMetadata(m_subFileDataOffset, fileMetadata.subFileCount,
-    &m_subFileMetadata[subFileIndex], &m_subFileData[subFileIndex]);
+  if (fileMetadata.subFileCount) {
+    file.getSubFileMetadata(m_subFileDataOffset, fileMetadata.subFileCount,
+      &m_subFileMetadata[subFileIndex], &m_subFileData[subFileIndex]);
+  }
 }
 
 
