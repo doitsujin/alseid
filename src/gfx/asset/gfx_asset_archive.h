@@ -18,7 +18,6 @@ public:
 
   GfxAssetGeometryFromArchive(
           GfxTransferManager            transferManager,
-          std::shared_ptr<IoArchive>    archive,
     const IoArchiveFile*                file);
 
   ~GfxAssetGeometryFromArchive();
@@ -77,8 +76,6 @@ public:
 private:
 
   GfxTransferManager          m_transferManager;
-
-  std::shared_ptr<IoArchive>  m_archive;
   const IoArchiveFile*        m_archiveFile;
 
   GfxAssetStatus              m_status = GfxAssetStatus::eNonResident;
@@ -100,7 +97,6 @@ public:
 
   GfxAssetTextureFromArchive(
           GfxTransferManager            transferManager,
-          std::shared_ptr<IoArchive>    archive,
     const IoArchiveFile*                file);
 
   ~GfxAssetTextureFromArchive();
@@ -163,8 +159,6 @@ public:
 private:
 
   GfxTransferManager          m_transferManager;
-
-  std::shared_ptr<IoArchive>  m_archive;
   const IoArchiveFile*        m_archiveFile;
 
   GfxAssetStatus              m_status = GfxAssetStatus::eNonResident;

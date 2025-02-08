@@ -6,10 +6,8 @@ namespace as {
 
 GfxAssetGeometryFromArchive::GfxAssetGeometryFromArchive(
         GfxTransferManager            transferManager,
-        std::shared_ptr<IoArchive>    archive,
   const IoArchiveFile*                file)
 : m_transferManager (std::move(transferManager))
-, m_archive         (std::move(archive))
 , m_archiveFile     (file) {
   if (!m_geometry.deserialize(file->getInlineData()))
     throw Error("Failed to deserialize geometry data");
@@ -88,10 +86,8 @@ const GfxGeometry* GfxAssetGeometryFromArchive::getGeometry() const {
 
 GfxAssetTextureFromArchive::GfxAssetTextureFromArchive(
         GfxTransferManager            transferManager,
-        std::shared_ptr<IoArchive>    archive,
   const IoArchiveFile*                file)
 : m_transferManager (std::move(transferManager))
-, m_archive         (std::move(archive))
 , m_archiveFile     (file) {
   if (!m_desc.deserialize(file->getInlineData()))
     throw Error("Failed to deserialize texture metadata");
