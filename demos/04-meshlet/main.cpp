@@ -40,15 +40,18 @@ public:
               GfxInstanceFlag::eApiValidation |
               GfxInstanceFlag::eDebugValidation |
               GfxInstanceFlag::eDebugMarkers)
+  , m_archives(m_io)
   , m_jobs  (std::thread::hardware_concurrency()) {
     m_window = createWindow();
     m_device = createDevice();
     m_presenter = createPresenter();
     // m_presenter->setPresentMode(GfxPresentMode::eImmediate);
-    m_archive = loadArchive();
 
-    IoRequest request = loadResources();
-    request->wait();
+    m_archives.addHandler("SHDR"_4cc, [this] (IoRequest rq, const IoArchiveFile* file) {
+      loadShader(rq, file);
+    });
+
+    m_archives.loadArchive(loadArchive())->wait();
 
     // Initialize transfer manager
     m_transfer = GfxTransferManager(m_io, m_device, 16ull << 20);
@@ -70,9 +73,9 @@ public:
     GfxSamplerDesc samplerDesc = { };
 
     m_geometryAsset = m_assetManager->createAsset<GfxAssetGeometryFromArchive>(
-      "Geometry", m_transfer, m_archive, m_archive->findFile("CesiumMan"));
+      "Geometry", m_transfer, m_archives.findFile("CesiumMan"));
     m_textureAsset = m_assetManager->createAsset<GfxAssetTextureFromArchive>(
-      "Texture", m_transfer, m_archive, m_archive->findFile("Texture"));
+      "Texture", m_transfer, m_archives.findFile("Texture"));
     m_samplerAsset = m_assetManager->createAsset<GfxAssetSamplerStatic>(
       "Sampler", m_device->createSampler(samplerDesc));
 
@@ -441,7 +444,7 @@ private:
   std::vector<GfxContext>                     m_contexts;
   GfxSemaphore                                m_semaphore;
 
-  std::shared_ptr<IoArchive>                  m_archive;
+  IoArchiveCollection                         m_archives;
 
   std::mutex                                  m_shaderMutex;
   std::unordered_map<std::string, GfxShader>  m_shaders;
@@ -678,7 +681,7 @@ private:
   }
 
 
-  std::shared_ptr<IoArchive> loadArchive() {
+  IoFile loadArchive() {
     std::filesystem::path archivePath = "resources/demo_04_meshlet_resources.asa";
 
     IoFile file = m_io->open(archivePath, IoOpenMode::eRead);
@@ -688,7 +691,7 @@ private:
       return nullptr;
     }
 
-    return std::make_shared<IoArchive>(file);
+    return file;
   }
 
 
@@ -702,55 +705,42 @@ private:
   }
 
 
-  IoRequest loadResources() {
+  void loadShader(IoRequest request, const IoArchiveFile* file) {
     GfxShaderFormatInfo format = m_device->getShaderInfo();
 
-    IoRequest request = m_io->createRequest();
+    const IoArchiveSubFile* subFile = file->findSubFile(format.identifier);
 
-    for (uint32_t i = 0; i < m_archive->getFileCount(); i++) {
-      const IoArchiveFile* file = m_archive->getFile(i);
+    if (!subFile)
+      return;
 
-      if (file->getType() != FourCC('S', 'H', 'D', 'R'))
-        continue;
+    file->getArchive().streamCompressed(request, subFile, [this,
+      cFile       = file,
+      cFormat     = format.format,
+      cSubFile    = subFile
+    ] (const void* compressedData, size_t compressedSize) {
+      GfxShaderDesc shaderDesc;
+      shaderDesc.debugName = cFile->getName();
 
-      const IoArchiveSubFile* subFile = file->findSubFile(format.identifier);
+      if (!shaderDesc.deserialize(cFile->getInlineData()))
+        return IoStatus::eError;
 
-      if (!subFile)
-        continue;
+      GfxShaderBinaryDesc binaryDesc;
+      binaryDesc.format = cFormat;
+      binaryDesc.data.resize(cSubFile->getSize());
 
-      m_archive->streamCompressed(request, subFile, [this,
-        cFile       = file,
-        cFormat     = format.format,
-        cSubFile    = subFile
-      ] (const void* compressedData, size_t compressedSize) {
-        GfxShaderDesc shaderDesc;
-        shaderDesc.debugName = cFile->getName();
+      if (!cFile->getArchive().decompress(cSubFile, binaryDesc.data.data(), compressedData))
+        return IoStatus::eError;
 
-        if (!shaderDesc.deserialize(cFile->getInlineData()))
-          return IoStatus::eError;
+      // Callbacks can be executed from worker threads, so we
+      // need to lock before modifying global data structures
+      std::lock_guard lock(m_shaderMutex);
 
-        GfxShaderBinaryDesc binaryDesc;
-        binaryDesc.format = cFormat;
-        binaryDesc.data.resize(cSubFile->getSize());
+      m_shaders.emplace(std::piecewise_construct,
+        std::forward_as_tuple(cFile->getName()),
+        std::forward_as_tuple(std::move(shaderDesc), std::move(binaryDesc)));
 
-        if (!m_archive->decompress(cSubFile, binaryDesc.data.data(), compressedData))
-          return IoStatus::eError;
-
-        // Callbacks can be executed from worker threads, so we
-        // need to lock before modifying global data structures
-        std::lock_guard lock(m_shaderMutex);
-
-        m_shaders.emplace(std::piecewise_construct,
-          std::forward_as_tuple(cFile->getName()),
-          std::forward_as_tuple(std::move(shaderDesc), std::move(binaryDesc)));
-
-        Log::info("Loaded ", cFile->getName());
-        return IoStatus::eSuccess;
-      });
-    }
-
-    m_io->submit(request);
-    return request;
+      return IoStatus::eSuccess;
+    });
   }
 
 
