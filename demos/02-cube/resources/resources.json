@@ -1,0 +1,18 @@
+{
+	"texture_layouts" : [
+		{
+			"name"        : "default",
+			"format"      : "auto",
+			"compression" : true,
+			"mips"        : true,
+			"bc7"         : true
+		}
+	],
+	"textures" : [
+		{
+			"name"   : "texture",
+			"input"  : [ "texture.png" ],
+			"layout" : "default"
+		}
+	]
+}

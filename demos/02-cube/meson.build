@@ -7,7 +7,7 @@ demo_02_cube_shaders = files(
 demo_02_cube_spv = spv_shader_generator.process(demo_02_cube_shaders)
 
 demo_02_cube_textures = files(
-  'resources/texture.png'
+  'resources/resources.json'
 )
 
 demo_02_cube_shaders_asa = custom_target('demo_02_cube_shaders',
@@ -18,7 +18,7 @@ demo_02_cube_shaders_asa = custom_target('demo_02_cube_shaders',
 demo_02_cube_textures_asa = custom_target('demo_02_cube_textures',
   output      : 'demo_02_cube_textures.asa',
   input       : demo_02_cube_textures,
-  command     : [ asarc, '-o', '@OUTPUT@', '-t-allow-bc7', 'on', '-t', '@INPUT@' ])
+  command     : [ asarc, '-o', '@OUTPUT@', '-I', '@CURRENT_SOURCE_DIR@/resources', '-j', '@INPUT@' ])
 
 custom_target('demo_02_cube_resources',
   output      : 'demo_02_cube_resources.asa',

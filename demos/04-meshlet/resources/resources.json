@@ -1,0 +1,59 @@
+{
+	"texture_layouts" : [
+		{
+			"name"        : "default",
+			"format"      : "auto",
+			"compression" : true,
+			"mips"        : true
+		}
+	],
+	"textures" : [
+		{
+			"name"   : "Texture",
+			"input"  : [ "Texture.jpg" ],
+			"layout" : "default"
+		}
+	],
+	"samplers" : [
+		{
+			"name"  : "Sampler",
+			"min"   : "linear",
+			"mag"   : "linear",
+			"mip"   : "linear",
+			"aniso" : 16,
+			"addrx" : "wrap",
+			"addry" : "wrap",
+			"addrz" : "wrap"
+		}
+	],
+	"geometry_layouts" : [
+		{
+			"name" : "default",
+			"attributes" : [
+				{
+					"name"   : "POSITION",
+					"format" : "rgba16f",
+					"stream" : "vertex",
+					"morph"  : true
+				},
+				{
+					"name"   : "NORMAL",
+					"format" : "rgb10a2sn",
+					"stream" : "shading",
+					"morph"  : true
+				},
+				{
+					"name"   : "TEXCOORD_0",
+					"format" : "rg16un",
+					"stream" : "shading"
+				}
+			]
+		}
+	],
+	"geometries" : [
+		{
+			"name"   : "CesiumMan",
+			"input"  : "CesiumMan.gltf"
+		}
+	]
+}
