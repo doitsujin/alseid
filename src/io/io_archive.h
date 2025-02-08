@@ -2,6 +2,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <shared_mutex>
 #include <vector>
 
 #include "../job/job.h"
@@ -548,6 +549,70 @@ private:
           IoArchiveCompression          compression);
 
   bool parseMetadata();
+
+};
+
+
+/**
+ * \brief Callback invoked when an archive file gets loaded
+ */
+using IoArchiveFileHandler = std::function<void (IoRequest, const IoArchiveFile*)>;
+
+
+/**
+ * \brief Archive collection
+ *
+ * Allows archives to remain persistently loaded and creates a look-up table
+ * of uniquely named files that can then be accessed without having to know
+ * the source archive.
+ */
+class IoArchiveCollection {
+
+public:
+
+  IoArchiveCollection(Io io);
+
+  ~IoArchiveCollection();
+
+  /**
+   * \brief Adds file handler for given file type
+   *
+   * The given callback will be invoked any time a file of the given
+   * type gets loaded.
+   * \param [in] type FourCC file type to handle
+   * \param [in] handler Handler callback
+   */
+  void addHandler(FourCC type, IoArchiveFileHandler&& handler);
+
+  /**
+   * \brief Adds an archive to the collection
+   *
+   * Reads the archive and invokes the file handler for all
+   * files for whose type a handler has been registered.
+   * \param [in] file Archive file
+   * \returns I/O request
+   */
+  IoRequest loadArchive(IoFile file);
+
+  /**
+   * \brief Looks up file by name
+   *
+   * The parent archive can be queried through the
+   * returned file itself as necessary.
+   * \param [in] name Unique file name
+   * \returns Pointer to file, if any
+   */
+  const IoArchiveFile* findFile(const char* name);
+
+private:
+
+  Io m_io;
+
+  std::shared_mutex m_mutex;
+
+  std::vector<std::shared_ptr<IoArchive>> m_archives;
+  std::unordered_map<std::string, const IoArchiveFile*> m_files;
+  std::unordered_map<FourCC, IoArchiveFileHandler, HashMemberProc> m_handlers;
 
 };
 

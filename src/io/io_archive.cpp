@@ -238,4 +238,76 @@ bool IoArchive::parseMetadata() {
   return true;
 }
 
+
+
+
+IoArchiveCollection::IoArchiveCollection(Io io)
+: m_io(std::move(io)) {
+
+}
+
+
+IoArchiveCollection::~IoArchiveCollection() {
+
+}
+
+
+void IoArchiveCollection::addHandler(FourCC type, IoArchiveFileHandler&& handler) {
+  std::unique_lock lock(m_mutex);
+  m_handlers.insert_or_assign(type, std::move(handler));
+}
+
+
+IoRequest IoArchiveCollection::loadArchive(IoFile file) {
+  auto archive = std::make_shared<IoArchive>(std::move(file));
+
+  if (!(*archive))
+    return nullptr;
+
+  std::vector<const IoArchiveFile*> files;
+  files.reserve(archive->getFileCount());
+
+  { std::unique_lock lock(m_mutex);
+    m_archives.push_back(archive);
+
+    for (uint32_t i = 0; i < archive->getFileCount(); i++) {
+      auto file = archive->getFile(i);
+      auto result = m_files.insert(std::make_pair(std::string(file->getName()), file));
+
+      if (result.second)
+        files.push_back(file);
+      else
+        Log::warn("Archive: File name not unique: ", file->getName());
+    }
+  }
+
+  IoRequest request = m_io->createRequest();
+
+  { std::shared_lock lock(m_mutex);
+
+    for (auto f : files) {
+      auto handler = m_handlers.find(f->getType());
+
+      if (handler != m_handlers.end())
+        handler->second(request, f);
+    }
+  }
+
+  if (!m_io->submit(request))
+    return nullptr;
+
+  return request;
+}
+
+
+const IoArchiveFile* IoArchiveCollection::findFile(const char* name) {
+  std::shared_lock lock(m_mutex);
+  auto entry = m_files.find(name);
+
+  if (entry == m_files.end())
+    return nullptr;
+
+  return entry->second;
+}
+
 }
