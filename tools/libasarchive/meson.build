@@ -1,5 +1,6 @@
 lib_asarchive_files = files(
   'archive.cpp',
+  'basic.cpp',
   'geometry.cpp',
   'merge.cpp',
   'texture.cpp',
