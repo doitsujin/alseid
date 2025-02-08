@@ -10,52 +10,19 @@
 #include "../libasarchive/shader.h"
 #include "../libasarchive/texture.h"
 
-using namespace as;
-using namespace as::archive;
-using nlohmann::json;
+#include "common.h"
+#include "geometry.h"
+#include "texture.h"
 
 Environment g_env;
+
+std::filesystem::path g_basedir;
 
 
 struct TextureArgs {
   TextureDesc desc;
   std::vector<std::string> inputs;
 };
-
-void from_json(const json& j, TextureArgs& args) {
-  std::string format;
-
-  if (j.count("name"))
-    j.at("name").get_to(args.desc.name);
-
-  if (j.count("format"))
-    j.at("format").get_to(format);
-
-  if (j.count("mips"))
-    j.at("mips").get_to(args.desc.enableMips);
-
-  if (j.count("cube"))
-    j.at("cube").get_to(args.desc.enableCube);
-
-  if (j.count("array"))
-    j.at("array").get_to(args.desc.enableLayers);
-
-  if (j.count("allowCompression"))
-    j.at("allowCompression").get_to(args.desc.allowCompression);
-
-  if (j.count("allowBc7"))
-    j.at("allowBc7").get_to(args.desc.allowBc7);
-
-  if (j.count("inputs"))
-    j.at("inputs").get_to(args.inputs);
-
-  if (args.desc.name.empty() && !args.inputs.empty())
-    args.desc.name = std::filesystem::path(args.inputs.at(0)).stem();
-
-  args.desc.enableLayers |= args.desc.enableCube;
-  args.desc.format = textureFormatFromString(format);
-}
-
 
 struct ShaderArgs {
   ShaderDesc desc;
@@ -65,20 +32,6 @@ struct ShaderArgs {
 void from_json(const json& j, ShaderArgs& args) {
   if (j.count("inputs"))
     j.at("inputs").get_to(args.inputs);
-}
-
-
-struct ArchiveArgs {
-  std::vector<TextureArgs> textures;
-  std::vector<ShaderArgs> shaders;
-};
-
-void from_json(const json& j, ArchiveArgs& args) {
-  if (j.count("textures"))
-    j.at("textures").get_to(args.textures);
-
-  if (j.count("shaders"))
-    j.at("shaders").get_to(args.shaders);
 }
 
 
@@ -226,30 +179,10 @@ bool buildJson(ConsoleArgs& args, ArchiveBuilder& builder) {
 
   for (const auto& path : paths) {
     std::ifstream file(path);
-    ArchiveArgs args = json::parse(file);
 
-    for (const auto& tex : args.textures) {
-      if (tex.desc.enableLayers) {
-        std::vector<std::filesystem::path> inputPaths;
-
-        for (const auto& input : tex.inputs)
-          inputPaths.push_back(input);
-
-        buildTexture(builder, tex.desc, inputPaths);
-      } else {
-        std::vector<std::filesystem::path> singlePath(1);
-
-        for (const auto& input : tex.inputs) {
-          singlePath[0] = input;
-          buildTexture(builder, tex.desc, singlePath);
-        }
-      }
-    }
-
-    for (const auto& shader : args.shaders) {
-      for (const auto& input : shader.inputs)
-        buildShader(builder, shader.desc, input);
-    }
+    auto j = json::parse(file);
+    processTextures(builder, j);
+    processGeometries(builder, j);
   }
 
   return true;
@@ -280,6 +213,9 @@ int executeBuild(ConsoleArgs& args) {
 
     if (arg == "-j") {
       status = buildJson(args, builder);
+    } else if (arg == "-I") {
+      arg = args.next();
+      g_basedir = arg;
     } else if (arg == "-a") {
       status = buildMerges(args, builder);
     } else if (arg == "-s") {

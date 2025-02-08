@@ -15,6 +15,7 @@ namespace as::archive {
  * \brief Geometry description
  */
 struct GeometryDesc {
+  std::string name;
   std::shared_ptr<GltfPackedVertexLayoutMap> layoutMap;
 };
 

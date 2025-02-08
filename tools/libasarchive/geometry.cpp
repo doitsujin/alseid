@@ -59,7 +59,7 @@ std::pair<BuildResult, ArchiveFile> GeometryBuildJob::getFileInfo() {
 
   std::pair<BuildResult, ArchiveFile> result;
   result.first = status;
-  result.second = ArchiveFile(FourCC('G', 'E', 'O', 'M'), m_input.stem());
+  result.second = ArchiveFile(FourCC('G', 'E', 'O', 'M'), m_desc.name);
   result.second.setInlineData(std::move(metadata));
 
   for (size_t i = 0; i < m_buffers.size(); i++) {
