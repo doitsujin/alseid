@@ -84,7 +84,23 @@ struct FourCC {
       result[i] = c[i];
     return result;
   }
+
+  size_t hash() const {
+    return uint32_t(uint8_t(c[0])) << 0u
+         | uint32_t(uint8_t(c[1])) << 8u
+         | uint32_t(uint8_t(c[2])) << 16u
+         | uint32_t(uint8_t(c[3])) << 24u;
+  }
 };
+
+inline FourCC operator ""_4cc(const char* cc, size_t n) {
+  FourCC result = { };
+
+  for (uint32_t i = 0; i < 4 && i < n; i++)
+    result.c[i] = cc[i];
+
+  return result;
+}
 
 
 /**
