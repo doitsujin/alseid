@@ -54,7 +54,8 @@ public:
     m_transfer = GfxTransferManager(m_io, m_device, 16ull << 20);
 
     // Create state objects
-    m_renderState = createRenderState();
+    m_renderStateDepth = createRenderState(GfxScenePassType::eMainDepth);
+    m_renderStateColor = createRenderState(GfxScenePassType::eMainOpaque);
 
     // Initialize scene objects
     m_assetManager = std::make_unique<GfxAssetManager>(m_device);
@@ -215,24 +216,17 @@ public:
         *m_scenePassGroup, m_frameId, 0x1, 0);
 
       // Perform initial render pass with objects visible in the previous frame.
-      const GfxSceneDrawBuffer* drawBuffer = m_sceneDrawBufferPrimary.get();
+      std::array<const GfxSceneDrawBuffer*, 2> drawBuffers = { m_sceneDrawBufferPrimary.get(), nullptr };
 
       initRenderTargets(context);
 
       GfxImageViewDesc viewDesc;
       viewDesc.type = GfxImageViewType::e2D;
-      viewDesc.format = m_colorImage->getDesc().format;
-      viewDesc.subresource = m_colorImage->getAvailableSubresources();
+      viewDesc.format = m_depthImage->getDesc().format;
+      viewDesc.subresource = m_depthImage->getAvailableSubresources();
       viewDesc.usage = GfxUsage::eRenderTarget;
 
       GfxRenderingInfo renderInfo;
-      renderInfo.color[0].op = GfxRenderTargetOp::eClear;
-      renderInfo.color[0].view = m_colorImage->createView(viewDesc);
-      renderInfo.color[0].clearValue = GfxColorValue(1.0f, 1.0f, 1.0f, 1.0f);
-
-      viewDesc.format = m_depthImage->getDesc().format;
-      viewDesc.subresource = m_depthImage->getAvailableSubresources();
-
       renderInfo.depthStencil.depthOp = GfxRenderTargetOp::eClear;
       renderInfo.depthStencil.view = m_depthImage->createView(viewDesc);
       renderInfo.depthStencil.clearValue = GfxDepthStencilValue(0.0f, 0);
@@ -243,11 +237,11 @@ public:
 
       m_assetManager->bindDescriptorArrays(context, 0, 1);
 
-      context->setRenderState(m_renderState);
+      context->setRenderState(m_renderStateDepth);
 
       m_sceneMaterialManager->dispatchDraws(context,
         *m_scenePassManager, *m_sceneInstanceManager, *m_sceneNodeManager,
-        *m_scenePassGroup, 1, &drawBuffer, GfxScenePassType::eMainOpaque,
+        *m_scenePassGroup, 1, &drawBuffers[0], GfxScenePassType::eMainDepth,
         m_frameId);
 
       context->endRendering();
@@ -293,7 +287,6 @@ public:
       context->imageBarrier(m_depthImage, m_depthImage->getAvailableSubresources(),
         GfxUsage::eShaderResource, GfxShaderStage::eCompute, GfxUsage::eRenderTarget, 0, 0);
 
-      renderInfo.color[0].op = GfxRenderTargetOp::eLoad;
       renderInfo.depthStencil.depthOp = GfxRenderTargetOp::eLoad;
 
       context->beginRendering(renderInfo, 0);
@@ -302,13 +295,43 @@ public:
 
       m_assetManager->bindDescriptorArrays(context, 0, 1);
 
-      context->setRenderState(m_renderState);
+      context->setRenderState(m_renderStateDepth);
 
-      drawBuffer = m_sceneDrawBufferSecondary.get();
+      drawBuffers[1] = m_sceneDrawBufferSecondary.get();
 
       m_sceneMaterialManager->dispatchDraws(context,
         *m_scenePassManager, *m_sceneInstanceManager, *m_sceneNodeManager,
-        *m_scenePassGroup, 1, &drawBuffer, GfxScenePassType::eMainOpaque,
+        *m_scenePassGroup, 1, &drawBuffers[1], GfxScenePassType::eMainDepth,
+        m_frameId);
+
+      context->endRendering();
+
+      // Make depth writes available and perform actual color pass
+      context->imageBarrier(m_depthImage, m_depthImage->getAvailableSubresources(),
+        GfxUsage::eRenderTarget, 0, GfxUsage::eRenderTarget, 0, 0);
+
+      viewDesc.type = GfxImageViewType::e2D;
+      viewDesc.format = m_colorImage->getDesc().format;
+      viewDesc.subresource = m_colorImage->getAvailableSubresources();
+      viewDesc.usage = GfxUsage::eRenderTarget;
+
+      renderInfo.color[0].op = GfxRenderTargetOp::eClear;
+      renderInfo.color[0].view = m_colorImage->createView(viewDesc);
+      renderInfo.color[0].clearValue = GfxColorValue(1.0f, 1.0f, 1.0f, 1.0f);
+
+      context->beginRendering(renderInfo, 0);
+      context->setViewport(GfxViewport(Offset2D(0, 0),
+        Extent2D(m_colorImage->getDesc().extent)));
+
+      m_assetManager->bindDescriptorArrays(context, 0, 1);
+
+      context->setRenderState(m_renderStateColor);
+
+      drawBuffers[1] = m_sceneDrawBufferSecondary.get();
+
+      m_sceneMaterialManager->dispatchDraws(context,
+        *m_scenePassManager, *m_sceneInstanceManager, *m_sceneNodeManager,
+        *m_scenePassGroup, drawBuffers.size(), drawBuffers.data(), GfxScenePassType::eMainOpaque,
         m_frameId);
 
       context->endRendering();
@@ -385,7 +408,8 @@ private:
 
   GfxComputePipeline    m_presentPipeline;
 
-  GfxRenderState        m_renderState;
+  GfxRenderState        m_renderStateDepth;
+  GfxRenderState        m_renderStateColor;
 
   GfxImage              m_colorImage;
   GfxImage              m_depthImage;
@@ -507,16 +531,20 @@ private:
 
     GfxDeviceFeatures features = m_device->getFeatures();
 
-    GfxSceneMaterialShaders materialShaders;
-    materialShaders.passTypes = GfxScenePassType::eMainOpaque;
-    materialShaders.task = findShader("ts_render");
-    materialShaders.mesh = findShader("ms_material");
-    materialShaders.fragment = findShader("fs_material");
+    std::array<GfxSceneMaterialShaders, 2> materialShaders;
+    materialShaders[0].passTypes = GfxScenePassType::eMainDepth;
+    materialShaders[0].task = findShader("ts_render");
+    materialShaders[0].mesh = findShader("ms_material");
+
+    materialShaders[1].passTypes = GfxScenePassType::eMainOpaque;
+    materialShaders[1].task = findShader("ts_render");
+    materialShaders[1].mesh = findShader("ms_material");
+    materialShaders[1].fragment = findShader("fs_material");
 
     GfxSceneMaterialDesc materialDesc;
     materialDesc.debugName = "Shader pipeline";
-    materialDesc.shaderCount = 1u;
-    materialDesc.shaders = &materialShaders;
+    materialDesc.shaderCount = materialShaders.size();
+    materialDesc.shaders = materialShaders.data();
 
     if (!(features.shaderStages & GfxShaderStage::eTask)) {
       Log::err("Mesh and task shaders not supported, skipping rendering.");
@@ -607,14 +635,20 @@ private:
   }
 
 
-  GfxRenderState createRenderState() {
+  GfxRenderState createRenderState(GfxScenePassType passType) {
     GfxRenderStateDesc desc;
     desc.flags = GfxRenderStateFlag::eAll;
     desc.cullMode = GfxCullMode::eBack;
     desc.frontFace = GfxFrontFace::eCcw;
     desc.conservativeRaster = false;
-    desc.depthTest.enableDepthWrite = true;
-    desc.depthTest.depthCompareOp = GfxCompareOp::eGreater;
+
+    if (passType == GfxScenePassType::eMainDepth) {
+      desc.depthTest.enableDepthWrite = true;
+      desc.depthTest.depthCompareOp = GfxCompareOp::eGreater;
+    } else {
+      desc.depthTest.enableDepthWrite = false;
+      desc.depthTest.depthCompareOp = GfxCompareOp::eEqual;
+    }
 
     return m_device->createRenderState(desc);
   }
