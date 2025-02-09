@@ -16,14 +16,12 @@
 	],
 	"samplers" : [
 		{
-			"name"  : "Sampler",
-			"min"   : "linear",
-			"mag"   : "linear",
-			"mip"   : "linear",
-			"aniso" : 16,
-			"addrx" : "wrap",
-			"addry" : "wrap",
-			"addrz" : "wrap"
+			"name"            : "Sampler",
+			"type"            : "default",
+			"minFilter"       : "linear",
+			"magFilter"       : "linear",
+			"mipFilter"       : "linear",
+			"allowAnisotropy" : true
 		}
 	],
 	"geometry_layouts" : [

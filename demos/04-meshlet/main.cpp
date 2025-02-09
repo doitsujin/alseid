@@ -70,14 +70,12 @@ public:
     m_sceneDrawBufferPrimary = std::make_unique<GfxSceneDrawBuffer>(m_device);
     m_sceneDrawBufferSecondary = std::make_unique<GfxSceneDrawBuffer>(m_device);
 
-    GfxSamplerDesc samplerDesc = { };
-
     m_geometryAsset = m_assetManager->createAsset<GfxAssetGeometryFromArchive>(
       "Geometry", m_transfer, m_archives.findFile("CesiumMan"));
     m_textureAsset = m_assetManager->createAsset<GfxAssetTextureFromArchive>(
       "Texture", m_transfer, m_archives.findFile("Texture"));
-    m_samplerAsset = m_assetManager->createAsset<GfxAssetSamplerStatic>(
-      "Sampler", m_device->createSampler(samplerDesc));
+    m_samplerAsset = m_assetManager->createAsset<GfxAssetSamplerFromArchive>(
+      "Sampler", m_archives.findFile("Sampler"));
 
     std::array<GfxAsset, 3> assets = { m_geometryAsset, m_textureAsset, m_samplerAsset };
 
