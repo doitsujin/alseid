@@ -2,6 +2,7 @@
 
 #include "gfx_asset.h"
 #include "gfx_asset_manager.h"
+#include "gfx_asset_sampler.h"
 
 #include "../gfx_transfer.h"
 
@@ -172,6 +173,75 @@ private:
   const IoArchiveSubFile* getSubFile(
           uint32_t                      layer,
           uint32_t                      mip) const;
+
+};
+
+
+/**
+ * \brief Archive-backed sampler asset
+ */
+class GfxAssetSamplerFromArchive : public GfxAssetIface {
+
+public:
+
+  GfxAssetSamplerFromArchive(
+    const IoArchiveFile*                file);
+
+  ~GfxAssetSamplerFromArchive();
+
+  /**
+   * \brief Queries current asset properties
+   * \returns Asset properties
+   */
+  GfxAssetProperties getAssetInfo() const override;
+
+  /**
+   * \brief Begins stream request for the asset
+   *
+   * Creates the GPU image and streams the selected mip levels.
+   * \param [in] assetManager Asset manager
+   * \param [in] frameId Current frame ID on the timeline
+   * \returns \c true if the asset can be made resident immediately.
+   */
+  bool requestStream(
+          GfxAssetManagerIface          assetManager,
+          uint32_t                      frameId) override;
+
+  /**
+   * \brief Begins eviction request for the asset
+   *
+   * \param [in] assetManager Asset manager
+   * \param [in] frameId Current frame ID on the timeline
+   */
+  void requestEviction(
+          GfxAssetManagerIface          assetManager,
+          uint32_t                      frameId) override;
+
+  /**
+   * \brief Marks the asset as resident
+   *
+   * \param [in] assetManager Asset manager
+   * \param [in] frameId Current frame ID on the timeline
+   */
+  void makeResident(
+          GfxAssetManagerIface          assetManager) override;
+
+  /**
+   * \brief Evicts asset
+   * \param [in] assetManager Asset manager
+   */
+  void evict(
+          GfxAssetManagerIface          assetManager) override;
+
+private:
+
+  const IoArchiveFile*        m_archiveFile;
+
+  GfxAssetStatus              m_status = GfxAssetStatus::eNonResident;
+  uint32_t                    m_descriptor = 0u;
+
+  GfxAssetSamplerDesc         m_desc;
+  GfxSampler                  m_sampler;
 
 };
 

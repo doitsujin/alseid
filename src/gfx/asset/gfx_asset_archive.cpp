@@ -221,4 +221,70 @@ const IoArchiveSubFile* GfxAssetTextureFromArchive::getSubFile(
   return m_archiveFile->findSubFile(identifier);
 }
 
+
+
+
+GfxAssetSamplerFromArchive::GfxAssetSamplerFromArchive(
+    const IoArchiveFile*                file)
+: m_archiveFile(file) {
+  if (!m_desc.deserialize(file->getInlineData()))
+    throw Error("Failed to deserialize sampler properties");
+}
+
+
+GfxAssetSamplerFromArchive::~GfxAssetSamplerFromArchive() {
+
+}
+
+
+GfxAssetProperties GfxAssetSamplerFromArchive::getAssetInfo() const {
+  GfxAssetProperties result = { };
+  result.type = GfxAssetType::eSampler;
+  result.status = m_status;
+  result.descriptorIndex = m_descriptor;
+  return result;
+}
+
+
+bool GfxAssetSamplerFromArchive::requestStream(
+        GfxAssetManagerIface          assetManager,
+        uint32_t                      frameId) {
+  m_status = GfxAssetStatus::eStreamRequest;
+  return true;
+}
+
+
+void GfxAssetSamplerFromArchive::requestEviction(
+        GfxAssetManagerIface          assetManager,
+        uint32_t                      frameId) {
+  m_status = GfxAssetStatus::eEvictRequest;
+}
+
+
+void GfxAssetSamplerFromArchive::makeResident(
+        GfxAssetManagerIface          assetManager) {
+  GfxSamplerDesc samplerDesc = { };
+  samplerDesc.debugName = m_archiveFile->getName();
+  samplerDesc.anisotropy = 16u;
+
+  m_desc.fillSamplerDesc(samplerDesc);
+
+  m_sampler = assetManager.getDevice()->createSampler(samplerDesc);
+
+  m_descriptor = assetManager.createDescriptor(GfxAssetType::eSampler, m_sampler->getDescriptor());
+  m_status = GfxAssetStatus::eResident;
+}
+
+
+void GfxAssetSamplerFromArchive::evict(
+        GfxAssetManagerIface          assetManager) {
+  m_status = GfxAssetStatus::eNonResident;
+  m_sampler = nullptr;
+
+  if (m_descriptor) {
+    assetManager.freeDescriptor(GfxAssetType::eSampler, m_descriptor);
+    m_descriptor = 0u;
+  }
+}
+
 }
