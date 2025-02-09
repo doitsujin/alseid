@@ -544,15 +544,13 @@ private:
 
     GfxSceneMaterialDesc materialDesc;
     materialDesc.debugName = "Shader pipeline";
-    materialDesc.shaderCount = materialShaders.size();
-    materialDesc.shaders = materialShaders.data();
 
-    if (!(features.shaderStages & GfxShaderStage::eTask)) {
+    if (!(features.shaderStages & GfxShaderStage::eTask))
       Log::err("Mesh and task shaders not supported, skipping rendering.");
-      materialDesc.shaderCount = 0u;
-    }
 
     uint32_t material = m_sceneMaterialManager->createMaterial(materialDesc);
+    m_sceneMaterialManager->updateMaterialShaders(material,
+      materialShaders.size(), materialShaders.data());
 
     uint32_t rootNode = m_sceneNodeManager->createNode();
 

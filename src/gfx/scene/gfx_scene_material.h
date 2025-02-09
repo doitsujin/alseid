@@ -70,31 +70,13 @@ using GfxSceneMaterialFlags = Flags<GfxSceneMaterialFlag>;
 /**
  * \brief Material description
  *
- * Defines shaders and assets to use for the material.
+ * Defines basic material properties.
  */
 struct GfxSceneMaterialDesc {
   /** Material name, mostly used for debug purposes. */
   const char* debugName = nullptr;
   /** Material flags. */
   GfxSceneMaterialFlags flags = 0u;
-  /** Number of shader pipelines for the material. */
-  uint32_t shaderCount = 0u;
-  /** Shader pipelines for each supported pass type. */
-  const GfxSceneMaterialShaders* shaders = nullptr;
-};
-
-
-/**
- * \brief Material pipeline
- *
- * Stores a pipeline object as well as a render
- * state object to use with that pipeline.
- */
-struct GfxSceneMaterialPipeline {
-  /** Graphics pipeline object. */
-  GfxGraphicsPipeline pipeline;
-  /** Render state object. */
-  GfxRenderState renderState;
 };
 
 
@@ -105,7 +87,7 @@ struct GfxSceneMaterialPipeline {
  * pipelines and statically assigned assets for the material.
  */
 class GfxSceneMaterial {
-
+  static constexpr size_t PipelineCount = 8u;
 public:
 
   GfxSceneMaterial(
@@ -113,6 +95,16 @@ public:
     const GfxSceneMaterialDesc&         desc);
 
   ~GfxSceneMaterial();
+
+  /**
+   * \brief Sets pipeline shaders
+   *
+   * \param [in] pipelineCount Number of shader pipelines
+   * \param [in] pipelines Pipelines
+   */
+  void setShaders(
+          uint32_t                      pipelineCount,
+    const GfxSceneMaterialShaders*      pipelines);
 
   /**
    * \brief Binds pipelines and assets to a context for rendering
@@ -171,14 +163,20 @@ public:
 
 private:
 
-  std::array<GfxSceneMaterialPipeline, 8> m_pipelines;
-  std::atomic<uint32_t>                   m_drawCount = { 0u };
-  std::atomic<uint32_t>                   m_meshletCount = { 0u };
-  uint32_t                                m_workgroupSize = 0u;
-  std::string                             m_name;
+  GfxDevice             m_device;
+  GfxRenderState        m_renderState;
 
-  static GfxRenderState createRenderState(
-    const GfxDevice&                    device,
+  std::string           m_name;
+
+  std::array<GfxGraphicsPipeline, PipelineCount> m_pipelines;
+
+  uint32_t              m_workgroupSize = 0u;
+  std::atomic<uint32_t> m_passMask      = { 0u };
+
+  std::atomic<uint32_t> m_drawCount     = { 0u };
+  std::atomic<uint32_t> m_meshletCount  = { 0u };
+
+  GfxRenderState createRenderState(
     const GfxSceneMaterialDesc&         desc);
 
 };
@@ -223,6 +221,18 @@ public:
    */
   uint32_t createMaterial(
     const GfxSceneMaterialDesc&         desc);
+
+  /**
+   * \breif Sets material shaders
+   *
+   * \param [in] material Material index
+   * \param [in] shaderCount Number of pipelines
+   * \param [in] shaders Pipeline shaders
+   */
+  void updateMaterialShaders(
+          uint32_t                      material,
+          uint32_t                      shaderCount,
+    const GfxSceneMaterialShaders*      shaders);
 
   /**
    * \brief Adds draws for a given instance

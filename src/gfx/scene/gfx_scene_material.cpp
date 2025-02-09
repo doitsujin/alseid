@@ -6,34 +6,50 @@ namespace as {
 GfxSceneMaterial::GfxSceneMaterial(
   const GfxDevice&                    device,
   const GfxSceneMaterialDesc&         desc)
-: m_name(desc.debugName ? desc.debugName : "Unnamed material") {
-  GfxRenderState renderState = createRenderState(device, desc);
+: m_device(device)
+, m_renderState(createRenderState(desc))
+, m_name(desc.debugName ? desc.debugName : "Unnamed material") {
 
-  for (uint32_t i = 0; i < desc.shaderCount; i++) {
-    GfxMeshPipelineDesc pipelineDesc = { };
-    pipelineDesc.debugName = desc.debugName;
-    pipelineDesc.task = desc.shaders[i].task;
-    pipelineDesc.mesh = desc.shaders[i].mesh;
-    pipelineDesc.fragment = desc.shaders[i].fragment;
-
-    GfxGraphicsPipeline pipeline = device->createGraphicsPipeline(pipelineDesc);
-
-    for (auto passType : desc.shaders[i].passTypes) {
-      uint32_t passIndex = tzcnt(uint32_t(passType));
-      
-      auto& entry = m_pipelines.at(passIndex);
-      entry.pipeline = pipeline;
-      entry.renderState = renderState;
-    }
-
-    // Workgroup sizes must be consistent across pipelines
-    m_workgroupSize = pipeline->getWorkgroupSize().at<0>();
-  }
 }
 
 
 GfxSceneMaterial::~GfxSceneMaterial() {
 
+}
+
+
+void GfxSceneMaterial::setShaders(
+        uint32_t                      shaderCount,
+  const GfxSceneMaterialShaders*      shaders) {
+  uint32_t passMask = m_passMask.load(std::memory_order_acquire);
+
+  for (uint32_t i = 0; i < shaderCount; i++) {
+    GfxMeshPipelineDesc pipelineDesc = { };
+    pipelineDesc.debugName = m_name.c_str();
+    pipelineDesc.task = shaders[i].task;
+    pipelineDesc.mesh = shaders[i].mesh;
+    pipelineDesc.fragment = shaders[i].fragment;
+
+    GfxGraphicsPipeline pipeline;
+
+    for (auto passType : shaders[i].passTypes) {
+      uint32_t passIndex = tzcnt(uint32_t(passType));
+
+      if (passMask & uint32_t(passType))
+        continue;
+
+      if (!pipeline) {
+        pipeline = m_device->createGraphicsPipeline(pipelineDesc);
+        // Workgroup sizes must be consistent across pipelines
+        m_workgroupSize = pipeline->getWorkgroupSize().at<0>();
+      }
+
+      m_pipelines.at(passIndex) = pipeline;
+      passMask |= uint32_t(passType);
+    }
+  }
+
+  m_passMask.store(passMask, std::memory_order_release);
 }
 
 
@@ -43,15 +59,16 @@ bool GfxSceneMaterial::begin(
         uint32_t                      setIndex) const {
   // Look up graphics pipeline and fail if it is null
   uint32_t passIndex = tzcnt(uint32_t(passType));
-  auto& pipeline = m_pipelines.at(passIndex);
+  uint32_t passMask = m_passMask.load(std::memory_order_acquire);
 
-  if (!pipeline.pipeline)
+  if (!(passMask & uint32_t(passType)))
     return false;
 
   // Bind pipeline and render state
+  auto& pipeline = m_pipelines.at(passIndex);
   context->beginDebugLabel(m_name.c_str(), 0xfff6d9a4);
-  context->bindPipeline(pipeline.pipeline);
-  context->setRenderState(pipeline.renderState);
+  context->bindPipeline(pipeline);
+  context->setRenderState(m_renderState);
 
   // TODO bind assets
 
@@ -66,7 +83,6 @@ void GfxSceneMaterial::end(
 
 
 GfxRenderState GfxSceneMaterial::createRenderState(
-  const GfxDevice&                    device,
   const GfxSceneMaterialDesc&         desc) {
   GfxRenderStateDesc renderState = { };
   renderState.flags = GfxRenderStateFlag::eCullMode;
@@ -74,7 +90,7 @@ GfxRenderState GfxSceneMaterial::createRenderState(
     ? GfxCullMode::eNone
     : GfxCullMode::eBack;
 
-  return device->createRenderState(renderState);
+  return m_device->createRenderState(renderState);
 }
 
 
@@ -99,6 +115,15 @@ uint32_t GfxSceneMaterialManager::createMaterial(
 
   m_materials.emplace(index, m_device, desc);
   return index;
+}
+
+
+void GfxSceneMaterialManager::updateMaterialShaders(
+        uint32_t                      material,
+        uint32_t                      shaderCount,
+  const GfxSceneMaterialShaders*      shaders) {
+  auto& mat = m_materials[material];
+  mat.setShaders(shaderCount, shaders);
 }
 
 
