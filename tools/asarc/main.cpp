@@ -12,27 +12,12 @@
 
 #include "common.h"
 #include "geometry.h"
+#include "sampler.h"
 #include "texture.h"
 
 Environment g_env;
 
 std::filesystem::path g_basedir;
-
-
-struct TextureArgs {
-  TextureDesc desc;
-  std::vector<std::string> inputs;
-};
-
-struct ShaderArgs {
-  ShaderDesc desc;
-  std::vector<std::string> inputs;
-};
-
-void from_json(const json& j, ShaderArgs& args) {
-  if (j.count("inputs"))
-    j.at("inputs").get_to(args.inputs);
-}
 
 
 class ConsoleArgs {
@@ -181,6 +166,7 @@ bool buildJson(ConsoleArgs& args, ArchiveBuilder& builder) {
     std::ifstream file(path);
 
     auto j = json::parse(file);
+    processSamplers(builder, j);
     processTextures(builder, j);
     processGeometries(builder, j);
   }

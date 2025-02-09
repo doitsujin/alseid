@@ -1,6 +1,7 @@
 asarc_files = files(
   'main.cpp',
   'geometry.cpp',
+  'sampler.cpp',
   'texture.cpp',
 )
 

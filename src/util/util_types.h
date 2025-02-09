@@ -96,8 +96,8 @@ struct FourCC {
 inline FourCC operator ""_4cc(const char* cc, size_t n) {
   FourCC result = { };
 
-  for (uint32_t i = 0; i < 4 && i < n; i++)
-    result.c[i] = cc[i];
+  for (uint32_t i = 0; i < 4; i++)
+    result.c[i] = i < n ? cc[i] : ' ';
 
   return result;
 }
