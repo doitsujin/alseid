@@ -58,37 +58,7 @@ public:
    * \returns \c true if job has finished executing
    */
   bool isDone() const {
-    return m_done.load(std::memory_order_acquire) == m_itemCount
-        && m_deps.load() == 0u;
-  }
-
-  /**
-   * \brief Gets progress of the job
-   *
-   * The result may be immediately out of date.
-   * \param [out] completed Completed work items
-   * \param [out] total Total number of work items
-   * \returns \c true if the job has finished execution
-   */
-  bool getProgress(
-          uint32_t&                     completed,
-          uint32_t&                     total) const {
-    completed = m_done.load(std::memory_order_acquire);
-    total = m_itemCount;
-    return completed == total;
-  }
-
-  /**
-   * \brief Sets work item count
-   *
-   * This should only be called from another job that is
-   * a dependency of this job. Useful if the number of
-   * work items is not known in advance.
-   * \param [in] count New work item count
-   */
-  void setWorkItemCount(
-          uint32_t                      count) {
-    m_itemCount = count;
+    return m_done.load(std::memory_order_acquire) == m_itemCount;
   }
 
   /**
@@ -112,28 +82,8 @@ public:
    * whether or not dependent jobs can be started.
    * \returns \c true if all work items are done.
    */
-  bool notifyWorkItems(
+  bool completeWorkItems(
           uint32_t                      count);
-
-  /**
-   * \brief Adds dependency
-   *
-   * Called by the job manager when dispatching
-   * the job with a non-zero dependency count.
-   */
-  void addDependency() {
-    m_deps += 1;
-  }
-
-  /**
-   * \brief Notifies dependency
-   *
-   * Decrements dependency count by one.
-   * \returns \c true if no dependencies are left.
-   */
-  bool notifyDependency() {
-    return !(--m_deps);
-  }
 
 private:
 
@@ -143,33 +93,10 @@ private:
   std::atomic<uint32_t> m_next = { 0u };
   std::atomic<uint32_t> m_done = { 0u };
 
-  std::atomic<uint32_t> m_deps = 0u;
-
 };
 
 /** See JobIface. */
 using Job = IfaceRef<JobIface>;
-
-
-/**
- * \brief Dummy job
- *
- * A job object that does not do any work on its own, but
- * may in some situations be useful for resolving dependencies.
- */
-template<typename Fn>
-class NullJob : public JobIface {
-
-public:
-
-  NullJob(Fn&& proc)
-  : JobIface(0, 0) { }
-
-  void execute(uint32_t index, uint32_t count) {
-
-  }
-
-};
 
 
 /**
@@ -346,16 +273,9 @@ public:
    */
   template<typename... Deps>
   Job dispatch(
-          Job                           job,
-          Deps...                       dependencies) {
+          Job                           job) {
     std::lock_guard lock(m_mutex);
-    m_pending += 1;
-
-    if (!registerDependencies(false, job, std::forward<Deps>(dependencies)...)) {
-      enqueueJob(job);
-      m_queueCond.notify_all();
-    }
-
+    enqueueJobLocked(job);
     return job;
   }
 
@@ -387,44 +307,10 @@ public:
 
 private:
 
-  bool registerDependencies(
-          bool                          wait,
-    const Job&                          job) {
-    return wait;
-  }
-
-  template<typename... Args>
-  bool registerDependencies(
-          bool                          wait,
-    const Job&                          job,
-    const Job&                          dep,
-          Args...                       args) {
-    wait |= registerDependency(job, dep);
-    return registerDependencies(wait,
-      job, std::forward<Args>(args)...);
-  }
-
-  template<typename Iter, typename... Args>
-  bool registerDependencies(
-          bool                          wait,
-    const Job&                          job,
-          std::pair<Iter, Iter>         iter,
-          Args...                       args) {
-    for (auto i = iter.first; i != iter.second; i++)
-      wait |= registerDependency(job, *i);
-
-    return registerDependencies(wait,
-      job, std::forward<Args>(args)...);
-  }
-
-  bool registerDependency(
-    const Job&                          job,
-    const Job&                          dep);
-
-  void enqueueJob(
+  void enqueueJobLocked(
           Job                           job);
 
-  void notifyJob(
+  void notifyJobLocked(
     const Job&                          job);
 
   void runWorker(
@@ -433,7 +319,6 @@ private:
   std::mutex                        m_mutex;
   std::condition_variable           m_queueCond;
   std::queue<Job>                   m_queue;
-  std::unordered_multimap<Job, Job, HashMemberProc> m_dependencies;
 
   std::condition_variable           m_pendingCond;
   uint64_t                          m_pending = 0ull;

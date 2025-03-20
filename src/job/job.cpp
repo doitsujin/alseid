@@ -37,7 +37,7 @@ bool JobIface::getWorkItems(
 }
 
 
-bool JobIface::notifyWorkItems(
+bool JobIface::completeWorkItems(
         uint32_t                      count) {
   uint32_t done = m_done.fetch_add(count,
     std::memory_order_acq_rel) + count;
@@ -86,57 +86,17 @@ void JobsIface::waitAll() {
 }
 
 
-bool JobsIface::registerDependency(
-  const Job&                          job,
-  const Job&                          dep) {
-  if (!dep || dep->isDone())
-    return false;
-
-  job->addDependency();
-  m_dependencies.insert({ dep, job  });
-  return true;
-}
-
-
-void JobsIface::enqueueJob(
+void JobsIface::enqueueJobLocked(
         Job                           job) {
-  // If a job has a work item count of zero, do not hand
-  // it off to the worker threads since they cannot handle
-  // empty jobs. Instead, notify dependent jobs immediately.
-  if (!job->isDone())
-    m_queue.push(std::move(job));
-  else
-    notifyJob(job);
+  m_pending += 1;
+
+  m_queue.push(std::move(job));
+  m_queueCond.notify_all();
 }
 
 
-void JobsIface::notifyJob(
+void JobsIface::notifyJobLocked(
   const Job&                          job) {
-  auto range = m_dependencies.equal_range(job);
-  bool notify = false;
-
-  if (range.first != range.second) {
-    // Cache jobs to enqueue in a temporary array so that any
-    // possible recursion does not invalidate our iterators
-    small_vector<Job, 16> jobs;
-
-    for (auto i = range.first; i != range.second; i++) {
-      if (i->second->notifyDependency()) {
-        jobs.push_back(std::move(i->second));
-        notify = true; 
-      }
-    }
-
-    m_dependencies.erase(range.first, range.second);
-
-    // Process dependent jobs now
-    for (size_t i = 0; i < jobs.size(); i++)
-      enqueueJob(std::move(jobs[i]));
-  }
-
-  if (notify)
-    m_queueCond.notify_all();
-
   m_pending -= 1;
   m_pendingCond.notify_all();
 }
@@ -179,14 +139,15 @@ void JobsIface::runWorker(
 
     do {
       job->execute(invocationIndex, invocationCount);
-      done = job->notifyWorkItems(invocationCount);
+      done = job->completeWorkItems(invocationCount);
       job->getWorkItems(invocationIndex, invocationCount);
     } while (invocationCount);
 
     // If the job is done, enqueue jobs that depend on it
     if (done) {
       lock.lock();
-      notifyJob(job);
+
+      notifyJobLocked(job);
     }
   }
 }
