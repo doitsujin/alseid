@@ -367,6 +367,20 @@ public:
     const Job&                          job);
 
   /**
+   * \brief Waits for given set of jobs to finish
+   *
+   * \param [in] begin Begin iterator
+   * \param [in] end End iterator
+   */
+  template<typename Iter>
+  void wait(
+          Iter                          begin,
+          Iter                          end) {
+    while (begin != end)
+      wait(*(begin++));
+  }
+
+  /**
    * \brief Waits for all pending jobs to finish
    */
   void waitAll();
