@@ -24,21 +24,12 @@ public:
 
   ~BasicBuildJob();
 
-  std::pair<BuildResult, BuildProgress> getProgress();
-
-  std::pair<BuildResult, ArchiveFile> getFileInfo();
-
-  void dispatchJobs();
-
-  void abort();
+  std::pair<BuildResult, ArchiveFile> build() override;
 
 private:
 
   Environment           m_env;
   FileDesc              m_desc;
-  Job                   m_job;
-
-  std::atomic<BuildResult> m_result = { BuildResult::eSuccess };
 
 };
 

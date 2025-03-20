@@ -16,80 +16,30 @@ ShaderBuildJob::ShaderBuildJob(
 
 
 ShaderBuildJob::~ShaderBuildJob() {
-  m_env.jobs->wait(m_job);
+
 }
 
 
-std::pair<BuildResult, BuildProgress> ShaderBuildJob::getProgress() {
-  BuildResult status = m_result.load(std::memory_order_acquire);
-
-  BuildProgress prog = { };
-  prog.addJob(m_job);
-
-  if (status == BuildResult::eSuccess && !prog.itemsCompleted)
-    status = BuildResult::eInProgress;
-
-  return std::make_pair(status, prog);
-}
-
-
-std::pair<BuildResult, ArchiveFile> ShaderBuildJob::getFileInfo() {
-  m_env.jobs->wait(m_job);
-
-  BuildResult status = m_result.load(std::memory_order_acquire);
-
-  if (int32_t(status) < 0)
-    return std::make_pair(status, ArchiveFile());
-
+std::pair<BuildResult, ArchiveFile> ShaderBuildJob::build() {
   std::pair<BuildResult, ArchiveFile> result;
   result.first = BuildResult::eSuccess;
-  result.second = ArchiveFile(FourCC('S', 'H', 'D', 'R'), m_input.stem());
-  result.second.setInlineData(std::move(m_shaderDesc));
-  result.second.addSubFile(FourCC('S', 'P', 'I', 'R'),
-    IoArchiveCompression::eDeflate,
-    m_rawSize, std::move(m_shaderData));
 
-  return result;
-}
-
-
-void ShaderBuildJob::dispatchJobs() {
-  m_job = m_env.jobs->create<SimpleJob>([this] {
-    BuildResult expected = m_result.load(std::memory_order_acquire);
-
-    if (expected == BuildResult::eSuccess) {
-      BuildResult result = processShader();
-
-      m_result.compare_exchange_strong(expected,
-        result, std::memory_order_release);
-    }
-  });
-
-  m_env.jobs->dispatch(m_job);
-}
-
-
-void ShaderBuildJob::abort() {
-  BuildResult expected = BuildResult::eSuccess;
-
-  m_result.compare_exchange_strong(expected,
-    BuildResult::eAborted, std::memory_order_release);
-}
-
-
-BuildResult ShaderBuildJob::processShader() {
   RdFileStream inFile(m_env.io->open(m_input, IoOpenMode::eRead));
 
   if (!inFile) {
     Log::err("Failed to open ", m_input);
-    return BuildResult::eIoError;
+
+    result.first = BuildResult::eIoError;
+    return result;
   }
 
   std::vector<char> spv(inFile.getSize());
 
   if (!RdStream(inFile).read(spv)) {
     Log::err("Failed to read ", m_input);
-    return BuildResult::eIoError;
+
+    result.first = BuildResult::eIoError;
+    return result;
   }
 
   // Reflect shader and generate metadata blob
@@ -97,12 +47,18 @@ BuildResult ShaderBuildJob::processShader() {
 
   if (!shaderDesc) {
     Log::err("Failed to reflect SPIR-V binary");
-    return BuildResult::eInvalidInput;
+
+    result.first = BuildResult::eInvalidInput;
+    return result;
   }
 
-  if (!shaderDesc->serialize(Lwrap<WrVectorStream>(m_shaderDesc))) {
+  ArchiveData shaderMetadata;
+
+  if (!shaderDesc->serialize(Lwrap<WrVectorStream>(shaderMetadata))) {
     Log::err("Failed to serialize shader description");
-    return BuildResult::eInvalidInput;
+
+    result.first = BuildResult::eInvalidInput;
+    return result;
   }
 
   // Encode SPIR-V binary
@@ -110,18 +66,28 @@ BuildResult ShaderBuildJob::processShader() {
 
   if (!spirvEncodeBinary(Lwrap<WrVectorStream>(shaderBinaryData), spv)) {
     Log::err("Failed to encode SPIR-V binary");
-    return BuildResult::eInvalidInput;
+
+    result.first = BuildResult::eInvalidInput;
+    return result;
   }
 
   // Compress binary further with deflate
-  if (!deflateEncode(Lwrap<WrVectorStream>(m_shaderData), shaderBinaryData)) {
+  ArchiveData shaderData;
+
+  if (!deflateEncode(Lwrap<WrVectorStream>(shaderData), shaderBinaryData)) {
     Log::err("Failed to compress SPIR-V binary");
-    return BuildResult::eInvalidInput;
+
+    result.first = BuildResult::eInvalidInput;
+    return result;
   }
 
-  m_rawSize = shaderBinaryData.size();
-  return BuildResult::eSuccess;
-}
+  result.second = ArchiveFile(FourCC('S', 'H', 'D', 'R'), m_input.stem());
+  result.second.setInlineData(std::move(shaderMetadata));
+  result.second.addSubFile(FourCC('S', 'P', 'I', 'R'),
+    IoArchiveCompression::eDeflate,
+    shaderBinaryData.size(), std::move(shaderData));
 
+  return result;
+}
 
 }

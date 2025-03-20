@@ -169,164 +169,87 @@ TextureBuildJob::TextureBuildJob(
 
 
 TextureBuildJob::~TextureBuildJob() {
-  abort();
-  synchronizeJobs();
+
 }
 
 
-std::pair<BuildResult, BuildProgress> TextureBuildJob::getProgress() {
-  BuildResult status = m_result.load(std::memory_order_acquire);
-
-  BuildProgress prog = { };
-  prog.addJob(m_ioJob);
-
-  if (m_ioJob->isDone()) {
-    for (auto& job : m_mipmapJobs)
-      prog.addJob(job);
-
-    for (auto& job : m_encodeJobs)
-      prog.addJob(job);
-
-    prog.addJob(m_compressJob);
-  }
-
-  if (status == BuildResult::eSuccess && prog.itemsCompleted < prog.itemsTotal)
-    status = BuildResult::eInProgress;
-
-  return std::make_pair(status, prog);
-}
-
-
-std::pair<BuildResult, ArchiveFile> TextureBuildJob::getFileInfo() {
-  synchronizeJobs();
-
-  // Exit early on error
-  BuildResult status = m_result.load(std::memory_order_acquire);
-
-  if (status != BuildResult::eSuccess)
-    return std::make_pair(status, ArchiveFile());
-
-  // Generate metadata blob for the texture
-  ArchiveData metadataBlob;
-
-  if (!m_metadata.serialize(Lwrap<WrVectorStream>(metadataBlob))) {
-    Log::err("Failed to serialize texture metadata");
-    return std::make_pair(BuildResult::eIoError, ArchiveFile());
-  }
-
-  // Create actual file data
-  std::pair<BuildResult, ArchiveFile> result;
-  result.first = status;
-  result.second = ArchiveFile(FourCC('T', 'E', 'X', ' '), m_desc.name);
-  result.second.setInlineData(std::move(metadataBlob));
-
-  for (uint32_t l = 0; l < m_metadata.layers; l++) {
-    for (uint32_t m = 0; m < std::min(m_metadata.mips, m_metadata.mipTailStart + 1); m++) {
-      uint32_t index = computeDataIndex(m, l);
-
-      FourCC ident = m < m_metadata.mipTailStart
-        ? FourCC(strcat(std::setw(3), std::setfill('0'), std::hex, l, m))
-        : FourCC(strcat(std::setw(3), std::setfill('0'), std::hex, l, 'T'));
-
-      result.second.addSubFile(ident, IoArchiveCompression::eGDeflate,
-        m_rawSizes[index], std::move(m_compressedData[index]));
-    }
-  }
-
-  return result;
-}
-
-
-void TextureBuildJob::dispatchJobs() {
-  m_ioJob = m_env.jobs->create<SimpleJob>([this] {
-    BuildResult expected = m_result.load(std::memory_order_acquire);
-
-    if (expected == BuildResult::eSuccess) {
-      BuildResult result = runIoJob();
-
-      m_result.compare_exchange_strong(expected,
-        result, std::memory_order_release);
-    }
-  });
-
-  m_env.jobs->dispatch(m_ioJob);
-}
-
-
-void TextureBuildJob::abort() {
-  BuildResult expected = BuildResult::eSuccess;
-
-  m_result.compare_exchange_strong(expected,
-    BuildResult::eAborted, std::memory_order_release);
-}
-
-
-BuildResult TextureBuildJob::runIoJob() {
+std::pair<BuildResult, ArchiveFile> TextureBuildJob::build() {
   initBc7Enc();
+
+  std::pair<BuildResult, ArchiveFile> result;
+  result.first = BuildResult::eSuccess;
 
   if (m_inputs.empty()) {
     Log::err("No inputs specified for texture");
-    return BuildResult::eInvalidArgument;
+
+    result.first = BuildResult::eInvalidArgument;
+    return result;
   }
 
   if (m_desc.enableCube && (m_inputs.size() % 6)) {
     Log::err("Cube textures must use a multiple of 6 inputs");
-    return BuildResult::eInvalidArgument;
+
+    result.first = BuildResult::eInvalidArgument;
+    return result;
   }
 
   if (!m_desc.enableLayers && m_inputs.size() > 1) {
     Log::err("Multiple inputs specified for single-layer texture");
-    return BuildResult::eInvalidArgument;
+
+    result.first = BuildResult::eInvalidArgument;
+    return result;
   }
 
   if (m_desc.enableLayers && m_desc.format == GfxFormat::eUnknown) {
     Log::err("Format detection only supported for single-layer images");
-    return BuildResult::eInvalidArgument;
+
+    result.first = BuildResult::eInvalidArgument;
+    return result;
   }
 
   // Load first input file and compute image metadata
   TextureImage texture = loadImage(m_inputs[0]);
 
-  if (!texture)
-    return BuildResult::eInvalidInput;
+  if (!texture) {
+    result.first = BuildResult::eInvalidInput;
+    return result;
+  }
 
   TextureImageDesc textureDesc = texture.getDesc();
 
   // Set up basic texture metadata
-  m_metadata.type = m_desc.enableLayers
+  GfxTextureDesc metadata = { };
+  metadata.type = m_desc.enableLayers
     ? GfxImageViewType::e2DArray
     : GfxImageViewType::e2D;
-  m_metadata.format = pickFormat(texture);
-  m_metadata.extent = Extent3D(textureDesc.w, textureDesc.h, 1);
-  m_metadata.mips = m_desc.enableMips
+  metadata.format = pickFormat(texture);
+  metadata.extent = Extent3D(textureDesc.w, textureDesc.h, 1);
+  metadata.mips = m_desc.enableMips
     ? findmsb(std::max(textureDesc.w, textureDesc.h)) + 1
     : 1;
-  m_metadata.mipTailStart = m_metadata.mips;
-  m_metadata.layers = m_inputs.size();
+  metadata.mipTailStart = metadata.mips;
+  metadata.layers = m_inputs.size();
 
   if (m_desc.enableCube) {
-    m_metadata.type = m_desc.enableLayers
+    metadata.type = m_desc.enableLayers
       ? GfxImageViewType::eCubeArray
       : GfxImageViewType::eCube;
   }
 
   // Determine format based on image properties and contents
-  m_formatInfo = Gfx::getFormatInfo(m_metadata.format);
+  GfxFormatInfo formatInfo = Gfx::getFormatInfo(metadata.format);
 
   // Set up arrays and allocate memory for encoded subresources
-  uint32_t subresourceCount = m_metadata.layers * m_metadata.mips;
+  uint32_t subresourceCount = metadata.layers * metadata.mips;
   m_subresourceImages.resize(subresourceCount);
   m_encodedImages.resize(subresourceCount);
 
-  m_mipmapJobs.resize(subresourceCount);
-  m_encodeJobs.resize(subresourceCount);
-
-  for (uint32_t l = 0; l < m_metadata.layers; l++) {
-    for (uint32_t m = 0; m < m_metadata.mips; m++) {
-      uint32_t index = computeSubresourceIndex(m, l);
+  for (uint32_t l = 0; l < metadata.layers; l++) {
+    for (uint32_t m = 0; m < metadata.mips; m++) {
+      uint32_t index = computeSubresourceIndex(metadata, m, l);
 
       Extent2D mipExtent = gfxComputeMipExtent(Extent2D(textureDesc.w, textureDesc.h), m);
-      Extent2D blockCount = (mipExtent + m_formatInfo.blockExtent - 1) >> m_formatInfo.blockExtentLog2;
+      Extent2D blockCount = (mipExtent + formatInfo.blockExtent - 1) >> formatInfo.blockExtentLog2;
 
       if (m) {
         // Allocate raw mipmap image
@@ -343,11 +266,11 @@ BuildResult TextureBuildJob::runIoJob() {
 
       // Allocate encoded image
       TextureImageDesc encodedDesc = { };
-      encodedDesc.format = m_metadata.format;
+      encodedDesc.format = metadata.format;
       encodedDesc.w = mipExtent.at<0>();
       encodedDesc.h = mipExtent.at<1>();
       encodedDesc.channels = textureDesc.channels;
-      encodedDesc.dataSize = m_formatInfo.planes[0].elementSize * blockCount.at<0>() * blockCount.at<1>();
+      encodedDesc.dataSize = formatInfo.planes[0].elementSize * blockCount.at<0>() * blockCount.at<1>();
 
       void* encodedData = std::calloc(encodedDesc.dataSize, 1);
       m_encodedImages[index] = TextureImage(encodedDesc, encodedData);
@@ -355,17 +278,17 @@ BuildResult TextureBuildJob::runIoJob() {
       // If the mip level is less than 64k in size when encoded,
       // let this be the start of our mip tail. There is no point
       // in subdividing mip levels further when using GDeflate.
-      if (m_metadata.mipTailStart == m_metadata.mips && encodedDesc.dataSize < 0x10000)
-        m_metadata.mipTailStart = m;
+      if (metadata.mipTailStart == metadata.mips && encodedDesc.dataSize < 0x10000)
+        metadata.mipTailStart = m;
     }
   }
 
   // Set up arrays for compression
-  bool hasMipTail = m_metadata.mipTailStart < m_metadata.mips;
+  bool hasMipTail = metadata.mipTailStart < metadata.mips;
 
   uint32_t chunkCount = hasMipTail
-    ? m_metadata.layers * (m_metadata.mipTailStart + 1)
-    : m_metadata.layers * (m_metadata.mips);
+    ? metadata.layers * (metadata.mipTailStart + 1)
+    : metadata.layers * (metadata.mips);
 
   m_compressedData.resize(chunkCount);
   m_rawSizes.resize(chunkCount);
@@ -374,81 +297,109 @@ BuildResult TextureBuildJob::runIoJob() {
   // other input images and verify that their parameters match.
   m_subresourceImages.at(0) = std::move(texture);
 
-  for (uint32_t l = 1; l < m_metadata.layers; l++) {
+  for (uint32_t l = 1; l < metadata.layers; l++) {
     TextureImage current = loadImage(m_inputs[l]);
 
-    if (!current)
-      return BuildResult::eInvalidInput;
+    if (!current) {
+      result.first = BuildResult::eInvalidInput;
+      return result;
+    }
 
     TextureImageDesc currentDesc = current.getDesc();
 
     if (currentDesc.w != textureDesc.w || currentDesc.h != textureDesc.h) {
       Log::err("Mismatched dimensions in image ", m_inputs[l]);
-      return BuildResult::eInvalidInput;
+
+      result.first = BuildResult::eInvalidInput;
+      return result;
     }
 
-    m_subresourceImages.at(computeSubresourceIndex(0, l)) = std::move(current);
+    m_subresourceImages.at(computeSubresourceIndex(metadata, 0, l)) = std::move(current);
   }
 
   // Now that all the source images are set up, we can start dispatching
   // jobs. Launch one job per mip for mip generation purposes, and one
   // to encode that mip level in the desired format.
-  for (uint32_t l = 0; l < m_metadata.layers; l++) {
-    Job mipGenJob;
+  std::vector<Job> deps;
 
-    for (uint32_t m = 0; m < m_metadata.mips; m++) {
-      uint32_t index = computeSubresourceIndex(m, l);
+  for (uint32_t l = 0; l < metadata.layers; l++) {
+    for (uint32_t m = 0; m < metadata.mips; m++) {
+      uint32_t index = computeSubresourceIndex(metadata, m, l);
 
       if (m) {
         auto currMip = &m_subresourceImages.at(index);
         auto prevMip = &m_subresourceImages.at(index - 1);
 
-        mipGenJob = m_env.jobs->dispatch(m_env.jobs->create<BatchJob>(
-          [this, currMip, prevMip] (uint32_t n) {
-            generateMip(currMip, prevMip, n);
-          }, currMip->getDesc().h, 8), mipGenJob);
-
-        m_mipmapJobs.at(index) = mipGenJob;
+        m_env.jobs->wait(m_env.jobs->dispatch(m_env.jobs->create<BatchJob>(
+          [this, &formatInfo, currMip, prevMip] (uint32_t n) {
+            generateMip(formatInfo, currMip, prevMip, n);
+          }, currMip->getDesc().h, 8)));
       }
 
       auto inputImage = &m_subresourceImages.at(index);
       auto encodedImage = &m_encodedImages.at(index);
 
       uint32_t blockCount = encodedImage->getDesc().h;
-      blockCount += m_formatInfo.blockExtent.at<1>() - 1;
-      blockCount >>= m_formatInfo.blockExtentLog2.at<1>();
+      blockCount += formatInfo.blockExtent.at<1>() - 1;
+      blockCount >>= formatInfo.blockExtentLog2.at<1>();
 
-      Job encodeJob = m_env.jobs->dispatch(m_env.jobs->create<BatchJob>(
-        [this, inputImage, encodedImage] (uint32_t n) {
-          encodeBlocks(encodedImage, inputImage, n);
-        }, blockCount, 1), mipGenJob);
-
-      m_encodeJobs.at(index) = mipGenJob;
+      deps.push_back(m_env.jobs->dispatch(m_env.jobs->create<BatchJob>(
+        [this, &formatInfo, inputImage, encodedImage] (uint32_t n) {
+          encodeBlocks(formatInfo, encodedImage, inputImage, n);
+        }, blockCount, 1)));
     }
   }
 
-  // Finally, launch a single job to compress all subresources with GDeflate.
-  // Having only one single job depend on all encode jobs makes dependencies
-  // easier to figure out in case we have a mip tail.
-  m_compressJob = m_env.jobs->create<BatchJob>([this] (uint32_t n) {
-    compressChunk(n);
-  }, chunkCount, 1);
+  m_env.jobs->wait(deps.begin(), deps.end());
 
-  m_env.jobs->dispatch(m_compressJob,
-    std::make_pair(m_encodeJobs.begin(), m_encodeJobs.end()));
+  // Finally, compress all subresources with GDeflate.
+  m_env.jobs->wait(m_env.jobs->dispatch(m_env.jobs->create<BatchJob>([this, &metadata, &result] (uint32_t n) {
+    if (!compressChunk(metadata, n))
+      result.first = BuildResult::eIoError;
+  }, chunkCount, 1)));
 
-  return BuildResult::eSuccess;
+  if (result.first != BuildResult::eSuccess) {
+    Log::err("Failed to compress texture subresource");
+    return result;
+  }
+
+  // Generate metadata blob for the texture
+  ArchiveData metadataBlob;
+
+  if (!metadata.serialize(Lwrap<WrVectorStream>(metadataBlob))) {
+    Log::err("Failed to serialize texture metadata");
+
+    result.first = BuildResult::eInvalidInput;
+    return result;
+  }
+
+  // Create actual file data
+  result.second = ArchiveFile(FourCC('T', 'E', 'X', ' '), m_desc.name);
+  result.second.setInlineData(std::move(metadataBlob));
+
+  for (uint32_t l = 0; l < metadata.layers; l++) {
+    for (uint32_t m = 0; m < std::min(metadata.mips, metadata.mipTailStart + 1); m++) {
+      uint32_t index = computeDataIndex(metadata, m, l);
+
+      FourCC ident = m < metadata.mipTailStart
+        ? FourCC(strcat(std::setw(3), std::setfill('0'), std::hex, l, m))
+        : FourCC(strcat(std::setw(3), std::setfill('0'), std::hex, l, 'T'));
+
+      result.second.addSubFile(ident, IoArchiveCompression::eGDeflate,
+        m_rawSizes[index], std::move(m_compressedData[index]));
+    }
+  }
+
+  return result;
 }
 
 
 void TextureBuildJob::generateMip(
+  const GfxFormatInfo&                formatInfo,
         TextureImage*                 dstImage,
   const TextureImage*                 srcImage,
         uint32_t                      row) {
-  if (m_result.load(std::memory_order_relaxed) != BuildResult::eSuccess)
-    return;
-
-  bool isSrgb = m_formatInfo.flags & GfxFormatFlag::eSrgb;
+  bool isSrgb = formatInfo.flags & GfxFormatFlag::eSrgb;
 
   TextureImageDesc dstDesc = dstImage->getDesc();
   TextureImageDesc srcDesc = srcImage->getDesc();
@@ -491,43 +442,41 @@ void TextureBuildJob::generateMip(
 
 
 void TextureBuildJob::encodeBlocks(
+  const GfxFormatInfo&                formatInfo,
         TextureImage*                 dstImage,
   const TextureImage*                 srcImage,
         uint32_t                      row) {
-  if (m_result.load(std::memory_order_relaxed) != BuildResult::eSuccess)
-    return;
-
   std::array<uint8_t, 64> input = { };
 
   TextureImageDesc srcDesc = srcImage->getDesc();
   TextureImageDesc dstDesc = dstImage->getDesc();
 
   Extent2D blockCount(srcDesc.w, srcDesc.h);
-  blockCount += m_formatInfo.blockExtent - 1;
-  blockCount >>= m_formatInfo.blockExtentLog2;
+  blockCount += formatInfo.blockExtent - 1;
+  blockCount >>= formatInfo.blockExtentLog2;
 
-  uint32_t blockSize = m_formatInfo.planes[0].elementSize;
+  uint32_t blockSize = formatInfo.planes[0].elementSize;
 
   bc7enc_compress_block_params bc7args = { };
   bc7enc_compress_block_params_init(&bc7args);
 
   for (uint32_t i = 0; i < blockCount.at<0>(); i++) {
     // Fetch raw pixel data from source block.
-    uint32_t maxX = std::min(m_formatInfo.blockExtent.at<0>(), srcDesc.w - m_formatInfo.blockExtent.at<0>() * i);
-    uint32_t maxY = std::min(m_formatInfo.blockExtent.at<1>(), srcDesc.h - m_formatInfo.blockExtent.at<1>() * row);
+    uint32_t maxX = std::min(formatInfo.blockExtent.at<0>(), srcDesc.w - formatInfo.blockExtent.at<0>() * i);
+    uint32_t maxY = std::min(formatInfo.blockExtent.at<1>(), srcDesc.h - formatInfo.blockExtent.at<1>() * row);
 
-    for (uint32_t y = 0; y < m_formatInfo.blockExtent.at<1>(); y++) {
-      for (uint32_t x = 0; x < m_formatInfo.blockExtent.at<0>(); x++) {
-        uint32_t index = m_formatInfo.blockExtent.at<0>() * y + x;
+    for (uint32_t y = 0; y < formatInfo.blockExtent.at<1>(); y++) {
+      for (uint32_t x = 0; x < formatInfo.blockExtent.at<0>(); x++) {
+        uint32_t index = formatInfo.blockExtent.at<0>() * y + x;
         uint32_t dword;
 
         if (x < maxX && y < maxY) {
           dword = srcImage->loadRaw(
-            x + m_formatInfo.blockExtent.at<0>() * i,
-            y + m_formatInfo.blockExtent.at<1>() * row);
+            x + formatInfo.blockExtent.at<0>() * i,
+            y + formatInfo.blockExtent.at<1>() * row);
         } else {
           // If the block is clipped, repeat other pixels in the block
-          dword = input[m_formatInfo.blockExtent.at<0>() * (y % maxY) + (x % maxX)];
+          dword = input[formatInfo.blockExtent.at<0>() * (y % maxY) + (x % maxX)];
         }
 
         std::memcpy(&input[index * sizeof(uint32_t)], &dword, sizeof(uint32_t));
@@ -570,31 +519,29 @@ void TextureBuildJob::encodeBlocks(
 }
 
 
-void TextureBuildJob::compressChunk(
+bool TextureBuildJob::compressChunk(
+  const GfxTextureDesc&               metadata,
         uint32_t                      dataIndex) {
-  if (m_result.load(std::memory_order_relaxed) != BuildResult::eSuccess)
-    return;
-
   uint32_t mip = 0;
   uint32_t layer = 0;
 
-  bool hasMipTail = m_metadata.mipTailStart < m_metadata.mips;
+  bool hasMipTail = metadata.mipTailStart < metadata.mips;
 
   if (hasMipTail) {
-    mip   = dataIndex % (m_metadata.mipTailStart + 1);
-    layer = dataIndex / (m_metadata.mipTailStart + 1);
+    mip   = dataIndex % (metadata.mipTailStart + 1);
+    layer = dataIndex / (metadata.mipTailStart + 1);
   } else {
-    mip   = dataIndex % m_metadata.mips;
-    layer = dataIndex / m_metadata.mips;
+    mip   = dataIndex % metadata.mips;
+    layer = dataIndex / metadata.mips;
   }
 
   ArchiveData subresourceData;
 
-  uint32_t subresourceIndex = computeSubresourceIndex(mip, layer);
+  uint32_t subresourceIndex = computeSubresourceIndex(metadata, mip, layer);
   uint32_t subresourceCount = 1;
 
-  if (mip >= m_metadata.mipTailStart)
-    subresourceCount = m_metadata.mips - m_metadata.mipTailStart;
+  if (mip >= metadata.mipTailStart)
+    subresourceCount = metadata.mips - metadata.mipTailStart;
 
   size_t dataSize = 0;
 
@@ -613,8 +560,7 @@ void TextureBuildJob::compressChunk(
 
   m_rawSizes[dataIndex] = subresourceData.size();
 
-  if (!(gdeflateEncode(Lwrap<WrVectorStream>(m_compressedData.at(dataIndex)), subresourceData)))
-    m_result.store(BuildResult::eIoError);
+  return gdeflateEncode(Lwrap<WrVectorStream>(m_compressedData.at(dataIndex)), subresourceData);
 }
 
 
@@ -709,31 +655,24 @@ GfxFormat TextureBuildJob::pickFormat(
 
 
 uint32_t TextureBuildJob::computeSubresourceIndex(
+  const GfxTextureDesc&               metadata,
         uint32_t                      mip,
         uint32_t                      layer) const {
-  return m_metadata.mips * layer + mip;
+  return metadata.mips * layer + mip;
 }
 
 
 uint32_t TextureBuildJob::computeDataIndex(
+  const GfxTextureDesc&               metadata,
         uint32_t                      mip,
         uint32_t                      layer) const {
-  if (m_metadata.mipTailStart < m_metadata.mips) {
-    return mip < m_metadata.mipTailStart
-      ? (m_metadata.mipTailStart + 1) * layer + mip
-      : (m_metadata.mipTailStart + 1) * layer + m_metadata.mipTailStart;
+  if (metadata.mipTailStart < metadata.mips) {
+    return mip < metadata.mipTailStart
+      ? (metadata.mipTailStart + 1) * layer + mip
+      : (metadata.mipTailStart + 1) * layer + metadata.mipTailStart;
   } else {
-    return m_metadata.mips * layer + mip;
+    return metadata.mips * layer + mip;
   }
-}
-
-
-void TextureBuildJob::synchronizeJobs() {
-  m_env.jobs->wait(m_ioJob);
-
-  // The compression job depends on all mipmap and encode
-  // jobs, so waiting for that alone is sufficient here.
-  m_env.jobs->wait(m_compressJob);
 }
 
 }

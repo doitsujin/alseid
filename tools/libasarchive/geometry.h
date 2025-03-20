@@ -31,36 +31,13 @@ public:
 
   ~GeometryBuildJob();
 
-  std::pair<BuildResult, BuildProgress> getProgress();
-
-  std::pair<BuildResult, ArchiveFile> getFileInfo();
-
-  void dispatchJobs();
-
-  void abort();
+  std::pair<BuildResult, ArchiveFile> build() override;
 
 private:
 
   Environment           m_env;
   GeometryDesc          m_desc;
   std::filesystem::path m_input;
-
-  Job                   m_ioJob;
-  Job                   m_convertJob;
-  Job                   m_compressJob;
-
-  std::atomic<BuildResult>  m_result = { BuildResult::eSuccess };
-
-  std::vector<size_t>       m_rawSizes;
-  std::vector<ArchiveData>  m_buffers;
-
-  std::shared_ptr<GltfConverter> m_converter;
-
-  BuildResult runIoJob();
-
-  void runCompressJob();
-
-  void synchronizeJobs();
 
 };
 

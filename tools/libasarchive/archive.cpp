@@ -224,93 +224,63 @@ ArchiveBuilder::ArchiveBuilder(
 
 
 ArchiveBuilder::~ArchiveBuilder() {
-  abort();
+  std::unique_lock lock(m_mutex);
+
+  while (!m_buildJobs.empty()) {
+    m_environment.jobs->wait(m_buildJobs.front().job);
+    m_buildJobs.pop();
+  }
 }
 
 
-bool ArchiveBuilder::addBuildJob(
+void ArchiveBuilder::addBuildJob(
         std::shared_ptr<BuildJob>     job) {
   std::unique_lock lock(m_mutex);
 
-  if (m_locked)
-    return false;
+  auto& item = m_buildJobs.emplace();
+  item.job = m_environment.jobs->dispatch(m_environment.jobs->create<SimpleJob>([this,
+    cJob  = std::move(job),
+    cItem = &item
+  ] {
+    if (m_status.load() != BuildResult::eSuccess) {
+      cItem->status.first = BuildResult::eAborted;
+      return;
+    }
 
-  job->dispatchJobs();
+    cItem->status = cJob->build();
 
-  auto& item = m_buildJobs.emplace_back();
-  item.status.first = BuildResult::eInProgress;
-  item.status.second = BuildProgress();
-  item.job = std::move(job);
-  return true;
+    if (cItem->status.first != BuildResult::eSuccess) {
+      auto expected = BuildResult::eSuccess;
+      m_status.compare_exchange_strong(expected, cItem->status.first, std::memory_order_release, std::memory_order_relaxed);
+    }
+  }));
 }
 
 
 BuildResult ArchiveBuilder::build(
         std::filesystem::path         path) {
-  std::unique_lock lock(m_mutex);
-
-  if (m_aborted)
-    return BuildResult::eAborted;
-
-  m_locked = true;
-  lock.unlock();
-
   ArchiveStreams streams(m_environment);
+
+  std::unique_lock lock(m_mutex);
 
   // The file objects contain the actual data blobs, so we
   // must keep them alive at constant memory locations
   std::list<ArchiveFile> files;
 
-  for (auto& entry : m_buildJobs) {
-    auto status = entry.job->getFileInfo();
+  while (!m_buildJobs.empty()) {
+    auto& job = m_buildJobs.front();
+    m_environment.jobs->wait(job.job);
 
-    if (status.first != BuildResult::eSuccess)
-      return status.first;
+    if (job.status.first != BuildResult::eSuccess) {
+      Log::err("error");
+      return job.status.first;
+    }
 
-    streams.addFile(files.emplace_back(std::move(status.second)));
+    streams.addFile(files.emplace_back(std::move(job.status.second)));
+    m_buildJobs.pop();
   }
 
   return streams.write(path);
 }
-
-
-std::pair<BuildResult, BuildProgress> ArchiveBuilder::getProgress() {
-  std::unique_lock lock(m_mutex);
-
-  if (m_locked)
-    lock.unlock();
-
-  auto result = std::make_pair(BuildResult::eSuccess, BuildProgress());
-
-  for (auto& entry : m_buildJobs) {
-    if (entry.status.first == BuildResult::eInProgress)
-      entry.status = entry.job->getProgress();
-
-    result.second.itemsCompleted += entry.status.second.itemsCompleted;
-    result.second.itemsTotal += entry.status.second.itemsTotal;
-
-    if (int32_t(entry.status.first) < 0 || result.first == BuildResult::eSuccess)
-      result.first = entry.status.first;
-  }
-
-  if (m_aborted)
-    result.first = BuildResult::eAborted;
-
-  return result;
-}
-
-
-void ArchiveBuilder::abort() {
-  std::unique_lock lock(m_mutex);
-  m_aborted = true;
-  m_locked = true;
-  lock.unlock();
-
-  for (auto& entry : m_buildJobs) {
-    if (entry.status.first != BuildResult::eAborted)
-      entry.job->abort();
-  }
-}
-
 
 }

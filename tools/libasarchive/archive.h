@@ -3,6 +3,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <queue>
 #include <string>
 #include <vector>
 
@@ -135,8 +136,6 @@ private:
 enum class BuildResult : int32_t {
   /** Operation completed successfully */
   eSuccess            = 0,
-  /** Operation is in progress */
-  eInProgress         = 1,
   /** Operation was aborted */
   eAborted            = -1,
   /** Input arguments are invalid or not
@@ -146,29 +145,6 @@ enum class BuildResult : int32_t {
   eInvalidInput       = -3,
   /** Input file could not be opened */
   eIoError            = -4,
-};
-
-
-/**
- * \brief Build progress
- */
-struct BuildProgress {
-  /** Number of completed work items */
-  uint32_t itemsCompleted = 0;
-  /** Total number of work items */
-  uint32_t itemsTotal = 0;
-
-  void addJob(const Job& job) {
-    if (job) {
-      uint32_t jobComplete = 0;
-      uint32_t jobTotal = 0;
-
-      job->getProgress(jobComplete, jobTotal);
-
-      itemsCompleted += jobComplete;
-      itemsTotal += jobTotal;
-    }
-  }
 };
 
 
@@ -185,44 +161,10 @@ public:
   virtual ~BuildJob();
 
   /**
-   * \brief Queries progress of internal jobs
-   *
-   * Must return immediately and not affect the operation
-   * of the job, even if called from a different thread.
-   * \returns Status and progress of this build job
+   * \brief Builds archive file
+   * \returns Status and archive file
    */
-  virtual std::pair<BuildResult, BuildProgress> getProgress() = 0;
-
-  /**
-   * \brief Queries archive file description
-   *
-   * Waits for internal jobs to complete and, if successful,
-   * fills in the archive file description. Note that if the
-   * file is supposed to be compressed, the build job itself
-   * is responsible for applying that compression.
-   * \param [out] fileDesc Archive file description
-   * \returns Status of the operation
-   */
-  virtual std::pair<BuildResult, ArchiveFile> getFileInfo() = 0;
-
-  /**
-   * \brief Dispatches internal jobs
-   *
-   * This function should ideally not perform any work besides
-   * dispatching a single I/O job, which may in turn dispatch
-   * more jobs.
-   */
-  virtual void dispatchJobs() = 0;
-
-  /**
-   * \brief Sends signal to abort the job
-   *
-   * Handling this is completely optional, but ideally any jobs
-   * that have not already been started should be skipped, and
-   * any jobs currently in progress should terminate as soon as
-   * possible.
-   */
-  virtual void abort() = 0;
+  virtual std::pair<BuildResult, ArchiveFile> build() = 0;
 
 };
 
@@ -281,8 +223,8 @@ private:
  * \brief Archive builder job info
  */
 struct ArchiveBuilderJobInfo {
-  std::pair<BuildResult, BuildProgress> status;
-  std::shared_ptr<BuildJob> job;
+  std::pair<BuildResult, ArchiveFile> status;
+  Job job;
 };
 
 
@@ -303,9 +245,8 @@ public:
    *
    * The job will be dispatched immediately.
    * \param [in] job Build job object
-   * \returns \c true on success
    */
-  bool addBuildJob(
+  void addBuildJob(
           std::shared_ptr<BuildJob>     job);
 
   /**
@@ -320,34 +261,13 @@ public:
   BuildResult build(
           std::filesystem::path         path);
 
-  /**
-   * \brief Queries progress of build jobs
-   *
-   * If an error occured in any build job, it will
-   * be returned as the first part of the pair.
-   * \returns Overall status and progress
-   */
-  std::pair<BuildResult, BuildProgress> getProgress();
-
-  /**
-   * \brief Aborts all pending build jobs
-   *
-   * Sends a signal to all build jobs to abort operation
-   * immediately. This is useful in case an error has
-   * occured, or if the user wishes to stop the operation.
-   */
-  void abort();
-
 private:
 
   Environment                         m_environment;
 
   std::mutex                          m_mutex;
-  bool                                m_aborted = false;
-  bool                                m_locked = false;
-  std::vector<ArchiveBuilderJobInfo>  m_buildJobs;
-
-  BuildResult synchronizeJobs();
+  std::atomic<BuildResult>            m_status = { BuildResult::eSuccess };
+  std::queue<ArchiveBuilderJobInfo>   m_buildJobs;
 
 };
 

@@ -14,57 +14,14 @@ MergeBuildJob::MergeBuildJob(
 
 
 MergeBuildJob::~MergeBuildJob() {
-  m_env.jobs->wait(m_job);
+
 }
 
 
-std::pair<BuildResult, BuildProgress> MergeBuildJob::getProgress() {
-  BuildResult status = m_result.load(std::memory_order_acquire);
-
-  BuildProgress prog = { };
-  prog.addJob(m_job);
-
-  if (status == BuildResult::eSuccess && !prog.itemsCompleted)
-    status = BuildResult::eInProgress;
-
-  return std::make_pair(status, prog);
-}
-
-
-std::pair<BuildResult, ArchiveFile> MergeBuildJob::getFileInfo() {
-  m_env.jobs->wait(m_job);
-
-  BuildResult status = m_result.load(std::memory_order_acquire);
-  return std::make_pair(status, std::move(m_fileInfo));
-}
-
-
-void MergeBuildJob::dispatchJobs() {
-  m_job = m_env.jobs->create<SimpleJob>([this] {
-    BuildResult expected = m_result.load(std::memory_order_acquire);
-
-    if (expected == BuildResult::eSuccess) {
-      BuildResult result = processFile();
-
-      m_result.compare_exchange_strong(expected,
-        result, std::memory_order_release);
-    }
-  });
-
-  m_env.jobs->dispatch(m_job);
-}
-
-
-void MergeBuildJob::abort() {
-  BuildResult expected = BuildResult::eSuccess;
-
-  m_result.compare_exchange_strong(expected,
-    BuildResult::eAborted, std::memory_order_release);
-}
-
-
-BuildResult MergeBuildJob::processFile() {
-  m_fileInfo = ArchiveFile(
+std::pair<BuildResult, ArchiveFile> MergeBuildJob::build() {
+  std::pair<BuildResult, ArchiveFile> result = { };
+  result.first = BuildResult::eSuccess;
+  result.second = ArchiveFile(
     m_archiveFile->getType(),
     m_archiveFile->getName());
 
@@ -73,7 +30,7 @@ BuildResult MergeBuildJob::processFile() {
   ArchiveData inlineData(srcInlineData.getSize());
   std::memcpy(inlineData.data(), srcInlineData.getData(), inlineData.size());
 
-  m_fileInfo.setInlineData(std::move(inlineData));
+  result.second.setInlineData(std::move(inlineData));
 
   // Process sub-files one by one
   for (uint32_t i = 0; i < m_archiveFile->getSubFileCount(); i++) {
@@ -86,20 +43,24 @@ BuildResult MergeBuildJob::processFile() {
     IoRequest ioRequest = m_env.io->createRequest();
     m_archive->readCompressed(ioRequest, subFile, compressedData.data());
 
-    if (!m_env.io->submit(ioRequest))
-      return BuildResult::eIoError;
+    if (!m_env.io->submit(ioRequest)) {
+      result.first = BuildResult::eIoError;
+      return result;
+    }
 
-    if (ioRequest->wait() != IoStatus::eSuccess)
-      return BuildResult::eIoError;
+    if (ioRequest->wait() != IoStatus::eSuccess) {
+      result.first = BuildResult::eIoError;
+      return result;
+    }
 
-    m_fileInfo.addSubFile(
+    result.second.addSubFile(
       subFile->getIdentifier(),
       subFile->getCompressionType(),
       subFile->getSize(),
       std::move(compressedData));
   }
 
-  return BuildResult::eSuccess;
+  return result;
 }
 
 

@@ -104,50 +104,34 @@ public:
 
   ~TextureBuildJob();
 
-  std::pair<BuildResult, BuildProgress> getProgress();
-
-  std::pair<BuildResult, ArchiveFile> getFileInfo();
-
-  void dispatchJobs();
-
-  void abort();
+  std::pair<BuildResult, ArchiveFile> build() override;
 
 private:
 
   Environment               m_env;
   TextureDesc               m_desc;
 
-  std::vector<std::filesystem::path>  m_inputs;
-
-  Job                       m_ioJob;
-
-  GfxTextureDesc            m_metadata;
-  GfxFormatInfo             m_formatInfo;
+  std::vector<std::filesystem::path> m_inputs;
 
   std::vector<TextureImage> m_subresourceImages;
   std::vector<TextureImage> m_encodedImages;
   std::vector<ArchiveData>  m_compressedData;
   std::vector<size_t>       m_rawSizes;
 
-  std::vector<Job>          m_mipmapJobs;
-  std::vector<Job>          m_encodeJobs;
-  Job                       m_compressJob;
-
-  std::atomic<BuildResult>  m_result = { BuildResult::eSuccess };
-
-  BuildResult runIoJob();
-
   void generateMip(
+    const GfxFormatInfo&                formatInfo,
           TextureImage*                 dstImage,
     const TextureImage*                 srcImage,
           uint32_t                      row);
 
   void encodeBlocks(
+    const GfxFormatInfo&                formatInfo,
           TextureImage*                 dstImage,
     const TextureImage*                 srcImage,
           uint32_t                      row);
 
-  void compressChunk(
+  bool compressChunk(
+    const GfxTextureDesc&               metadata,
           uint32_t                      dataIndex);
 
   TextureImage loadImage(
@@ -157,14 +141,14 @@ private:
     const TextureImage&                 texture) const;
 
   uint32_t computeSubresourceIndex(
+    const GfxTextureDesc&               metadata,
           uint32_t                      mip,
           uint32_t                      layer) const;
 
   uint32_t computeDataIndex(
+    const GfxTextureDesc&               metadata,
           uint32_t                      mip,
           uint32_t                      layer) const;
-
-  void synchronizeJobs();
 
 };
 
