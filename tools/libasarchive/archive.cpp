@@ -238,7 +238,7 @@ void ArchiveBuilder::addBuildJob(
   std::unique_lock lock(m_mutex);
 
   auto& item = m_buildJobs.emplace();
-  item.job = m_environment.jobs->dispatch(m_environment.jobs->create<SimpleJob>([this,
+  item.job = m_environment.jobs->dispatch<SimpleJob>([this,
     cJob  = std::move(job),
     cItem = &item
   ] {
@@ -253,7 +253,7 @@ void ArchiveBuilder::addBuildJob(
       auto expected = BuildResult::eSuccess;
       m_status.compare_exchange_strong(expected, cItem->status.first, std::memory_order_release, std::memory_order_relaxed);
     }
-  }));
+  });
 }
 
 

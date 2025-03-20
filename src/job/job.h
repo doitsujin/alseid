@@ -243,7 +243,7 @@ public:
   }
 
   /**
-   * \brief Creates a job
+   * \brief Creates and dispatches a job
    *
    * \tparam T Job template
    * \param [in] proc Function to execute
@@ -251,29 +251,13 @@ public:
    * \returns The dispatched job object
    */
   template<template<class> class T, typename Fn, typename... Args>
-  Job create(
+  Job dispatch(
           Fn&&                          proc,
           Args...                       args) {
-    return Job(std::make_shared<T<Fn>>(
+    Job job(std::make_shared<T<Fn>>(
       std::move(proc),
       std::forward<Args>(args)...));
-  }
 
-  /**
-   * \brief Dispatches a job
-   *
-   * The dependency list may contain single jobs or
-   * iterator pairs that walk over a set of jobs.
-   * The dependency list may include null pointers,
-   * which will be ignored. Jobs without dependencies
-   * will be added to the queue immediately.
-   * \param [in] job Job to execute
-   * \param [in] dependencies Job dependencies
-   * \returns The dispatched job object
-   */
-  template<typename... Deps>
-  Job dispatch(
-          Job                           job) {
     std::lock_guard lock(m_mutex);
     enqueueJobLocked(job);
     return job;

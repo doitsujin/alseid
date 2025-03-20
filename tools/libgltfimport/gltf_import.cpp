@@ -1713,9 +1713,9 @@ void GltfMeshPrimitiveConverter::convert(
   readPrimitiveData();
   generateMeshlets();
 
-  jobs->wait(jobs->dispatch(jobs->create<BatchJob>([this] (uint32_t index) {
+  jobs->wait(jobs->dispatch<BatchJob>([this] (uint32_t index) {
     buildMeshlet(index);
-  }, m_meshlets.size(), 1u)));
+  }, m_meshlets.size(), 1u));
 }
 
 
@@ -1749,7 +1749,7 @@ void GltfMeshPrimitiveConverter::computeAabb(
   if (!first)
     aabb->accumulate(lo, hi);
 
-  jobs->wait(jobs->dispatch(jobs->create<ComplexJob>([this,
+  jobs->wait(jobs->dispatch<ComplexJob>([this,
     cAabb       = aabb,
     cTransform  = transform
   ] (uint32_t first, uint32_t count) {
@@ -1772,7 +1772,7 @@ void GltfMeshPrimitiveConverter::computeAabb(
     }
 
     cAabb->accumulate(lo, hi);
-  }, m_sourceVertexBuffer.size(), 1024)));
+  }, m_sourceVertexBuffer.size(), 1024));
 }
 
 
@@ -1878,9 +1878,9 @@ void GltfMeshLodConverter::addPrimitive(
 
 void GltfMeshLodConverter::convert(
   const Jobs&                         jobs) {
-  jobs->wait(jobs->dispatch(jobs->create<BatchJob>([this, &jobs] (uint32_t n) {
+  jobs->wait(jobs->dispatch<BatchJob>([this, &jobs] (uint32_t n) {
     m_primitives[n]->convert(jobs);
-  }, m_primitives.size(), 1u)));
+  }, m_primitives.size(), 1u));
 
   accumulateMeshlets();
 }
@@ -1890,12 +1890,12 @@ void GltfMeshLodConverter::computeAabb(
   const Jobs&                         jobs,
         std::shared_ptr<GltfSharedAabb> aabb,
         QuatTransform                 transform) const {
-  jobs->wait(jobs->dispatch(jobs->create<BatchJob>([this, &jobs,
+  jobs->wait(jobs->dispatch<BatchJob>([this, &jobs,
     cAabb       = aabb,
     cTransform  = transform
   ] (uint32_t index) {
     m_primitives[index]->computeAabb(jobs, cAabb, cTransform);
-  }, m_primitives.size(), 1u)));
+  }, m_primitives.size(), 1u));
 }
 
 
@@ -2051,9 +2051,9 @@ void GltfMeshConverter::convert(
   const Jobs&                         jobs) {
   processInstances();
 
-  jobs->wait(jobs->dispatch(jobs->create<BatchJob>([this, &jobs] (uint32_t n) {
+  jobs->wait(jobs->dispatch<BatchJob>([this, &jobs] (uint32_t n) {
     m_lods[n]->convert(jobs);
-  }, m_lods.size(), 1u)));
+  }, m_lods.size(), 1u));
 
   accumulateLods();
 }
@@ -2062,7 +2062,7 @@ void GltfMeshConverter::convert(
 void GltfMeshConverter::computeAabb(
   const Jobs&                         jobs,
         std::shared_ptr<GltfSharedAabb> aabb) const {
-  jobs->wait(jobs->dispatch(jobs->create<BatchJob>([this, &jobs,
+  jobs->wait(jobs->dispatch<BatchJob>([this, &jobs,
     cAabb       = aabb
   ] (uint32_t index) {
     uint32_t instCount = std::max<uint32_t>(1u, m_instances.size());
@@ -2079,7 +2079,7 @@ void GltfMeshConverter::computeAabb(
     }
 
     m_lods[lodIndex]->computeAabb(jobs, cAabb, transform);
-  }, m_instances.size() * m_lods.size(), 1u)));
+  }, m_instances.size() * m_lods.size(), 1u));
 }
 
 
@@ -2744,15 +2744,15 @@ void GltfConverter::convert() {
   // as the jobs to compute the object's AABB.
   std::vector<Job> dependencies;
 
-  dependencies.push_back(m_jobs->dispatch(m_jobs->create<BatchJob>([this] (uint32_t index) {
+  dependencies.push_back(m_jobs->dispatch<BatchJob>([this] (uint32_t index) {
     m_meshConverters[index]->convert(m_jobs);
     m_meshConverters[index]->computeAabb(m_jobs, m_aabb);
-  }, m_meshConverters.size(), 1u)));
+  }, m_meshConverters.size(), 1u));
 
   // Dispatch animation conversion jobs
-  dependencies.push_back(m_jobs->dispatch(m_jobs->create<BatchJob>([this] (uint32_t index) {
+  dependencies.push_back(m_jobs->dispatch<BatchJob>([this] (uint32_t index) {
     m_animationConverters[index]->convert();
-  }, m_animationConverters.size(), 1u)));
+  }, m_animationConverters.size(), 1u));
 
   m_jobs->wait(dependencies.begin(), dependencies.end());
 
