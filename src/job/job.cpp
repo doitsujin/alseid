@@ -39,7 +39,12 @@ bool JobIface::completeWorkItems(
         uint32_t                      count) {
   uint32_t done = m_done.fetch_add(count,
     std::memory_order_acq_rel) + count;
-  return done == m_itemCount;
+
+  if (done < m_itemCount)
+    return false;
+
+  m_done.notify_all();
+  return true;
 }
 
 
@@ -54,11 +59,10 @@ JobsIface::JobsIface(uint32_t threadCount) {
 
 
 JobsIface::~JobsIface() {
-  waitAll();
-
   { std::lock_guard lock(m_mutex);
     m_queue.push(nullptr);
-    m_queueCond.notify_all(); }
+    m_queueCond.notify_all();
+  }
 
   for (auto& worker : m_workers)
     worker.join();
@@ -67,43 +71,28 @@ JobsIface::~JobsIface() {
 
 void JobsIface::wait(
   const Job&                          job) {
-  if (!job)
+  if (!job || job->isDone())
     return;
 
-  if (!runJob(job)) {
-    // TODO implement some sort of futex
-    while (!job->isDone())
-      continue;
-  }
+  // Drain work items, and if another worker has picked up the last
+  // set of work items already, wait for it to complete.
+  if (!runJobUntilDone(job))
+    job->synchronize();
 }
 
 
-void JobsIface::waitAll() {
-  std::unique_lock lock(m_mutex);
-  m_pendingCond.wait(lock, [this] {
-    return !m_pending;
-  });
-}
-
-
-void JobsIface::enqueueJobLocked(
+void JobsIface::enqueueJob(
         Job                           job) {
-  m_pending += 1;
+  std::lock_guard lock(m_mutex);
 
   m_queue.push(std::move(job));
   m_queueCond.notify_all();
 }
 
 
-void JobsIface::notifyJobLocked(
+bool JobsIface::runJobUntilDone(
   const Job&                          job) {
-  if (!(--m_pending))
-    m_pendingCond.notify_all();
-}
-
-
-bool JobsIface::runJob(
-  const Job&                          job) {
+  // Check whether there are any more work items to process
   uint32_t invocationIndex = 0;
   uint32_t invocationCount = 0;
 
@@ -112,14 +101,16 @@ bool JobsIface::runJob(
   if (!invocationCount)
     return job->isDone();
 
-  job->execute(invocationIndex, invocationCount);
+  // Run job until we run out of work items
+  bool done = false;
 
-  if (!job->completeWorkItems(invocationCount))
-    return false;
+  while (invocationCount) {
+    job->execute(invocationIndex, invocationCount);
+    done = job->completeWorkItems(invocationCount);
+    job->getWorkItems(invocationIndex, invocationCount);
+  }
 
-  std::unique_lock lock(m_mutex);
-  notifyJobLocked(job);
-  return true;
+  return done;
 }
 
 
@@ -156,20 +147,11 @@ void JobsIface::runWorker(
 
     // Execute job until we run out of work items.
     // This is done to reduce lock contention.
-    bool done = false;
-
     do {
       job->execute(invocationIndex, invocationCount);
-      done = job->completeWorkItems(invocationCount);
+      job->completeWorkItems(invocationCount);
       job->getWorkItems(invocationIndex, invocationCount);
     } while (invocationCount);
-
-    // If the job is done, enqueue jobs that depend on it
-    if (done) {
-      lock.lock();
-
-      notifyJobLocked(job);
-    }
   }
 }
 

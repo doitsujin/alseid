@@ -330,10 +330,10 @@ std::pair<BuildResult, ArchiveFile> TextureBuildJob::build() {
         auto currMip = &m_subresourceImages.at(index);
         auto prevMip = &m_subresourceImages.at(index - 1);
 
-        m_env.jobs->wait(m_env.jobs->dispatch<BatchJob>(
+        m_env.jobs->execute<BatchJob>(
           [this, &formatInfo, currMip, prevMip] (uint32_t n) {
             generateMip(formatInfo, currMip, prevMip, n);
-          }, currMip->getDesc().h, 8));
+          }, currMip->getDesc().h, 8);
       }
 
       auto inputImage = &m_subresourceImages.at(index);
@@ -353,10 +353,10 @@ std::pair<BuildResult, ArchiveFile> TextureBuildJob::build() {
   m_env.jobs->wait(deps.begin(), deps.end());
 
   // Finally, compress all subresources with GDeflate.
-  m_env.jobs->wait(m_env.jobs->dispatch<BatchJob>([this, &metadata, &result] (uint32_t n) {
+  m_env.jobs->execute<BatchJob>([this, &metadata, &result] (uint32_t n) {
     if (!compressChunk(metadata, n))
       result.first = BuildResult::eIoError;
-  }, chunkCount, 1));
+  }, chunkCount, 1);
 
   if (result.first != BuildResult::eSuccess) {
     Log::err("Failed to compress texture subresource");

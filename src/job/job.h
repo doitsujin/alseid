@@ -21,7 +21,7 @@ namespace as {
  * \brief Job interface
  */
 class JobIface {
-
+  friend class JobsIface;
 public:
 
   /**
@@ -92,6 +92,15 @@ private:
 
   std::atomic<uint32_t> m_next = { 0u };
   std::atomic<uint32_t> m_done = { 0u };
+
+  void synchronize() const {
+    uint32_t done = m_done.load(std::memory_order_acquire);
+
+    while (done != m_itemCount) {
+      m_done.wait(done, std::memory_order_acquire);
+      done = m_done.load(std::memory_order_acquire);
+    }
+  }
 
 };
 
@@ -258,9 +267,44 @@ public:
       std::move(proc),
       std::forward<Args>(args)...));
 
-    std::lock_guard lock(m_mutex);
-    enqueueJobLocked(job);
+    // Don't dispatch empty jobs
+    if (job->isDone())
+      return job;
+
+    enqueueJob(job);
     return job;
+  }
+
+  /**
+   * \brief Synchronously executes a job
+   *
+   * Similar to calling \c wait on a dispatched job, but more optimal
+   * in case the job consists of only one single group of work items.
+   * \tparam T Job template
+   * \param [in] proc Function to execute
+   * \param [in] args Constructor arguments
+   */
+  template<template<class> class T, typename Fn, typename... Args>
+  void execute(
+          Fn&&                          proc,
+          Args...                       args) {
+    Job job(std::make_shared<T<Fn>>(
+      std::move(proc),
+      std::forward<Args>(args)...));
+
+    uint32_t invocationIndex = 0u;
+    uint32_t invocationCount = 0u;
+
+    if (job->getWorkItems(invocationIndex, invocationCount))
+      enqueueJob(job);
+
+    if (!invocationCount)
+      return;
+
+    job->execute(invocationIndex, invocationCount);
+
+    if (!job->completeWorkItems(invocationCount))
+      wait(job);
   }
 
   /**
@@ -284,20 +328,12 @@ public:
       wait(*(begin++));
   }
 
-  /**
-   * \brief Waits for all pending jobs to finish
-   */
-  void waitAll();
-
 private:
 
-  void enqueueJobLocked(
+  void enqueueJob(
           Job                           job);
 
-  void notifyJobLocked(
-    const Job&                          job);
-
-  bool runJob(
+  bool runJobUntilDone(
     const Job&                          job);
 
   void runWorker(
@@ -306,9 +342,6 @@ private:
   std::mutex                        m_mutex;
   std::condition_variable           m_queueCond;
   std::queue<Job>                   m_queue;
-
-  std::condition_variable           m_pendingCond;
-  uint64_t                          m_pending = 0ull;
 
   std::vector<std::thread>          m_workers;
 

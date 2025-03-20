@@ -23,7 +23,7 @@ std::pair<BuildResult, ArchiveFile> BasicBuildJob::build() {
   result.first = BuildResult::eSuccess;
 
   if (!m_desc.subFiles.empty()) {
-    m_env.jobs->wait(m_env.jobs->dispatch<BatchJob>([this, &result] (uint32_t index) {
+    m_env.jobs->execute<BatchJob>([this, &result] (uint32_t index) {
       ArchiveSubFile& subFile = m_desc.subFiles[index];
       subFile.rawSize = subFile.compressedData.size();
 
@@ -48,7 +48,7 @@ std::pair<BuildResult, ArchiveFile> BasicBuildJob::build() {
           }
         } break;
       }
-    }, uint32_t(m_desc.subFiles.size()), 1u));
+    }, uint32_t(m_desc.subFiles.size()), 1u);
   }
 
   result.second = ArchiveFile(m_desc.type, m_desc.name);
