@@ -115,14 +115,12 @@ BuildResult GeometryBuildJob::runIoJob() {
   // Create and dispatch mesh converter
   m_converter = std::make_shared<GltfConverter>(
     m_env.jobs, std::move(gltf), m_desc.layoutMap);
-  m_convertJob = m_converter->dispatchConvert();
+  m_converter->convert();
 
   // Run compression. We're lazy and don't paralellize this
   // since we cannot know the buffer count in advance.
-  m_compressJob = m_env.jobs->create<SimpleJob>(
-    [this] { runCompressJob(); });
+  runCompressJob();;
 
-  m_env.jobs->dispatch(m_compressJob, m_convertJob);
   return BuildResult::eSuccess;
 }
 

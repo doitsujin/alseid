@@ -1708,46 +1708,58 @@ GltfMeshPrimitiveConverter::~GltfMeshPrimitiveConverter() {
 }
 
 
-Job GltfMeshPrimitiveConverter::dispatchConvert(
+void GltfMeshPrimitiveConverter::convert(
   const Jobs&                         jobs) {
-  Job processJob = jobs->create<BatchJob>([
-    cThis = shared_from_this()
-  ] (uint32_t index) {
-    cThis->buildMeshlet(index);
-  }, 0, 1);
+  readPrimitiveData();
+  generateMeshlets();
 
-  Job setupJob = jobs->dispatch(jobs->create<SimpleJob>([
-    cThis       = shared_from_this(),
-    cProcessJob = processJob
-  ] {
-    cThis->readPrimitiveData();
-    cThis->generateMeshlets();
-
-    cProcessJob->setWorkItemCount(cThis->m_meshlets.size());
-  }));
-
-  jobs->dispatch(processJob, setupJob);
-  return processJob;
+  jobs->wait(jobs->dispatch(jobs->create<BatchJob>([this] (uint32_t index) {
+    buildMeshlet(index);
+  }, m_meshlets.size(), 1u)));
 }
 
 
-Job GltfMeshPrimitiveConverter::dispatchComputeAabb(
+void GltfMeshPrimitiveConverter::computeAabb(
   const Jobs&                         jobs,
-  const Job&                          dependency,
         std::shared_ptr<GltfSharedAabb> aabb,
         QuatTransform                 transform) const {
-  Job processVertexJob = jobs->create<ComplexJob>([
-    cThis       = shared_from_this(),
+  Vector4D lo = Vector4D(0.0f);
+  Vector4D hi = Vector4D(0.0f);
+
+  bool first = true;
+
+  for (const auto& meshlet : m_meshlets) {
+    auto metadata = meshlet->getMetadata();
+
+    if (metadata.header.morphTargetCount) {
+      float radius = transform.getRotation().scaling() * float(metadata.info.sphereRadius);
+      Vector4D pos = transform.apply(Vector4D(metadata.info.sphereCenter, 0.0f));
+
+      if (!first) {
+        lo = min(lo, pos - radius);
+        hi = max(hi, pos + radius);
+      } else {
+        lo = pos - radius;
+        hi = pos + radius;
+        first = false;
+      }
+    }
+  }
+
+  if (!first)
+    aabb->accumulate(lo, hi);
+
+  jobs->wait(jobs->dispatch(jobs->create<ComplexJob>([this,
     cAabb       = aabb,
     cTransform  = transform
   ] (uint32_t first, uint32_t count) {
     Vector4D lo = Vector4D(0.0f);
     Vector4D hi = Vector4D(0.0f);
 
-    auto position = cThis->m_inputLayout.findAttribute("POSITION");
+    auto position = m_inputLayout.findAttribute("POSITION");
 
     for (uint32_t i = 0; i < count; i++) {
-      const float* f = &cThis->m_sourceVertexBuffer[first + i].f32[position->offset];
+      const float* f = &m_sourceVertexBuffer[first + i].f32[position->offset];
       Vector4D pos = cTransform.apply(Vector4D(f[0], f[1], f[2], 0.0f));
 
       if (i) {
@@ -1760,46 +1772,7 @@ Job GltfMeshPrimitiveConverter::dispatchComputeAabb(
     }
 
     cAabb->accumulate(lo, hi);
-  }, 0, 1024);
-
-  Job dispatchVertexJob = jobs->create<SimpleJob>([
-    cThis       = shared_from_this(),
-    cAabb       = aabb,
-    cTransform  = transform,
-    cVertexJob  = processVertexJob
-  ] {
-    cVertexJob->setWorkItemCount(cThis->m_sourceVertexBuffer.size());
-
-    Vector4D lo = Vector4D(0.0f);
-    Vector4D hi = Vector4D(0.0f);
-
-    bool first = true;
-
-    for (const auto& meshlet : cThis->m_meshlets) {
-      auto metadata = meshlet->getMetadata();
-
-      if (metadata.header.morphTargetCount) {
-        float radius = cTransform.getRotation().scaling() * float(metadata.info.sphereRadius);
-        Vector4D pos = cTransform.apply(Vector4D(metadata.info.sphereCenter, 0.0f));
-
-        if (!first) {
-          lo = min(lo, pos - radius);
-          hi = max(hi, pos + radius);
-        } else {
-          lo = pos - radius;
-          hi = pos + radius;
-          first = false;
-        }
-      }
-    }
-
-    if (!first)
-      cAabb->accumulate(lo, hi);
-  });
-
-  jobs->dispatch(dispatchVertexJob, dependency);
-  jobs->dispatch(processVertexJob, dispatchVertexJob);
-  return processVertexJob;
+  }, m_sourceVertexBuffer.size(), 1024)));
 }
 
 
@@ -1903,37 +1876,26 @@ void GltfMeshLodConverter::addPrimitive(
 }
 
 
-Job GltfMeshLodConverter::dispatchConvert(
+void GltfMeshLodConverter::convert(
   const Jobs&                         jobs) {
-  std::vector<Job> primitiveJobs;
-  primitiveJobs.reserve(m_primitives.size());
+  jobs->wait(jobs->dispatch(jobs->create<BatchJob>([this, &jobs] (uint32_t n) {
+    m_primitives[n]->convert(jobs);
+  }, m_primitives.size(), 1u)));
 
-  for (const auto& prim : m_primitives)
-    primitiveJobs.push_back(prim->dispatchConvert(jobs));
-
-  Job accumulateJob = jobs->create<SimpleJob>(
-    [cThis = shared_from_this()] {
-      cThis->accumulateMeshlets();
-    });
-
-  return jobs->dispatch(accumulateJob,
-    std::make_pair(primitiveJobs.begin(), primitiveJobs.end()));
+  accumulateMeshlets();
 }
 
 
-Job GltfMeshLodConverter::dispatchComputeAabb(
+void GltfMeshLodConverter::computeAabb(
   const Jobs&                         jobs,
-  const Job&                          dependency,
         std::shared_ptr<GltfSharedAabb> aabb,
         QuatTransform                 transform) const {
-  std::vector<Job> deps;
-  deps.reserve(m_primitives.size());
-
-  for (const auto& primitive : m_primitives)
-    deps.emplace_back(primitive->dispatchComputeAabb(jobs, dependency, aabb, transform));
-
-  return jobs->dispatch(jobs->create<NullJob>([]{}),
-    std::make_pair(deps.begin(), deps.end()));
+  jobs->wait(jobs->dispatch(jobs->create<BatchJob>([this, &jobs,
+    cAabb       = aabb,
+    cTransform  = transform
+  ] (uint32_t index) {
+    m_primitives[index]->computeAabb(jobs, cAabb, cTransform);
+  }, m_primitives.size(), 1u)));
 }
 
 
@@ -2085,48 +2047,39 @@ void GltfMeshConverter::applySkins(
 }
 
 
-Job GltfMeshConverter::dispatchConvert(
+void GltfMeshConverter::convert(
   const Jobs&                         jobs) {
   processInstances();
 
-  std::vector<Job> lodJobs;
-  lodJobs.reserve(m_lods.size());
+  jobs->wait(jobs->dispatch(jobs->create<BatchJob>([this, &jobs] (uint32_t n) {
+    m_lods[n]->convert(jobs);
+  }, m_lods.size(), 1u)));
 
-  for (const auto& lod : m_lods)
-    lodJobs.push_back(lod->dispatchConvert(jobs));
-
-  Job instanceJob = jobs->create<SimpleJob>(
-    [cThis = shared_from_this()] {
-      cThis->accumulateLods();
-    });
-
-  return jobs->dispatch(instanceJob,
-    std::make_pair(lodJobs.begin(), lodJobs.end()));
+  accumulateLods();
 }
 
 
-Job GltfMeshConverter::dispatchComputeAabb(
+void GltfMeshConverter::computeAabb(
   const Jobs&                         jobs,
-  const Job&                          dependency,
         std::shared_ptr<GltfSharedAabb> aabb) const {
-  std::vector<Job> deps;
-  deps.reserve(std::max<size_t>(1, m_instances.size()) * m_lods.size());
+  jobs->wait(jobs->dispatch(jobs->create<BatchJob>([this, &jobs,
+    cAabb       = aabb
+  ] (uint32_t index) {
+    uint32_t instCount = std::max<uint32_t>(1u, m_instances.size());
 
-  for (size_t i = 0; i < m_instances.size() || !i; i++) {
+    uint32_t instIndex = index % instCount;
+    uint32_t lodIndex  = index / instCount;
+
     QuatTransform transform = QuatTransform::identity();
 
-    if (i < m_instances.size()) {
+    if (instIndex < m_instances.size()) {
       transform = QuatTransform(
-        Vector4D(m_instances[i].info.transform),
-        Vector4D(m_instances[i].info.translate, 0.0f));
+        Vector4D(m_instances[instIndex].info.transform),
+        Vector4D(m_instances[instIndex].info.translate, 0.0f));
     }
 
-    for (const auto& lod : m_lods)
-      deps.emplace_back(lod->dispatchComputeAabb(jobs, dependency, aabb, transform));
-  }
-
-  return jobs->dispatch(jobs->create<NullJob>([]{}),
-    std::make_pair(deps.begin(), deps.end()));
+    m_lods[lodIndex]->computeAabb(jobs, cAabb, transform);
+  }, m_instances.size() * m_lods.size(), 1u)));
 }
 
 
@@ -2415,14 +2368,10 @@ void GltfAnimationConverter::pushArrays(
 }
 
 
-Job GltfAnimationConverter::dispatchConvert(
-  const Jobs&                         jobs) {
-  return jobs->dispatch(jobs->create<SimpleJob>(
-    [cThis = shared_from_this()] {
-      cThis->loadInterpolatorData();
-      cThis->buildKeyframeTree();
-      cThis->buildAnimationGroups();
-    }));
+void GltfAnimationConverter::convert() {
+  loadInterpolatorData();
+  buildKeyframeTree();
+  buildAnimationGroups();
 }
 
 
@@ -2752,7 +2701,7 @@ GltfConverter::~GltfConverter() {
 }
 
 
-Job GltfConverter::dispatchConvert() {
+void GltfConverter::convert() {
   auto meshes = m_asset->getMeshes();
   auto nodes = m_asset->getNodes();
 
@@ -2795,26 +2744,22 @@ Job GltfConverter::dispatchConvert() {
   // as the jobs to compute the object's AABB.
   std::vector<Job> dependencies;
 
-  for (const auto& converter : m_meshConverters) {
-    Job converterJob = converter->dispatchConvert(m_jobs);
-    dependencies.push_back(converterJob);
-    dependencies.push_back(converter->dispatchComputeAabb(m_jobs, converterJob, m_aabb));
-  }
+  dependencies.push_back(m_jobs->dispatch(m_jobs->create<BatchJob>([this] (uint32_t index) {
+    m_meshConverters[index]->convert(m_jobs);
+    m_meshConverters[index]->computeAabb(m_jobs, m_aabb);
+  }, m_meshConverters.size(), 1u)));
 
   // Dispatch animation conversion jobs
-  for (const auto& converter : m_animationConverters)
-    dependencies.push_back(converter->dispatchConvert(m_jobs));
+  dependencies.push_back(m_jobs->dispatch(m_jobs->create<BatchJob>([this] (uint32_t index) {
+    m_animationConverters[index]->convert();
+  }, m_animationConverters.size(), 1u)));
+
+  m_jobs->wait(dependencies.begin(), dependencies.end());
 
   // Dispatch final job that creates the geometry
   // object as well as all the mesh buffers.
-  Job buildGeometryJob = m_jobs->create<SimpleJob>(
-    [cThis = shared_from_this()] {
-      cThis->computeJointBoundingVolumes();
-      cThis->buildGeometry();
-    });
-
-  return m_jobs->dispatch(buildGeometryJob,
-    std::make_pair(dependencies.begin(), dependencies.end()));
+  computeJointBoundingVolumes();
+  buildGeometry();
 }
 
 

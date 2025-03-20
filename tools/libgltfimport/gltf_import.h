@@ -655,13 +655,11 @@ public:
   /**
    * \brief Dispatches conversion job
    *
-   * The first job spawned will use meshoptimizer to convert the
-   * mesh into a series of meshlets, afterwards each meshlet will
-   * be processed in parallel.
+   * Uses meshoptimizer to convert the mesh into a series of meshlets,
+   * afterwards each meshlet will be processed in parallel.
    * \param [in] jobs Job manager instance
-   * \returns Job to synchronize with
    */
-  Job dispatchConvert(
+  void convert(
     const Jobs&                         jobs);
 
   /**
@@ -671,14 +669,11 @@ public:
    * compute the AABB either based on vertex data or meshlet
    * bounding spheres.
    * \param [in] jobs Job manager instance
-   * \param [in] dependency Job to wait for
    * \param [in] aabb Shared AABB instance
    * \param [in] transform Instance transform
-   * \returns Job to synchronize with
    */
-  Job dispatchComputeAabb(
+  void computeAabb(
     const Jobs&                         jobs,
-    const Job&                          dependency,
           std::shared_ptr<GltfSharedAabb> aabb,
           QuatTransform                 transform) const;
 
@@ -825,9 +820,8 @@ public:
    * Dispatches conversion jobs for all primitives, as
    * well as a final job that processes the result.
    * \param [in] jobs Job manager instance
-   * \returns Job to synchronize with
    */
-  Job dispatchConvert(
+  void convert(
     const Jobs&                         jobs);
 
   /**
@@ -835,14 +829,11 @@ public:
    *
    * Dispatches jobs for each individual primitive.
    * \param [in] jobs Job manager instance
-   * \param [in] dependency Job to wait for
    * \param [in] aabb Shared AABB instance
    * \param [in] transform Instance transform
-   * \returns Job to synchronize with
    */
-  Job dispatchComputeAabb(
+  void computeAabb(
     const Jobs&                         jobs,
-    const Job&                          dependency,
           std::shared_ptr<GltfSharedAabb> aabb,
           QuatTransform                 transform) const;
 
@@ -1003,9 +994,8 @@ public:
    * Performs meshlet conversion for all LODs and processes
    * instance data.
    * \param [in] jobs Job manager instance
-   * \returns Job to synchronize with
    */
-  Job dispatchConvert(
+  void convert(
     const Jobs&                         jobs);
 
   /**
@@ -1013,13 +1003,10 @@ public:
    *
    * Dispatches jobs for each individual LOD and instance.
    * \param [in] jobs Job manager instance
-   * \param [in] dependency Job to wait for
    * \param [in] aabb Shared AABB instance
-   * \returns Job to synchronize with
    */
-  Job dispatchComputeAabb(
+  void computeAabb(
     const Jobs&                         jobs,
-    const Job&                          dependency,
           std::shared_ptr<GltfSharedAabb> aabb) const;
 
   /**
@@ -1168,11 +1155,8 @@ public:
    *
    * Creates animation groups and dispatches
    * jobs to build buffers for each of them.
-   * \param [in] jobs Job manager instance
-   * \returns Job to synchronize with
    */
-  Job dispatchConvert(
-    const Jobs&                         jobs);
+  void convert();
 
 private:
 
@@ -1253,9 +1237,8 @@ public:
    *
    * Processes all meshes and builds all buffers as
    * well as the geometry object.
-   * \returns Job to synchronize with
    */
-  Job dispatchConvert();
+  void convert();
 
 private:
 
