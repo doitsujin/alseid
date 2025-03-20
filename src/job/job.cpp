@@ -1,7 +1,5 @@
 #include <algorithm>
 
-#include "../util/util_small_vector.h"
-
 #include "job.h"
 
 namespace as {
@@ -69,11 +67,13 @@ JobsIface::~JobsIface() {
 
 void JobsIface::wait(
   const Job&                          job) {
-  if (job && !job->isDone()) {
-    std::unique_lock lock(m_mutex);
-    m_pendingCond.wait(lock, [job] {
-      return job->isDone();
-    });
+  if (!job)
+    return;
+
+  if (!runJob(job)) {
+    // TODO implement some sort of futex
+    while (!job->isDone())
+      continue;
   }
 }
 
@@ -97,8 +97,29 @@ void JobsIface::enqueueJobLocked(
 
 void JobsIface::notifyJobLocked(
   const Job&                          job) {
-  m_pending -= 1;
-  m_pendingCond.notify_all();
+  if (!(--m_pending))
+    m_pendingCond.notify_all();
+}
+
+
+bool JobsIface::runJob(
+  const Job&                          job) {
+  uint32_t invocationIndex = 0;
+  uint32_t invocationCount = 0;
+
+  job->getWorkItems(invocationIndex, invocationCount);
+
+  if (!invocationCount)
+    return job->isDone();
+
+  job->execute(invocationIndex, invocationCount);
+
+  if (!job->completeWorkItems(invocationCount))
+    return false;
+
+  std::unique_lock lock(m_mutex);
+  notifyJobLocked(job);
+  return true;
 }
 
 

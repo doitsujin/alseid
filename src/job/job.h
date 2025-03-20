@@ -313,6 +313,9 @@ private:
   void notifyJobLocked(
     const Job&                          job);
 
+  bool runJob(
+    const Job&                          job);
+
   void runWorker(
           uint32_t                      workerId);
 
