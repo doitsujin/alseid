@@ -86,7 +86,7 @@ void JobsIface::enqueueJob(
   std::lock_guard lock(m_mutex);
 
   m_queue.push(std::move(job));
-  m_queueCond.notify_all();
+  m_queueCond.notify_one();
 }
 
 
@@ -137,8 +137,19 @@ void JobsIface::runWorker(
     uint32_t invocationIndex = 0;
     uint32_t invocationCount = 0;
 
-    if (!job->getWorkItems(invocationIndex, invocationCount))
+    // Re-add job to the back of the queue. If there are a large number
+    // of jobs in the queue, small jobs are more likely to be processed
+    // by a single CPU core, which helps data locality.
+    if (job->getWorkItems(invocationIndex, invocationCount)) {
+      if (m_queue.size() > 1u) {
+        m_queue.push(std::move(m_queue.front()));
+        m_queue.pop();
+      }
+
+      m_queueCond.notify_one();
+    } else {
       m_queue.pop();
+    }
 
     if (!invocationCount)
       continue;
