@@ -572,37 +572,6 @@ force_inline __m128 approx_sqrt_packed(__m128 a) {
 
 
 /**
- * \brief Computes packed approximate sin
- *
- * Exact in 0, pi/2 and pi. The maximum absolute error is roughly
- * 0.00109, the relative error is below 1.5% across the [0,pi/2]
- * range, except when close to zero. Derivatives around zero are
- * not exact as a result.
- * \returns sin(x) (approx.)
- */
-#ifdef __SSE4_1__
-inline __m128 approx_sin_packed(__m128 x) {
-  __m128 rcppi = _mm_set1_ps(float(1.0 / pi));
-
-  __m128 a = _mm_set1_ps(4.0f);
-  __m128 b = _mm_set1_ps(0.225);
-
-  __m128 absmask = _mm_castsi128_ps(_mm_set1_epi32(0x7fffffff));
-
-  __m128 y = _mm_mul_ps(x, rcppi);
-  __m128 t = _mm_round_ps(y, _MM_FROUND_TRUNC);
-  __m128i i = _mm_slli_epi32(_mm_cvtps_epi32(t), 31);
-
-  y = _mm_sub_ps(y, t);
-
-  __m128 s = _mm_mul_ps(y, fnmadd_packed(_mm_and_ps(y, absmask), a, a));
-  s = fmadd_packed(fmsub_packed(s, _mm_and_ps(s, absmask), s), b, s);
-  return _mm_xor_ps(s, _mm_castsi128_ps(i));
-}
-#endif
-
-
-/**
  * \brief Computes vector dot product
  *
  * Only the first component will be valid.
@@ -633,8 +602,8 @@ force_inline __m128 dot_packed(__m128 a, __m128 b) {
 
 
 /**
- * \brief Blends vectors with variable mask
- * \returns blendvps result
+ * \brief Blends vectors with constant mask
+ * \returns blendps result
  */
 template<uint8_t Imm>
 force_inline __m128 blend_packed(__m128 a, __m128 b) {
@@ -649,6 +618,41 @@ force_inline __m128 blend_packed(__m128 a, __m128 b) {
     _mm_andnot_ps(mask, a),
     _mm_and_ps(mask, b));
   #endif
+}
+
+
+/**
+ * \brief Blends vectors with variable mask
+ * \returns blendvps result
+ */
+force_inline __m128 blendv_packed(__m128 a, __m128 b, __m128 mask) {
+  #ifdef __SSE4_1__
+  return _mm_blendv_ps(a, b, mask);
+  #else
+  mask = _mm_castsi128_ps(_mm_cmplt_epi32(_mm_castps_si128(mask), _mm_setzero_si128()));
+  return _mm_or_ps(_mm_andnot_ps(mask, a), _mm_and_ps(mask, b));
+  #endif
+}
+
+
+/**
+ * \brief Decomposes float into fractional and integer part
+ *
+ * \param [in] x Float
+ * \param [out] i Integer part
+ * \returns Fractional part
+ */
+force_inline __m128 ftrunc_packed(__m128 x, __m128i& i) {
+  i = _mm_cvttps_epi32(x);
+
+  __m128 f;
+  #ifdef __SSE4_1__
+  f = _mm_round_ps(x, _MM_FROUND_TRUNC);
+  #else
+  f = _mm_cvtepi32_ps(i);
+  #endif
+
+  return _mm_sub_ps(x, f);
 }
 
 
@@ -737,34 +741,82 @@ force_inline float approx_rsqrt(float n) {
 
 
 /**
- * \brief Computes approximate sine
- * \returns sin(x) (approx.)
+ * \brief Coefficients for taylor series
+ *
+ * \param [in] n Power
+ * \returns Coefficient
  */
-inline float approx_sin(float x) {
-#if defined(AS_HAS_X86_INTRINSICS) && defined(__SSE4_1__)
-  return _mm_cvtss_f32(approx_sin_packed(_mm_set_ss(x)));
-#else
-  constexpr float rpi = float(1.0 / pi);
+constexpr float sincos_coeff(uint32_t n) {
+  double result = 1.0;
 
-  float y = x * rpi;
-  float t = std::trunc(y);
-  y -= t;
+  for (uint32_t i = 1; i <= n; i++)
+    result *= pi * 0.25f / double(i);
 
-  float s = y * (4.0f - 4.0f * std::abs(y));
-  s += 0.225f * (s * std::abs(s) - s);
-
-  return (uint32_t(t) & 1) ? -s : s;
-#endif
+  return float(result);
 }
 
 
 /**
- * \brief Computes approximate cosine
- * \returns cos(x) (approx.)
+ * \brief Computes packed approximate sine and cosine
+ *
+ * Can process up to two inputs at a time.
+ * \returns Vector of (sin(x), cos(x), sin(y), cos(y))
  */
-inline float approx_cos(float x) {
-  return approx_sin(x + float(pi * 0.5));
+#if defined(AS_HAS_X86_INTRINSICS)
+inline __m128 approx_sincos_vectorized(__m128 x) {
+  constexpr float c7 = -sincos_coeff(7);
+  constexpr float c5 =  sincos_coeff(5);
+  constexpr float c3 = -sincos_coeff(3);
+  constexpr float c1 =  sincos_coeff(1);
+
+  __m128 sgnMask = _mm_castsi128_ps(_mm_set1_epi32(0x80000000));
+  __m128 one = _mm_set1_ps(1.0f);
+
+  // Duplicate input components
+  __m128 xDup = _mm_unpacklo_ps(x, x);
+
+  // Normalize input to range of [0..pi/4)
+  __m128 xNorm = _mm_mul_ps(_mm_andnot_ps(sgnMask, xDup), _mm_set1_ps(4.0 / pi));
+  __m128i xInt;
+  xNorm = ftrunc_packed(xNorm, xInt);
+
+  // Mirror input as necessary
+  __m128i xMirrorMask = _mm_slli_epi32(xInt, 31);
+  xNorm = blendv_packed(xNorm, _mm_sub_ps(one, xNorm), _mm_castsi128_ps(xMirrorMask));
+
+  // Compute taylor series with minimal dependency chains
+  __m128 xPow2 = _mm_mul_ps(xNorm, xNorm);
+  __m128 xPow4 = _mm_mul_ps(xPow2, xPow2);
+
+  __m128 prodHi = fmadd_packed(xPow2, _mm_set1_ps(c7), _mm_set1_ps(c5));
+  __m128 prodLo = fmadd_packed(xPow2, _mm_set1_ps(c3), _mm_set1_ps(c1));
+  __m128 taylor = _mm_mul_ps(fmadd_packed(xPow4, prodHi, prodLo), xNorm);
+
+  // Compute co-function. Input to sqrt is always greater
+  // than 0, so the result will always be a valid number.
+  __m128 cofactor = fnmadd_packed(taylor, taylor, one);
+
+  __m128 rsqrt = _mm_rsqrt_ps(cofactor);
+  __m128 asqrt = _mm_mul_ps(cofactor, rsqrt);
+
+  // One Newton-Raphson round to improve precision
+  __m128 co = _mm_mul_ps(_mm_mul_ps(asqrt, _mm_set1_ps(0.5f)),
+    fnmadd_packed(rsqrt, asqrt, _mm_set1_ps(3.0f)));
+
+  // Determine sign of the respective results
+  __m128 sgn = _mm_castsi128_ps(_mm_slli_epi32(_mm_add_epi32(xInt, _mm_set_epi32(2, 0, 2, 0)), 29));
+         sgn = _mm_xor_ps(sgn, _mm_unpacklo_ps(x, _mm_setzero_ps()));
+         sgn = _mm_and_ps(sgn, sgnMask);
+
+  // Determine whether the taylor series is sine or cosine and
+  // replace result with the co-function as necessary. This is
+  // the reason why inputs are duplicated early in the function.
+  __m128i swapMask = _mm_slli_epi32(_mm_add_epi32(xInt, _mm_set_epi32(-1, 1, -1, 1)), 30);
+  __m128 sincos = blendv_packed(taylor, co, _mm_castsi128_ps(swapMask));
+
+  return _mm_xor_ps(sincos, sgn);
 }
+#endif
 
 
 /**
@@ -784,53 +836,34 @@ struct SinCos {
  * \returns sin(x) and cos(x) (approx)
  */
 inline SinCos approx_sincos(float x) {
-  SinCos result;
-#if defined(AS_HAS_X86_INTRINSICS) && defined(__SSE4_1__)
-  __m128 xsin = _mm_set_ss(x);
-  __m128 xcos = _mm_add_ss(xsin, _mm_set_ss(float(pi * 0.5)));
-  __m128 packed = approx_sin_packed(_mm_unpacklo_ps(xsin, xcos));
+#if defined(AS_HAS_X86_INTRINSICS)
+  __m128 sincos = approx_sincos_vectorized(_mm_set1_ps(x));
 
-  // This is all sorts of wonky, but appears to
-  // be the best way to extract the lower 64 bits
-  uint64_t tmp = _mm_cvtsi128_si64(_mm_castps_si128(packed));
+  SinCos result;
+  uint64_t tmp = _mm_cvtsi128_si64(_mm_castps_si128(sincos));
   std::memcpy(&result, &tmp, sizeof(tmp));
-#else
-  result.sin = approx_sin(x);
-  result.cos = approx_cos(x);
-#endif
   return result;
+#else
+  SinCos result;
+  result.sin = std::sinf(x);
+  result.cos = std::cosf(x);
+  return result;
+#endif
 }
 
 
-/**
- * \brief Computes two approximate sine and cosine pairs
- *
- * If possible, this leverages vectorization so that the cost
- * is roughly the same as it one \c approx_sincos call.
- * \returns sincos(x) and sincos(y)
- */
-inline std::pair<SinCos, SinCos> approx_sincos(float x, float y) {
-#if defined(AS_HAS_X86_INTRINSICS) && defined(__SSE4_1__)
-  std::pair<SinCos, SinCos> result;
-  __m128 xysin = _mm_set_ps(0.0f, 0.0f, y, x);
-  __m128 xycos = _mm_add_ps(xysin, _mm_set1_ps(float(pi * 0.5)));
-  __m128 packed = approx_sin_packed(_mm_unpacklo_ps(xysin, xycos));
+inline float approx_sin(float x) {
+  return approx_sincos(x).sin;
+}
 
-  uint64_t tmp0 = _mm_cvtsi128_si64(_mm_castps_si128(packed));
-  uint64_t tmp1 = _mm_cvtsi128_si64(_mm_castps_si128(_mm_movehl_ps(packed, packed)));
 
-  std::memcpy(&result.first, &tmp0, sizeof(tmp0));
-  std::memcpy(&result.second, &tmp1, sizeof(tmp1));
-  return result;
-#else
-  return std::make_pair(approx_sincos(x), approx_sincos(y));
-#endif
+inline float approx_cos(float x) {
+  return approx_sincos(x).cos;
 }
 
 
 /**
  * \brief Computes approximate tangent
- * \returns tan(x)
  */
 inline float approx_tan(float x) {
   SinCos sincos = approx_sincos(x);
@@ -840,7 +873,6 @@ inline float approx_tan(float x) {
 
 /**
  * \brief Computes approximate cotangent
- * \returns tan(x)
  */
 inline float approx_cot(float x) {
   SinCos sincos = approx_sincos(x);
@@ -858,68 +890,26 @@ struct TanCot {
 
 
 /**
- * \brief Computes approximate tangent and cotangent
- *
- * Leverages vectorization so that this has no additional
- * cost over computing only one of the values.
- * \returns tan(x) and cot(x) (approx)
+ * \brief Computes tangent and cotangent
  */
 inline TanCot approx_tancot(float x) {
-  TanCot result;
-#ifdef AS_HAS_X86_INTRINSICS
-  #ifdef __SSE4_1__
-  __m128 xsin = _mm_set_ss(x);
-  __m128 xcos = _mm_add_ss(xsin, _mm_set_ss(float(pi * 0.5)));
-  __m128 num = approx_sin_packed(_mm_unpacklo_ps(xsin, xcos));
-  #else
-  SinCos sincos = approx_sincos(x);
-  __m128 num = _mm_set_ps(0.0f, 0.0f, sincos.cos, sincos.sin);
-  #endif
-  __m128 den = _mm_shuffle_ps(num, num, _MM_SHUFFLE(2, 3, 0, 1));
-  __m128 quot = approx_div_packed(num, den);
+#if defined(AS_HAS_X86_INTRINSICS)
+  __m128 sincos = approx_sincos_vectorized(_mm_set1_ps(x));
+  __m128 cossin = _mm_shuffle_ps(sincos, sincos, 0xb1);
 
-  uint64_t tmp = _mm_cvtsi128_si64(_mm_castps_si128(quot));
+  __m128 tancot = approx_div_packed(sincos, cossin);
+
+  TanCot result;
+  uint64_t tmp = _mm_cvtsi128_si64(_mm_castps_si128(tancot));
   std::memcpy(&result, &tmp, sizeof(tmp));
+  return result;
 #else
   SinCos sincos = approx_sincos(x);
+
+  TanCot result;
   result.tan = approx_div(sincos.sin, sincos.cos);
   result.cot = approx_div(sincos.cos, sincos.sin);
-#endif
   return result;
-}
-
-
-/**
- * \brief Computes two approximate tangent and cotangent pairs
- *
- * If possible, this leverages vectorization so that the cost
- * is roughly the same as it one \c approx_tancot call.
- * \returns tancot(x) and tancot(y) (approx)
- */
-inline std::pair<TanCot, TanCot> approx_tancot(float x, float y) {
-#ifdef AS_HAS_X86_INTRINSICS
-  std::pair<TanCot, TanCot> result;
-  #ifdef __SSE4_1__
-  __m128 xysin = _mm_set_ps(0.0f, 0.0f, y, x);
-  __m128 xycos = _mm_add_ps(xysin, _mm_set1_ps(float(pi * 0.5)));
-  __m128 num = approx_sin_packed(_mm_unpacklo_ps(xysin, xycos));
-  #else
-  auto sincos = approx_sincos(x, y);
-  __m128 num = _mm_set_ps(
-    sincos.second.cos, sincos.second.sin,
-    sincos.first.cos, sincos.first.sin);
-  #endif
-  __m128 den = _mm_shuffle_ps(num, num, _MM_SHUFFLE(2, 3, 0, 1));
-  __m128 quot = approx_div_packed(num, den);
-
-  uint64_t tmp0 = _mm_cvtsi128_si64(_mm_castps_si128(quot));
-  uint64_t tmp1 = _mm_cvtsi128_si64(_mm_castps_si128(_mm_movehl_ps(quot, quot)));
-
-  std::memcpy(&result.first, &tmp0, sizeof(tmp0));
-  std::memcpy(&result.second, &tmp1, sizeof(tmp1));
-  return result;
-#else
-  return std::make_pair(approx_tancot(x), approx_tancot(y));
 #endif
 }
 
