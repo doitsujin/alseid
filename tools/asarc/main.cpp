@@ -73,7 +73,7 @@ std::vector<std::filesystem::path> getInputList(ConsoleArgs& args) {
 
 
 bool buildMerge(ArchiveBuilder& builder, const std::filesystem::path& path) {
-  auto archive = std::make_shared<IoArchive>(g_env.io->open(path, IoOpenMode::eRead));
+  auto archive = IoArchive::fromFile(g_env.io->open(path, IoOpenMode::eRead));
 
   if (!(*archive)) {
     Log::err("Failed to open archive ", path);

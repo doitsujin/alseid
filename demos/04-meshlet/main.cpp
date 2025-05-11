@@ -47,7 +47,7 @@ public:
     m_presenter = createPresenter();
     // m_presenter->setPresentMode(GfxPresentMode::eImmediate);
 
-    m_archives.addHandler("SHDR"_4cc, [this] (IoRequest rq, const IoArchiveFile* file) {
+    m_archives.addHandler("SHDR"_4cc, [this] (IoRequest rq, const IoArchiveFileRef& file) {
       loadShader(rq, file);
     });
 
@@ -701,15 +701,15 @@ private:
   }
 
 
-  void loadShader(IoRequest request, const IoArchiveFile* file) {
+  void loadShader(IoRequest request, const IoArchiveFileRef& file) {
     GfxShaderFormatInfo format = m_device->getShaderInfo();
 
-    const IoArchiveSubFile* subFile = file->findSubFile(format.identifier);
+    auto subFile = file->findSubFile(format.identifier);
 
     if (!subFile)
       return;
 
-    file->getArchive().streamCompressed(request, subFile, [this,
+    file.container()->streamCompressed(request, subFile.get(), [this,
       cFile       = file,
       cFormat     = format.format,
       cSubFile    = subFile
@@ -724,7 +724,7 @@ private:
       binaryDesc.format = cFormat;
       binaryDesc.data.resize(cSubFile->getSize());
 
-      if (!cFile->getArchive().decompress(cSubFile, binaryDesc.data.data(), compressedData))
+      if (!cFile.container()->decompress(cSubFile.get(), binaryDesc.data.data(), compressedData))
         return IoStatus::eError;
 
       // Callbacks can be executed from worker threads, so we

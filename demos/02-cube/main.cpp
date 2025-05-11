@@ -114,7 +114,7 @@ public:
     m_presenter = m_device->createPresenter(presenterDesc);
 
     // Open archive file and load resources
-    m_archive = std::make_unique<IoArchive>(m_io->open(m_archivePath, IoOpenMode::eRead));
+    m_archive = IoArchive::fromFile(m_io->open(m_archivePath, IoOpenMode::eRead));
 
     if (!(*m_archive))
       throw Error(strcat(m_archivePath, " not found").c_str());
@@ -597,7 +597,7 @@ private:
   std::chrono::high_resolution_clock::time_point m_startTime = { };
 
   std::filesystem::path     m_archivePath = "resources/demo_02_cube_resources.asa";
-  std::unique_ptr<IoArchive> m_archive;
+  std::shared_ptr<IoArchive> m_archive;
 
   // Initialize to context count
   GfxSemaphore              m_graphicsSemaphore;
@@ -617,17 +617,17 @@ private:
     IoRequest request = m_io->createRequest();
 
     for (uint32_t i = 0; i < m_archive->getFileCount(); i++) {
-      const IoArchiveFile* file = m_archive->getFile(i);
+      auto file = m_archive->getFile(i);
 
       if (file->getType() != FourCC('S', 'H', 'D', 'R'))
         continue;
 
-      const IoArchiveSubFile* subFile = file->findSubFile(format.identifier);
+      auto subFile = file->findSubFile(format.identifier);
 
       if (!subFile)
         continue;
 
-      m_archive->streamCompressed(request, subFile, [this,
+      m_archive->streamCompressed(request, subFile.get(), [this,
         cFile       = file,
         cFormat     = format.format,
         cSubFile    = subFile
@@ -642,7 +642,7 @@ private:
         binaryDesc.format = cFormat;
         binaryDesc.data.resize(cSubFile->getSize());
 
-        if (!m_archive->decompress(cSubFile, binaryDesc.data.data(), compressedData))
+        if (!m_archive->decompress(cSubFile.get(), binaryDesc.data.data(), compressedData))
           return IoStatus::eError;
 
         // Callbacks can be executed from worker threads, so we
@@ -663,7 +663,7 @@ private:
 
 
   uint64_t loadTexture() {
-    const IoArchiveFile* file = m_archive->findFile("texture");
+    auto file = m_archive->findFile("texture");
 
     if (!file) {
       Log::err("File 'texture' not found in ", m_archivePath);
@@ -693,7 +693,7 @@ private:
 
     // Assume that the texture only has one array layer for simplicity.
     for (uint32_t i = 0; i < file->getSubFileCount(); i++) {
-      const IoArchiveSubFile* subFile = file->getSubFile(i);
+      auto subFile = file->getSubFile(i);
 
       uint64_t mipCount = i < textureDesc.mipTailStart ? 1 : textureDesc.mips - i;
 

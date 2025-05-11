@@ -6,10 +6,10 @@ namespace as {
 
 GfxAssetGeometryFromArchive::GfxAssetGeometryFromArchive(
         GfxTransferManager            transferManager,
-  const IoArchiveFile*                file)
+        IoArchiveFileRef              file)
 : m_transferManager (std::move(transferManager))
-, m_archiveFile     (file) {
-  if (!m_geometry.deserialize(file->getInlineData()))
+, m_archiveFile     (std::move(file)) {
+  if (!m_geometry.deserialize(m_archiveFile->getInlineData()))
     throw Error("Failed to deserialize geometry data");
 }
 
@@ -49,7 +49,7 @@ bool GfxAssetGeometryFromArchive::requestStream(
 
   m_buffer = assetManager.getDevice()->createBuffer(bufferDesc, GfxMemoryType::eAny);
 
-  m_streamBatchId = m_transferManager->uploadBuffer(subFile, m_buffer, 0);
+  m_streamBatchId = m_transferManager->uploadBuffer(std::move(subFile), m_buffer, 0);
   return false;
 }
 
@@ -86,10 +86,10 @@ const GfxGeometry* GfxAssetGeometryFromArchive::getGeometry() const {
 
 GfxAssetTextureFromArchive::GfxAssetTextureFromArchive(
         GfxTransferManager            transferManager,
-  const IoArchiveFile*                file)
+        IoArchiveFileRef              file)
 : m_transferManager (std::move(transferManager))
-, m_archiveFile     (file) {
-  if (!m_desc.deserialize(file->getInlineData()))
+, m_archiveFile     (std::move(file)) {
+  if (!m_desc.deserialize(m_archiveFile->getInlineData()))
     throw Error("Failed to deserialize texture metadata");
 }
 
@@ -158,7 +158,7 @@ bool GfxAssetTextureFromArchive::requestStream(
       subresource.layerIndex = l;
       subresource.layerCount = 1u;
 
-      m_streamBatchId = m_transferManager->uploadImage(subFile, m_image, subresource);
+      m_streamBatchId = m_transferManager->uploadImage(std::move(subFile), m_image, subresource);
     }
   }
 
@@ -212,7 +212,7 @@ FourCC GfxAssetTextureFromArchive::getSubFileIdentifier(
 }
 
 
-const IoArchiveSubFile* GfxAssetTextureFromArchive::getSubFile(
+IoArchiveSubFileRef GfxAssetTextureFromArchive::getSubFile(
         uint32_t                      layer,
         uint32_t                      mip) const {
   FourCC identifier = getSubFileIdentifier(layer,
@@ -225,9 +225,9 @@ const IoArchiveSubFile* GfxAssetTextureFromArchive::getSubFile(
 
 
 GfxAssetSamplerFromArchive::GfxAssetSamplerFromArchive(
-    const IoArchiveFile*                file)
-: m_archiveFile(file) {
-  if (!m_desc.deserialize(file->getInlineData()))
+          IoArchiveFileRef              file)
+: m_archiveFile(std::move(file)) {
+  if (!m_desc.deserialize(m_archiveFile->getInlineData()))
     throw Error("Failed to deserialize sampler properties");
 }
 

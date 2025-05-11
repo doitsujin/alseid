@@ -40,7 +40,7 @@ enum class GfxTransferOpType : uint32_t {
  */
 struct GfxTransferOp {
   /** Archive sub-file to read from */
-  const IoArchiveSubFile* subFile = nullptr;
+  IoArchiveSubFileRef subFile;
   /** Transfer batch ID */
   uint64_t batchId = 0;
   /** Allocated staging buffer range */
@@ -126,7 +126,7 @@ public:
    * \returns Transfer batch ID for synchronization
    */
   uint64_t uploadBuffer(
-    const IoArchiveSubFile*             subFile,
+          IoArchiveSubFileRef           subFile,
           GfxBuffer                     buffer,
           uint64_t                      offset);
 
@@ -148,7 +148,7 @@ public:
    * \returns Transfer batch ID for synchronization
    */
   uint64_t uploadImage(
-    const IoArchiveSubFile*             subFile,
+          IoArchiveSubFileRef           subFile,
           GfxImage                      image,
     const GfxImageSubresource&          subresources);
 
@@ -232,10 +232,10 @@ private:
   void retire();
 
   uint64_t computeAlignedSize(
-    const IoArchiveSubFile*             subFile) const;
+    const IoArchiveSubFile&             subFile) const;
 
   bool useGpuDecompression(
-    const IoArchiveSubFile*             subFile) const;
+    const IoArchiveSubFile&             subFile) const;
 
   bool useDirectUpload(
     const GfxTransferOp&                op) const;

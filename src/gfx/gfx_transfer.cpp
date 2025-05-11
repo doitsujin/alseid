@@ -52,14 +52,14 @@ GfxTransferManagerIface::~GfxTransferManagerIface() {
 
 
 uint64_t GfxTransferManagerIface::uploadBuffer(
-  const IoArchiveSubFile*             subFile,
+        IoArchiveSubFileRef           subFile,
         GfxBuffer                     buffer,
         uint64_t                      offset) {
   std::unique_lock lock(m_mutex);
 
   GfxTransferOp op;
   op.type = GfxTransferOpType::eUploadBuffer;
-  op.subFile = subFile;
+  op.subFile = std::move(subFile);
   op.dstBuffer = std::move(buffer);
   op.dstBufferOffset = offset;
 
@@ -68,14 +68,14 @@ uint64_t GfxTransferManagerIface::uploadBuffer(
 
 
 uint64_t GfxTransferManagerIface::uploadImage(
-  const IoArchiveSubFile*             subFile,
+        IoArchiveSubFileRef           subFile,
         GfxImage                      image,
   const GfxImageSubresource&          subresources) {
   std::unique_lock lock(m_mutex);
 
   GfxTransferOp op;
   op.type = GfxTransferOpType::eUploadImage;
-  op.subFile = subFile;
+  op.subFile = std::move(subFile);
   op.dstImage = std::move(image);
   op.dstImageSubresources = subresources;
 
@@ -126,7 +126,7 @@ uint64_t GfxTransferManagerIface::flushLocked() {
 
 uint64_t GfxTransferManagerIface::enqueueLocked(
         GfxTransferOp&&               op) {
-  uint64_t alignedSize = computeAlignedSize(op.subFile);
+  uint64_t alignedSize = computeAlignedSize(*op.subFile);
 
   // We can't allow any single batch to be larger than the
   // staging buffer, so flush early if that's a problem.
@@ -202,7 +202,7 @@ void GfxTransferManagerIface::submit() {
         for (auto& op : ops) {
           if (!useDirectUpload(op)) {
             op.stagingBufferOffset = stagingBufferSize;
-            op.stagingBufferSize = computeAlignedSize(op.subFile);
+            op.stagingBufferSize = computeAlignedSize(*op.subFile);
 
             stagingBufferSize += op.stagingBufferSize;
           }
@@ -225,18 +225,18 @@ void GfxTransferManagerIface::submit() {
         IoRequest request = m_io->createRequest();
 
         for (auto& op : ops) {
-          auto& archive = op.subFile->getArchive();
+          auto archive = op.subFile.container();
           op.stagingBufferOffset += stagingBufferOffset;
 
           if (useDirectUpload(op)) {
-            archive.read(request, op.subFile,
+            archive->read(request, op.subFile.get(),
               op.dstBuffer->map(GfxUsage::eCpuWrite, op.dstBufferOffset));
           } else {
-            if (useGpuDecompression(op.subFile)) {
-              archive.readCompressed(request, op.subFile,
+            if (useGpuDecompression(*op.subFile)) {
+              archive->readCompressed(request, op.subFile.get(),
                 m_stagingBuffer->map(GfxUsage::eCpuWrite, op.stagingBufferOffset));
             } else {
-              archive.read(request, op.subFile,
+              archive->read(request, op.subFile.get(),
                 m_stagingBuffer->map(GfxUsage::eCpuWrite, op.stagingBufferOffset));
             }
           }
@@ -249,7 +249,7 @@ void GfxTransferManagerIface::submit() {
         uint64_t scratchBufferSize = 0;
 
         for (auto& op : ops) {
-          if (op.type == GfxTransferOpType::eUploadImage && useGpuDecompression(op.subFile)) {
+          if (op.type == GfxTransferOpType::eUploadImage && useGpuDecompression(*op.subFile)) {
             op.scratchBufferSize = align<uint64_t>(op.subFile->getSize(), 256);
             scratchBufferSize = std::max(scratchBufferSize, op.scratchBufferSize);
           }
@@ -282,7 +282,7 @@ void GfxTransferManagerIface::submit() {
           if (op.type != GfxTransferOpType::eUploadBuffer || useDirectUpload(op))
             continue;
 
-          if (useGpuDecompression(op.subFile)) {
+          if (useGpuDecompression(*op.subFile)) {
             context->decompressBuffer(
               op.dstBuffer, op.dstBufferOffset, op.subFile->getSize(),
               m_stagingBuffer, op.stagingBufferOffset, op.subFile->getCompressedSize());
@@ -313,7 +313,7 @@ void GfxTransferManagerIface::submit() {
           while (firstCommand + commandCount < ops.size()) {
             auto& op = ops[firstCommand + commandCount];
 
-            if (op.type != GfxTransferOpType::eUploadImage || !useGpuDecompression(op.subFile)) {
+            if (op.type != GfxTransferOpType::eUploadImage || !useGpuDecompression(*op.subFile)) {
               commandCount += 1;
               continue;
             }
@@ -348,7 +348,7 @@ void GfxTransferManagerIface::submit() {
             if (op.type != GfxTransferOpType::eUploadImage)
               continue;
 
-            bool scratch = useGpuDecompression(op.subFile);
+            bool scratch = useGpuDecompression(*op.subFile);
 
             Extent3D extent = op.dstImage->computeMipExtent(op.dstImageSubresources.mipIndex);
 
@@ -443,16 +443,16 @@ void GfxTransferManagerIface::retire() {
 
 
 uint64_t GfxTransferManagerIface::computeAlignedSize(
-  const IoArchiveSubFile*             subFile) const {
+  const IoArchiveSubFile&             subFile) const {
   return useGpuDecompression(subFile)
-    ? align<uint64_t>(subFile->getCompressedSize(), 64)
-    : align<uint64_t>(subFile->getSize(), 64);
+    ? align<uint64_t>(subFile.getCompressedSize(), 64)
+    : align<uint64_t>(subFile.getSize(), 64);
 }
 
 
 bool GfxTransferManagerIface::useGpuDecompression(
-  const IoArchiveSubFile*             subFile) const {
-  return m_gpuDecompression && subFile->getCompressionType() == IoArchiveCompression::eGDeflate;
+  const IoArchiveSubFile&             subFile) const {
+  return m_gpuDecompression && subFile.getCompressionType() == IoArchiveCompression::eGDeflate;
 }
 
 
@@ -460,7 +460,7 @@ bool GfxTransferManagerIface::useDirectUpload(
   const GfxTransferOp&                op) const {
   return (op.type == GfxTransferOpType::eUploadBuffer)
       && (op.dstBuffer->getDesc().usage & GfxUsage::eCpuWrite)
-      && (!useGpuDecompression(op.subFile));
+      && (!useGpuDecompression(*op.subFile));
 }
 
 }

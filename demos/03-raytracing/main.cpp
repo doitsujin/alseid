@@ -35,12 +35,12 @@ const std::array<uint16_t, 36> g_indexData = {
 GfxComputePipeline load_pipeline(const GfxDevice& device) {
   Io io(IoBackend::eDefault, 1);
 
-  IoArchive archive(io->open("resources/demo_03_raytracing_resources.asa", IoOpenMode::eRead));
+  auto archive = IoArchive::fromFile(io->open("resources/demo_03_raytracing_resources.asa", IoOpenMode::eRead));
 
   if (!archive)
     throw Error("Failed to open demo_03_raytracing_resources.asa");
 
-  auto file = archive.findFile("cs_rt");
+  auto file = archive->findFile("cs_rt");
 
   if (!file)
     throw Error("Could not find file cs_rt in archive");
@@ -61,7 +61,7 @@ GfxComputePipeline load_pipeline(const GfxDevice& device) {
   binaryDesc.format = format.format;
   binaryDesc.data.resize(subFile->getSize());
 
-  if (archive.read(subFile, binaryDesc.data.data()) != IoStatus::eSuccess)
+  if (archive->read(subFile.get(), binaryDesc.data.data()) != IoStatus::eSuccess)
     throw Error("Failed to read shader binary");
 
   GfxComputePipelineDesc pipelineDesc;

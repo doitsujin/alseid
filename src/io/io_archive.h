@@ -7,6 +7,7 @@
 
 #include "../job/job.h"
 
+#include "../util/util_ptr.h"
 #include "../util/util_types.h"
 
 #include "io.h"
@@ -102,20 +103,10 @@ class IoArchiveSubFile {
 public:
 
   explicit IoArchiveSubFile(
-          IoArchive&                    archive,
     const IoArchiveSubFileMetadata&     metadata,
           uint64_t                      extraOffset)
-  : m_archive       (archive)
-  , m_metadata      (metadata) {
+  : m_metadata      (metadata) {
     m_metadata.offset += extraOffset;
-  }
-
-  /**
-   * \brief Retrieves archive
-   * \returns Parent archive
-   */
-  const IoArchive& getArchive() const {
-    return m_archive;
   }
 
   /**
@@ -168,11 +159,11 @@ public:
 
 private:
 
-  IoArchive&                m_archive;
-
   IoArchiveSubFileMetadata  m_metadata;
 
 };
+
+using IoArchiveSubFileRef = ContainedPtr<const IoArchiveSubFile, const IoArchive>;
 
 
 /**
@@ -195,14 +186,6 @@ public:
   , m_subFiles      (metadata.subFileCount ? subFiles : nullptr)
   , m_inlineSize    (metadata.inlineDataSize)
   , m_inlineData    (metadata.inlineDataSize ? inlineData : nullptr) { }
-
-  /**
-   * \brief Retrieves archive
-   * \returns Parent archive
-   */
-  const IoArchive& getArchive() const {
-    return m_archive;
-  }
 
   /**
    * \brief Retrieves file name
@@ -235,11 +218,7 @@ public:
    * \returns Sub file object, or \c nullptr
    *    if the index is out of bounds
    */
-  const IoArchiveSubFile* getSubFile(uint32_t index) const {
-    return index < m_subFileCount
-      ? &m_subFiles[index]
-      : nullptr;
-  }
+  IoArchiveSubFileRef getSubFile(uint32_t index) const;
 
   /**
    * \brief Finds a sub file by identifier
@@ -248,14 +227,7 @@ public:
    * \returns Sub file object, or \c nullptr if no
    *    sub-file with the given identifier exists
    */
-  const IoArchiveSubFile* findSubFile(FourCC identifier) const {
-    for (uint32_t i = 0; i < m_subFileCount; i++) {
-      if (m_subFiles[i].getIdentifier() == identifier)
-        return &m_subFiles[i];
-    }
-
-    return nullptr;
-  }
+  IoArchiveSubFileRef findSubFile(FourCC identifier) const;
 
   /**
    * \brief Retrieves inline data view
@@ -283,6 +255,8 @@ private:
 
 };
 
+using IoArchiveFileRef = ContainedPtr<const IoArchiveFile, const IoArchive>;
+
 
 /**
  * \brief Archive file
@@ -303,22 +277,29 @@ private:
  * used to store the actual binaries. The FourCC code of each
  * sub file can be used to identify the correct binary format.
  */
-class IoArchive {
-
+class IoArchive
+: public std::enable_shared_from_this<IoArchive> {
+  friend IoArchiveFile;
+  friend IoArchiveSubFile;
+  struct Private {};
 public:
 
-  /**
-   * \brief Loads an archive from a file
-   *
-   * Loads and parses all file metadata and inline data.
-   * \param [in] file The file
-   */
-  IoArchive(IoFile file);
+  IoArchive(Private, IoFile file);
 
   ~IoArchive();
 
   IoArchive             (const IoArchive&) = delete;
   IoArchive& operator = (const IoArchive&) = delete;
+
+  /**
+   * \brief Creates archive from file
+   *
+   * Loads and parses all file metadata and inline data.
+   * \param [in] file The file
+   */
+  static std::shared_ptr<IoArchive> fromFile(IoFile file) {
+    return std::make_shared<IoArchive>(Private(), std::move(file));
+  }
 
   /**
    * \brief Counts number of files in the archive
@@ -335,8 +316,10 @@ public:
    * \returns Pointer to file object, or \c nullptr
    *    if the given index is out of bounds.
    */
-  const IoArchiveFile* getFile(uint32_t index) const {
-    return index < getFileCount() ? &m_files[index] : nullptr;
+  IoArchiveFileRef getFile(uint32_t index) const {
+    return index < getFileCount()
+      ? IoArchiveFileRef(m_files[index], shared_from_this())
+      : IoArchiveFileRef();
   }
 
   /**
@@ -346,7 +329,7 @@ public:
    * \returns Pointer to file object, or \c nullptr
    *    if no file with the given name could be found.
    */
-  const IoArchiveFile* findFile(const std::string& name) const;
+  IoArchiveFileRef findFile(const std::string& name) const;
 
   /**
    * \brief Synchronously reads sub file
@@ -550,13 +533,17 @@ private:
 
   bool parseMetadata();
 
+  std::shared_ptr<const IoArchive> getPtr() const {
+    return shared_from_this();
+  }
+
 };
 
 
 /**
  * \brief Callback invoked when an archive file gets loaded
  */
-using IoArchiveFileHandler = std::function<void (IoRequest, const IoArchiveFile*)>;
+using IoArchiveFileHandler = std::function<void (IoRequest, const IoArchiveFileRef&)>;
 
 
 /**
@@ -602,7 +589,7 @@ public:
    * \param [in] name Unique file name
    * \returns Pointer to file, if any
    */
-  const IoArchiveFile* findFile(const char* name);
+  IoArchiveFileRef findFile(const char* name);
 
 private:
 
@@ -610,8 +597,7 @@ private:
 
   std::shared_mutex m_mutex;
 
-  std::vector<std::shared_ptr<IoArchive>> m_archives;
-  std::unordered_map<std::string, const IoArchiveFile*> m_files;
+  std::unordered_map<std::string, IoArchiveFileRef> m_files;
   std::unordered_map<FourCC, IoArchiveFileHandler, HashMemberProc> m_handlers;
 
 };

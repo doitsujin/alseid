@@ -19,7 +19,7 @@ public:
 
   GfxAssetGeometryFromArchive(
           GfxTransferManager            transferManager,
-    const IoArchiveFile*                file);
+          IoArchiveFileRef              file);
 
   ~GfxAssetGeometryFromArchive();
 
@@ -77,7 +77,7 @@ public:
 private:
 
   GfxTransferManager          m_transferManager;
-  const IoArchiveFile*        m_archiveFile;
+  IoArchiveFileRef            m_archiveFile;
 
   GfxAssetStatus              m_status = GfxAssetStatus::eNonResident;
 
@@ -98,7 +98,7 @@ public:
 
   GfxAssetTextureFromArchive(
           GfxTransferManager            transferManager,
-    const IoArchiveFile*                file);
+          IoArchiveFileRef              file);
 
   ~GfxAssetTextureFromArchive();
 
@@ -160,7 +160,7 @@ public:
 private:
 
   GfxTransferManager          m_transferManager;
-  const IoArchiveFile*        m_archiveFile;
+  IoArchiveFileRef            m_archiveFile;
 
   GfxAssetStatus              m_status = GfxAssetStatus::eNonResident;
   uint32_t                    m_descriptor = 0u;
@@ -170,7 +170,7 @@ private:
 
   uint64_t                    m_streamBatchId = 0u;
 
-  const IoArchiveSubFile* getSubFile(
+  IoArchiveSubFileRef getSubFile(
           uint32_t                      layer,
           uint32_t                      mip) const;
 
@@ -185,7 +185,7 @@ class GfxAssetSamplerFromArchive : public GfxAssetIface {
 public:
 
   GfxAssetSamplerFromArchive(
-    const IoArchiveFile*                file);
+          IoArchiveFileRef              file);
 
   ~GfxAssetSamplerFromArchive();
 
@@ -235,7 +235,7 @@ public:
 
 private:
 
-  const IoArchiveFile*        m_archiveFile;
+  IoArchiveFileRef            m_archiveFile;
 
   GfxAssetStatus              m_status = GfxAssetStatus::eNonResident;
   uint32_t                    m_descriptor = 0u;

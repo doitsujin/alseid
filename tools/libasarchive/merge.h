@@ -21,7 +21,7 @@ private:
 
   Environment                 m_env;
   std::shared_ptr<IoArchive>  m_archive;
-  const IoArchiveFile*        m_archiveFile = nullptr;
+  IoArchiveFileRef            m_archiveFile;
 
 };
 

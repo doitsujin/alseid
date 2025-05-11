@@ -10,7 +10,25 @@ namespace as {
 static const std::array<char, 6> IoArchiveMagic = { 'A', 'S', 'F', 'I', 'L', 'E' };
 
 
-IoArchive::IoArchive(IoFile file)
+IoArchiveSubFileRef IoArchiveFile::getSubFile(uint32_t index) const {
+  return index < m_subFileCount
+    ? IoArchiveSubFileRef(m_subFiles[index], m_archive.getPtr())
+    : IoArchiveSubFileRef();
+}
+
+
+IoArchiveSubFileRef IoArchiveFile::findSubFile(FourCC identifier) const {
+  for (uint32_t i = 0; i < m_subFileCount; i++) {
+    if (m_subFiles[i].getIdentifier() == identifier)
+      return IoArchiveSubFileRef(m_subFiles[i], m_archive.getPtr());
+  }
+
+  return IoArchiveSubFileRef();
+}
+
+
+
+IoArchive::IoArchive(Private, IoFile file)
 : m_file(std::move(file)) {
   if (!parseMetadata()) {
     // Reset everything if parsing failed
@@ -29,13 +47,13 @@ IoArchive::~IoArchive() {
 }
 
 
-const IoArchiveFile* IoArchive::findFile(const std::string& name) const {
+IoArchiveFileRef IoArchive::findFile(const std::string& name) const {
   auto entry = m_lookupTable.find(name);
 
   if (entry == m_lookupTable.end())
-    return nullptr;
+    return IoArchiveFileRef();
 
-  return &m_files[entry->second];
+  return IoArchiveFileRef(m_files[entry->second], shared_from_this());
 }
 
 
@@ -187,7 +205,7 @@ bool IoArchive::parseMetadata() {
   m_subFiles.reserve(totalSubFileCount);
 
   for (size_t i = 0; i < totalSubFileCount; i++) {
-    auto& subFile = m_subFiles.emplace_back(*this, subFiles[i], fileHeader.fileOffset);
+    auto& subFile = m_subFiles.emplace_back(subFiles[i], fileHeader.fileOffset);
 
     if (subFile.getOffsetInArchive() + subFile.getCompressedSize() > fileStream->getSize()) {
       Log::err("Archive: Sub-file out of bounds:"
@@ -259,23 +277,21 @@ void IoArchiveCollection::addHandler(FourCC type, IoArchiveFileHandler&& handler
 
 
 IoRequest IoArchiveCollection::loadArchive(IoFile file) {
-  auto archive = std::make_shared<IoArchive>(std::move(file));
+  auto archive = IoArchive::fromFile(std::move(file));
 
   if (!(*archive))
     return nullptr;
 
-  std::vector<const IoArchiveFile*> files;
+  std::vector<IoArchiveFileRef> files;
   files.reserve(archive->getFileCount());
 
   { std::unique_lock lock(m_mutex);
-    m_archives.push_back(archive);
-
     for (uint32_t i = 0; i < archive->getFileCount(); i++) {
       auto file = archive->getFile(i);
       auto result = m_files.insert(std::make_pair(std::string(file->getName()), file));
 
       if (result.second)
-        files.push_back(file);
+        files.push_back(std::move(file));
       else
         Log::warn("Archive: File name not unique: ", file->getName());
     }
@@ -300,12 +316,12 @@ IoRequest IoArchiveCollection::loadArchive(IoFile file) {
 }
 
 
-const IoArchiveFile* IoArchiveCollection::findFile(const char* name) {
+IoArchiveFileRef IoArchiveCollection::findFile(const char* name) {
   std::shared_lock lock(m_mutex);
   auto entry = m_files.find(name);
 
   if (entry == m_files.end())
-    return nullptr;
+    return IoArchiveFileRef();
 
   return entry->second;
 }

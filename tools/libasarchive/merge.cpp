@@ -34,14 +34,14 @@ std::pair<BuildResult, ArchiveFile> MergeBuildJob::build() {
 
   // Process sub-files one by one
   for (uint32_t i = 0; i < m_archiveFile->getSubFileCount(); i++) {
-    const IoArchiveSubFile* subFile = m_archiveFile->getSubFile(i);
+    auto subFile = m_archiveFile->getSubFile(i);
 
     ArchiveData compressedData(subFile->getCompressedSize());
 
     // Use an IO request in order to circumvent thread
     // safety issues with synchronous file I/O.
     IoRequest ioRequest = m_env.io->createRequest();
-    m_archive->readCompressed(ioRequest, subFile, compressedData.data());
+    m_archive->readCompressed(ioRequest, subFile.get(), compressedData.data());
 
     if (!m_env.io->submit(ioRequest)) {
       result.first = BuildResult::eIoError;
