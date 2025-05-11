@@ -627,7 +627,7 @@ private:
       if (!subFile)
         continue;
 
-      m_archive->streamCompressed(request, subFile.get(), [this,
+      subFile->streamCompressed(request, [this,
         cFile       = file,
         cFormat     = format.format,
         cSubFile    = subFile
@@ -642,7 +642,7 @@ private:
         binaryDesc.format = cFormat;
         binaryDesc.data.resize(cSubFile->getSize());
 
-        if (!m_archive->decompress(cSubFile.get(), binaryDesc.data.data(), compressedData))
+        if (!cSubFile->decompress(binaryDesc.data.data(), compressedData))
           return IoStatus::eError;
 
         // Callbacks can be executed from worker threads, so we

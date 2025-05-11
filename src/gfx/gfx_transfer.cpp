@@ -229,14 +229,14 @@ void GfxTransferManagerIface::submit() {
           op.stagingBufferOffset += stagingBufferOffset;
 
           if (useDirectUpload(op)) {
-            archive->read(request, op.subFile.get(),
+            op.subFile->read(request,
               op.dstBuffer->map(GfxUsage::eCpuWrite, op.dstBufferOffset));
           } else {
             if (useGpuDecompression(*op.subFile)) {
-              archive->readCompressed(request, op.subFile.get(),
+              op.subFile->readCompressed(request,
                 m_stagingBuffer->map(GfxUsage::eCpuWrite, op.stagingBufferOffset));
             } else {
-              archive->read(request, op.subFile.get(),
+              op.subFile->read(request,
                 m_stagingBuffer->map(GfxUsage::eCpuWrite, op.stagingBufferOffset));
             }
           }

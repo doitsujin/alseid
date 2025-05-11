@@ -61,7 +61,7 @@ GfxComputePipeline load_pipeline(const GfxDevice& device) {
   binaryDesc.format = format.format;
   binaryDesc.data.resize(subFile->getSize());
 
-  if (archive->read(subFile.get(), binaryDesc.data.data()) != IoStatus::eSuccess)
+  if (subFile->read(binaryDesc.data.data()) != IoStatus::eSuccess)
     throw Error("Failed to read shader binary");
 
   GfxComputePipelineDesc pipelineDesc;

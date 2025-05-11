@@ -10,6 +10,75 @@ namespace as {
 static const std::array<char, 6> IoArchiveMagic = { 'A', 'S', 'F', 'I', 'L', 'E' };
 
 
+IoStatus IoArchiveSubFile::read(
+        void*                         dst) const {
+  if (!isCompressed())
+    return readCompressed(dst);
+
+  std::vector<char> compressed(getCompressedSize());
+  IoStatus status = readCompressed(compressed.data());
+
+  if (status != IoStatus::eSuccess)
+    return status;
+
+  return decompress(dst, compressed.data())
+    ? IoStatus::eSuccess
+    : IoStatus::eError;
+}
+
+
+void IoArchiveSubFile::read(
+  const IoRequest&                    request,
+        void*                         dst) const {
+  if (!isCompressed()) {
+    readCompressed(request, dst);
+  } else {
+    streamCompressed(request,
+      [this, dst] (const void* src, size_t size) {
+        return decompress(dst, src)
+          ? IoStatus::eSuccess
+          : IoStatus::eError;
+      });
+  }
+}
+
+
+IoStatus IoArchiveSubFile::readCompressed(
+        void*                         dst) const {
+  return getFile()->read(
+    getOffsetInArchive(),
+    getCompressedSize(),
+    dst);
+}
+
+
+void IoArchiveSubFile::readCompressed(
+  const IoRequest&                    request,
+        void*                         dst) const {
+  request->read(getFile(),
+    getOffsetInArchive(),
+    getCompressedSize(),
+    dst);
+}
+
+
+bool IoArchiveSubFile::decompress(
+        void*                         dstData,
+  const void*                         srcData) const {
+  return IoArchive::decompress(
+    WrMemoryView(dstData, getSize()),
+    RdMemoryView(srcData, getCompressedSize()),
+    getCompressionType());
+}
+
+
+IoFile& IoArchiveSubFile::getFile() const {
+  return m_archive.m_file;
+}
+
+
+
+
 IoArchiveSubFileRef IoArchiveFile::getSubFile(uint32_t index) const {
   return index < m_subFileCount
     ? IoArchiveSubFileRef(m_subFiles[index], m_archive.getPtr())
@@ -25,6 +94,7 @@ IoArchiveSubFileRef IoArchiveFile::findSubFile(FourCC identifier) const {
 
   return IoArchiveSubFileRef();
 }
+
 
 
 
@@ -54,35 +124,6 @@ IoArchiveFileRef IoArchive::findFile(const std::string& name) const {
     return IoArchiveFileRef();
 
   return IoArchiveFileRef(m_files[entry->second], shared_from_this());
-}
-
-
-IoStatus IoArchive::read(
-  const IoArchiveSubFile*             subFile,
-        void*                         dst) const {
-  if (!subFile->isCompressed())
-    return readCompressed(subFile, dst);
-
-  std::vector<char> compressed(subFile->getCompressedSize());
-  IoStatus status = readCompressed(subFile, compressed.data());
-
-  if (status != IoStatus::eSuccess)
-    return status;
-
-  return decompress(subFile, dst, compressed.data())
-    ? IoStatus::eSuccess
-    : IoStatus::eError;
-}
-
-
-bool IoArchive::decompress(
-  const IoArchiveSubFile*             subFile,
-        void*                         dstData,
-  const void*                         srcData) const {
-  return decompress(
-    WrMemoryView(dstData, subFile->getSize()),
-    RdMemoryView(srcData, subFile->getCompressedSize()),
-    subFile->getCompressionType());
 }
 
 
@@ -205,7 +246,7 @@ bool IoArchive::parseMetadata() {
   m_subFiles.reserve(totalSubFileCount);
 
   for (size_t i = 0; i < totalSubFileCount; i++) {
-    auto& subFile = m_subFiles.emplace_back(subFiles[i], fileHeader.fileOffset);
+    auto& subFile = m_subFiles.emplace_back(*this, subFiles[i], fileHeader.fileOffset);
 
     if (subFile.getOffsetInArchive() + subFile.getCompressedSize() > fileStream->getSize()) {
       Log::err("Archive: Sub-file out of bounds:"

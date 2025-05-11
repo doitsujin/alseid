@@ -41,7 +41,7 @@ std::pair<BuildResult, ArchiveFile> MergeBuildJob::build() {
     // Use an IO request in order to circumvent thread
     // safety issues with synchronous file I/O.
     IoRequest ioRequest = m_env.io->createRequest();
-    m_archive->readCompressed(ioRequest, subFile.get(), compressedData.data());
+    subFile->readCompressed(ioRequest, compressedData.data());
 
     if (!m_env.io->submit(ioRequest)) {
       result.first = BuildResult::eIoError;
