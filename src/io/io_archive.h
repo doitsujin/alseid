@@ -95,6 +95,19 @@ struct IoArchiveSubFileMetadata {
 
 
 /**
+ * \brief Generic archive decompression function
+ *
+ * \param [in] output Destination memory, appropriately sized
+ * \param [in] input Source memory, appropriately sized
+ * \param [in] compression Compression type
+ */
+bool decompressArchiveMemory(
+        WrMemoryView                  output,
+        RdMemoryView                  input,
+        IoArchiveCompression          compression);
+
+
+/**
  * \brief Archive sub-file object
  */
 class IoArchiveSubFile {
@@ -200,13 +213,21 @@ public:
     if (!isCompressed()) {
       readCompressed(request, dst, std::move(callback));
     } else {
-      streamCompressed(request,
-        [this, dst, cb = std::move(callback)] (const void* src, size_t size) {
-          if (!decompress(dst, src))
-            return IoStatus::eError;
+      streamCompressed(request, [
+        cDst      = dst,
+        cSize     = getSize(),
+        cType     = getCompressionType(),
+        cCallback = std::move(callback)
+      ] (const void* src, size_t size) {
+        bool result = decompressArchiveMemory(
+          WrMemoryView(cDst, cSize),
+          RdMemoryView(src, size), cType);
 
-          return cb(dst, getSize());
-        });
+        if (!result)
+          return IoStatus::eError;
+
+        return cCallback(cDst, cSize);
+      });
     }
   }
 
@@ -494,11 +515,6 @@ private:
   std::vector<IoArchiveFile>    m_files;
 
   std::unordered_map<std::string, size_t> m_lookupTable;
-
-  static bool decompress(
-          WrMemoryView                  output,
-          RdMemoryView                  input,
-          IoArchiveCompression          compression);
 
   bool parseMetadata();
 

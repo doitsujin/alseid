@@ -10,6 +10,30 @@ namespace as {
 static const std::array<char, 6> IoArchiveMagic = { 'A', 'S', 'F', 'I', 'L', 'E' };
 
 
+bool decompressArchiveMemory(
+        WrMemoryView                  output,
+        RdMemoryView                  input,
+        IoArchiveCompression          compression) {
+  switch (compression) {
+    case IoArchiveCompression::eNone:
+      if (output.getSize() != input.getSize())
+        return false;
+
+      return input.read(output.getData(), output.getSize());
+
+    case IoArchiveCompression::eDeflate:
+      return deflateDecode(output, input);
+
+    case IoArchiveCompression::eGDeflate:
+      return gdeflateDecode(output, input);
+  }
+
+  return false;
+}
+
+
+
+
 IoStatus IoArchiveSubFile::read(
         void*                         dst) const {
   if (!isCompressed())
@@ -33,12 +57,16 @@ void IoArchiveSubFile::read(
   if (!isCompressed()) {
     readCompressed(request, dst);
   } else {
-    streamCompressed(request,
-      [this, dst] (const void* src, size_t size) {
-        return decompress(dst, src)
-          ? IoStatus::eSuccess
-          : IoStatus::eError;
-      });
+    streamCompressed(request, [
+      cDst      = dst,
+      cSize     = getSize(),
+      cType     = getCompressionType()
+    ] (const void* src, size_t size) {
+      bool result = decompressArchiveMemory(
+        WrMemoryView(cDst, cSize),
+        RdMemoryView(src, size), cType);
+      return result ? IoStatus::eSuccess : IoStatus::eError;
+    });
   }
 }
 
@@ -65,7 +93,7 @@ void IoArchiveSubFile::readCompressed(
 bool IoArchiveSubFile::decompress(
         void*                         dstData,
   const void*                         srcData) const {
-  return IoArchive::decompress(
+  return decompressArchiveMemory(
     WrMemoryView(dstData, getSize()),
     RdMemoryView(srcData, getCompressedSize()),
     getCompressionType());
@@ -124,28 +152,6 @@ IoArchiveFileRef IoArchive::findFile(const std::string& name) const {
     return IoArchiveFileRef();
 
   return IoArchiveFileRef(m_files[entry->second], shared_from_this());
-}
-
-
-bool IoArchive::decompress(
-        WrMemoryView                  output,
-        RdMemoryView                  input,
-        IoArchiveCompression          compression) {
-  switch (compression) {
-    case IoArchiveCompression::eNone:
-      if (output.getSize() != input.getSize())
-        return false;
-
-      return input.read(output.getData(), output.getSize());
-
-    case IoArchiveCompression::eDeflate:
-      return deflateDecode(output, input);
-
-    case IoArchiveCompression::eGDeflate:
-      return gdeflateDecode(output, input);
-  }
-
-  return false;
 }
 
 
